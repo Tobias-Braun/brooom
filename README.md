@@ -44,6 +44,7 @@ Output formats: `table` (default), `tree`, `json`, `ndjson`, `plain`,
 
 ## Documentation
 
+- [Product specification](docs/SPEC.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Findings schema](docs/findings.md)
 - [Contributing](CONTRIBUTING.md)
