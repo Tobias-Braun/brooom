@@ -136,11 +136,14 @@ func Reclaimable(fs []Finding) int64 {
 		}
 		paths = append(paths, f.Path)
 	}
+	// Keyed by the cleaned path because TopLevel returns cleaned paths (on
+	// Windows Clean also converts forward slashes).
 	sizes := map[string]int64{}
 	for _, f := range fs {
 		if f.Actionable() && isFilesystemKind(f.Kind) {
-			if f.SizeBytes > sizes[f.Path] {
-				sizes[f.Path] = f.SizeBytes
+			p := filepath.Clean(f.Path)
+			if f.SizeBytes > sizes[p] {
+				sizes[p] = f.SizeBytes
 			}
 		}
 	}

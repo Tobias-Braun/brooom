@@ -1,0 +1,6 @@
+# Normalize line endings so golden files and testdata compare byte-for-byte
+# on Windows checkouts too.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
