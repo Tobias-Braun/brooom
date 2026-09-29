@@ -1,0 +1,38 @@
+[
+  {
+    "title": "M1 Config, scope & safety core",
+    "description": "Config loading from ~/.brooom, repo detection, workspace discovery, root/symlink validation with path-escape tests on all OSes, parallel walker and scan cache."
+  },
+  {
+    "title": "M2 Findings output & scan engine",
+    "description": "Scan command wiring, all output formats (table, tree, json, ndjson, plain, summary), NO_COLOR/TTY handling, --quiet, findings schema docs."
+  },
+  {
+    "title": "M3 Git detectors & actions",
+    "description": "stale-branch, merged-branch (ancestor + squash), worktrees detectors; delete-branch, remove-worktree, prune-worktrees actions; action executor with dry-run/confirm/apply."
+  },
+  {
+    "title": "M4 Trash, sessions & undo",
+    "description": "OS trash for Windows/macOS/Linux, quarantine and delete strategies, session manifests, undo, sessions, purge."
+  },
+  {
+    "title": "M5 AI artifacts & log detectors",
+    "description": "Embedded tool-location catalog, ai-artifacts detector (project and user-level), log-and-runtime-files detector with open-file detection."
+  },
+  {
+    "title": "M6 Build artifacts & git bloat",
+    "description": "build-artifacts detector weighted by project inactivity, large-untracked detector, git-bloat detector and git purge actions."
+  },
+  {
+    "title": "M7 Sweep, completions & release",
+    "description": "sweep presets, clean --from, roots/config commands, shell completions, update-check, GoReleaser pipeline, GitHub releases, package manager manifests (publishing disabled)."
+  },
+  {
+    "title": "M8 Landing page",
+    "description": "Astro site with Vue islands in /site, deployed to GitHub Pages."
+  },
+  {
+    "title": "M9 Hardening",
+    "description": "End-to-end tests, cross-platform edge cases, performance on large workspaces, documentation polish found by orchestration reviews."
+  }
+]

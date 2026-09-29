@@ -1,0 +1,19 @@
+# Build output
+/brooom
+/brooom.exe
+/dist/
+/bin/
+coverage.out
+*.test
+
+# Landing page
+/site/node_modules/
+/site/dist/
+/site/.astro/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

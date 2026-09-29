@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "brooom_version": "0.1.0",
+  "generated_at": "2026-09-29T20:15:00Z",
+  "scopes": [
+    {
+      "type": "repo",
+      "path": "/home/dev/src/shop"
+    }
+  ],
+  "findings": [
+    {
+      "id": "5d1f0a7c2b9e4f13",
+      "detector": "ai-artifacts",
+      "scope": {
+        "type": "repo",
+        "path": "/home/dev/src/shop"
+      },
+      "path": "/home/dev/src/shop/.aider.chat.history.md",
+      "kind": "file",
+      "tool": "aider",
+      "size_bytes": 4718592,
+      "last_modified": "2026-07-02T09:12:44Z",
+      "age_days": 89,
+      "confidence": "high",
+      "evidence": [
+        {
+          "code": "matches_pattern",
+          "message": "matches aider pattern .aider.chat.history.md",
+          "value": ".aider.chat.history.md"
+        },
+        {
+          "code": "age",
+          "message": "last modified 89 days ago",
+          "value": 89
+        }
+      ],
+      "suggested_action": {
+        "type": "trash",
+        "reason": "agent chat history not modified for 89 days"
+      },
+      "risk_flags": [
+        "gitignored"
+      ]
+    },
+    {
+      "id": "a3c9e1b27f604d8e",
+      "detector": "merged-branch",
+      "scope": {
+        "type": "repo",
+        "path": "/home/dev/src/shop"
+      },
+      "path": "/home/dev/src/shop",
+      "kind": "branch",
+      "ref": "feat/checkout-v2",
+      "size_bytes": 0,
+      "last_modified": "2026-08-11T16:40:02Z",
+      "age_days": 49,
+      "confidence": "high",
+      "evidence": [
+        {
+          "code": "squash_merged_into",
+          "message": "all commits are in origin/main (squash merge detected via patch-id)",
+          "value": "origin/main"
+        }
+      ],
+      "suggested_action": {
+        "type": "delete-branch",
+        "command": "git branch -D feat/checkout-v2",
+        "reason": "squash-merged into origin/main; -D is required because git cannot see the squash merge"
+      },
+      "risk_flags": [
+        "upstream_gone"
+      ],
+      "meta": {
+        "tip": "9f2c41d0b8e7a6c5d4e3f2a1b0c9d8e7f6a5b4c3"
+      }
+    },
+    {
+      "id": "0b8e2d4f6a1c3e57",
+      "detector": "worktrees",
+      "scope": {
+        "type": "repo",
+        "path": "/home/dev/src/shop"
+      },
+      "path": "/home/dev/src/shop-wt/agent-3",
+      "kind": "worktree",
+      "ref": "agent/fix-cart",
+      "size_bytes": 212860928,
+      "last_modified": "2026-09-27T11:03:18Z",
+      "age_days": 2,
+      "confidence": "low",
+      "evidence": [
+        {
+          "code": "worktree_dirty",
+          "message": "3 modified and 1 untracked file"
+        }
+      ],
+      "suggested_action": {
+        "type": "none",
+        "reason": "worktree has uncommitted changes"
+      },
+      "risk_flags": [
+        "worktree_dirty",
+        "recently_modified"
+      ]
+    }
+  ],
+  "totals": {
+    "findings": 3,
+    "actionable": 2,
+    "reclaimable_bytes": 4718592,
+    "by_detector": {
+      "ai-artifacts": {
+        "findings": 1,
+        "actionable": 1,
+        "reclaimable_bytes": 4718592
+      },
+      "merged-branch": {
+        "findings": 1,
+        "actionable": 1,
+        "reclaimable_bytes": 0
+      },
+      "worktrees": {
+        "findings": 1,
+        "actionable": 0,
+        "reclaimable_bytes": 0
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+[
+  { "name": "type:feature", "color": "7c3aed", "description": "New capability" },
+  { "name": "type:bug", "color": "d73a4a", "description": "Something is broken" },
+  { "name": "type:chore", "color": "8b949e", "description": "Maintenance, tooling, build" },
+  { "name": "type:docs", "color": "0e8a16", "description": "Documentation only" },
+  { "name": "type:research", "color": "fbca04", "description": "Investigation, spike" },
+  { "name": "area:core", "color": "3b82f6", "description": "Config, scope, walker, engine" },
+  { "name": "area:git", "color": "f97316", "description": "Git detectors and actions" },
+  { "name": "area:files", "color": "06b6d4", "description": "File detectors, catalogs" },
+  { "name": "area:trash", "color": "a855f7", "description": "Trash strategies, sessions, undo" },
+  { "name": "area:cli", "color": "6366f1", "description": "Commands, flags, output" },
+  { "name": "area:release", "color": "22c55e", "description": "GoReleaser, packaging, CI" },
+  { "name": "area:site", "color": "ec4899", "description": "Landing page" },
+  { "name": "platform:windows", "color": "0078d4", "description": "Windows-specific" },
+  { "name": "platform:macos", "color": "555555", "description": "macOS-specific" },
+  { "name": "platform:linux", "color": "f0c000", "description": "Linux-specific" },
+  { "name": "safety", "color": "b60205", "description": "Affects what can be modified or deleted" }
+]
