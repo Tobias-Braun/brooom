@@ -103,7 +103,8 @@ Detector names (config keys, `--detector` values): `stale-branch`,
 
 `Plan` re-validates each finding at apply time (re-resolve path, re-stat,
 re-check open files / dirty state / new commits) and returns a `Step` or an
-`ErrSkipped`-wrapped reason. `Apply` returns a `session.Entry` with undo
+`ErrSkipped`-wrapped reason; `findings.Actionable(flags, force)` decides
+whether risk flags allow acting. `Apply` returns a `session.Entry` with undo
 information. `Undo` reverses an entry where possible. The `Executor` owns
 confirmation, manifests and the summary; individual actions never prompt.
 
@@ -112,6 +113,17 @@ confirmation, manifests and the summary; individual actions never prompt.
 `Remove(path) (Record, error)` / `Restore(Record)`. Never follows symlinks.
 Cross-device moves fall back to copy + verify + delete. Windows locked files
 produce a clear error naming the file.
+
+The OS trash is selected per platform by `newOSTrasher` in
+`ostrash_unix.go` (freedesktop), `ostrash_darwin.go` and
+`ostrash_windows.go`; quarantine and delete live in `quarantine.go` and
+`delete.go`, so the platform implementations never touch each other's files.
+
+### Open files (`internal/procs`)
+
+`procs.OpenFiles(ctx, paths)` reports which paths (or directories with an
+open file below them) are open by a process. Best effort with a bounded
+timeout; `ErrUnavailable` means unknown, never "safe".
 
 ### Output (`internal/output`)
 

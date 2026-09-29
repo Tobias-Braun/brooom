@@ -34,7 +34,9 @@ meaning, bumps the version. Go types: [`internal/findings`](../internal/findings
 ## Risk flags
 
 Blocking flags force `suggested_action.type = "none"`; actions refuse to act
-on them without `--force`.
+on them without `--force`. `--force` never overrides `file_open_by_process`,
+`worktree_locked`, `current_branch` and `protected_branch`
+(`findings.Actionable(flags, force)`).
 
 | Flag | Blocking | Meaning |
 | --- | --- | --- |

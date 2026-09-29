@@ -18,6 +18,7 @@ package trash
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
@@ -79,7 +80,18 @@ type Options struct {
 // milestone issues. It is never returned by a released binary.
 var errNotImplemented = errors.New("trash: not implemented yet")
 
-// New returns the trasher for a strategy.
+// New returns the trasher for a strategy. The OS trash is implemented per
+// platform in ostrash_<os>.go (newOSTrasher), quarantine in quarantine.go and
+// permanent deletion in delete.go.
 func New(strategy config.TrashStrategy, opts Options) (Trasher, error) {
-	return nil, errNotImplemented
+	switch strategy {
+	case config.StrategyTrash, "":
+		return newOSTrasher(opts)
+	case config.StrategyQuarantine:
+		return newQuarantine(opts)
+	case config.StrategyDelete:
+		return newDeleter(opts)
+	default:
+		return nil, fmt.Errorf("unknown trash strategy %q (use trash, quarantine or delete)", strategy)
+	}
 }

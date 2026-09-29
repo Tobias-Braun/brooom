@@ -109,3 +109,19 @@ func TestNewReportSortsAndNeverNil(t *testing.T) {
 		t.Errorf("findings not sorted: %v", r.Findings)
 	}
 }
+
+func TestActionableWithForce(t *testing.T) {
+	dirty := []RiskFlag{RiskWorktreeDirty, RiskGitignored}
+	if Actionable(dirty, false) {
+		t.Error("dirty worktree must block without --force")
+	}
+	if !Actionable(dirty, true) {
+		t.Error("--force must override worktree_dirty")
+	}
+	if Actionable([]RiskFlag{RiskProtectedBranch}, true) {
+		t.Error("--force must never override protected_branch")
+	}
+	if !Actionable(nil, false) {
+		t.Error("no flags must be actionable")
+	}
+}

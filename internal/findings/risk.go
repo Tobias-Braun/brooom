@@ -63,10 +63,39 @@ var blockingRisks = map[RiskFlag]bool{
 	RiskTrackedFiles:       true,
 }
 
+// neverOverridable are blocking flags that --force does not override: acting
+// on them would break a checkout, a running process or a lock the user set on
+// purpose.
+var neverOverridable = map[RiskFlag]bool{
+	RiskFileOpen:        true,
+	RiskWorktreeLocked:  true,
+	RiskCurrentBranch:   true,
+	RiskProtectedBranch: true,
+}
+
 // Blocking reports whether the flag prevents acting on a finding unless the
 // user explicitly forces it.
 func (r RiskFlag) Blocking() bool {
 	return blockingRisks[r]
+}
+
+// ForceOverridable reports whether --force allows acting despite this flag.
+// Informational flags are trivially overridable; file_open_by_process,
+// worktree_locked, current_branch and protected_branch never are.
+func (r RiskFlag) ForceOverridable() bool {
+	return !neverOverridable[r]
+}
+
+// Actionable reports whether an action may run on a finding with these
+// flags: always when no flag is blocking, with force only when every blocking
+// flag is overridable.
+func Actionable(flags []RiskFlag, force bool) bool {
+	for _, r := range flags {
+		if r.Blocking() && (!force || !r.ForceOverridable()) {
+			return false
+		}
+	}
+	return true
 }
 
 // AllRiskFlags returns every known risk flag in a stable order. Used for
