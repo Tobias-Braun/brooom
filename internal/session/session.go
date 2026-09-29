@@ -63,7 +63,8 @@ type Entry struct {
 	// Restorable is true when `brooom undo` can reverse this entry.
 	Restorable bool `json:"restorable"`
 	// RecoveryHint is a human-readable way to recover manually, e.g.
-	// "git branch feat/x 1a2b3c4 (reflog keeps it for 90 days)".
+	// "git branch feat/x 1a2b3c4" (the commits exist until git
+	// garbage-collects unreachable objects).
 	RecoveryHint string `json:"recovery_hint,omitempty"`
 }
 

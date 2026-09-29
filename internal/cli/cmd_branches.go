@@ -11,8 +11,8 @@ func newBranchesCmd(a *app) *cobra.Command {
 		Long: `Report local branches that are merged into the base branch (including
 squash merges) or stale (no commits for a long time, upstream gone or never
 pushed). With --apply they are deleted with 'git branch -d' (-D with
---force). Deleted branches stay recoverable from the reflog; the recovery
-command is printed for every deleted branch.`,
+--force). Every deleted branch's tip commit is recorded, so 'brooom undo'
+can recreate it; the manual recovery command is printed as well.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return errNotImplemented
