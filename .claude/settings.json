@@ -1,0 +1,145 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd*)",
+      "Bash(python3*)",
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git switch*)",
+      "Bash(git pull)",
+      "Bash(git pull --ff-only)",
+      "Bash(git pull --rebase)",
+      "Bash(go test:*)",
+      "Bash(pnpm install*)",
+      "Bash(pnpm dev*)",
+      "Bash(pnpm component*)",
+      "Bash(pnpm format:all)",
+      "Bash(pnpm lint-staged)",
+      "Bash(pnpm clean*)",
+      "Bash(pnpm build*)",
+      "Bash(mkdir*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(find*)",
+      "Bash(bash -n*)",
+      "Bash(test -d*)",
+      "Bash(grep -r *)",
+      "Bash(git add *)",
+      "Bash(git remote get-url*)",
+      "Bash(git remote -v)",
+      "Bash(git remote show*)",
+      "Bash(git rev-parse*)",
+      "Bash(git branch --show-current)",
+      "Bash(git branch --list*)",
+      "Bash(git branch -a*)",
+      "Bash(git branch -r*)",
+      "Bash(git branch -vv*)",
+      "Bash(git show*)",
+      "Bash(git blame*)",
+      "Bash(git ls-files*)",
+      "Bash(git ls-tree*)",
+      "Bash(git cat-file*)",
+      "Bash(git describe*)",
+      "Bash(git shortlog*)",
+      "Bash(git reflog show*)",
+      "Bash(git worktree list*)",
+      "Bash(git config --get*)",
+      "Bash(git config --list*)",
+      "Bash(git stash list*)",
+      "Bash(git tag --list*)",
+      "Bash(git tag -l*)",
+      "Bash(basename *)",
+      "Bash(dirname *)",
+      "Bash(pwd)",
+      "Bash(wc *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(realpath *)",
+      "Bash(which *)",
+      "Bash(echo *)",
+      "Bash(sed -n *)",
+      "Bash(xargs -I{} echo*)",
+      "Bash(permission-prompts-report*)",
+      "mcp__ccd_pr__get_status",
+      "mcp__terminal__read_terminal"
+    ],
+    "defaultMode": "bypassPermissions",
+    "blockReadsOutsideWorkingDirectories": false
+  },
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '\\a'"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/bin/log-permission-prompts"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/bin/check-complexity",
+            "statusMessage": "Prüfe zyklomatische Komplexität..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/bin/check-model-author",
+            "statusMessage": "Prüfe Commit-Nachricht und PR-Beschreibung auf KI-Co-Autoren..."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*github.*__create_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/bin/check-model-author",
+            "statusMessage": "Prüfe PR-Beschreibung auf KI-Co-Autoren..."
+          }
+        ]
+      }
+    ]
+  },
+  "enableWorkflows": true,
+  "enabledPlugins": {
+    "gopls-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "figma@claude-plugins-official": true
+  },
+  "outputStyle": "Concise",
+  "sandbox": {
+    "enabled": false
+  },
+  "effortLevel": "medium",
+  "tui": "fullscreen",
+  "skipWorkflowUsageWarning": true,
+  "theme": "dark",
+  "agentPushNotifEnabled": true,
+  "skipDangerousModePermissionPrompt": true
+}
