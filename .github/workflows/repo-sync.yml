@@ -1,0 +1,47 @@
+# Keeps GitHub milestones and labels in sync with the files in .github/.
+# Milestones and labels are created or updated, never deleted, so issues that
+# reference them are never orphaned.
+name: Repo sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/milestones.json
+      - .github/labels.json
+      - .github/workflows/repo-sync.yml
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Sync labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          jq -c '.[]' .github/labels.json | while read -r label; do
+            name=$(jq -r .name <<<"$label")
+            color=$(jq -r .color <<<"$label")
+            desc=$(jq -r .description <<<"$label")
+            gh label create "$name" --repo "$GITHUB_REPOSITORY" --color "$color" --description "$desc" --force
+          done
+      - name: Sync milestones
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/milestones?state=all&per_page=100")
+          jq -c '.[]' .github/milestones.json | while read -r ms; do
+            title=$(jq -r .title <<<"$ms")
+            desc=$(jq -r .description <<<"$ms")
+            number=$(jq -r --arg t "$title" '.[] | select(.title == $t) | .number' <<<"$existing")
+            if [ -z "$number" ]; then
+              gh api "repos/$GITHUB_REPOSITORY/milestones" -f title="$title" -f description="$desc" --jq '"created #\(.number) \(.title)"'
+            else
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/milestones/$number" -f description="$desc" --jq '"updated #\(.number) \(.title)"'
+            fi
+          done
