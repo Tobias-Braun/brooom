@@ -84,7 +84,7 @@ func (a *app) runUndo(cmd *cobra.Command, args []string, af applyFlags) error {
 	if err != nil {
 		return err
 	}
-	env, err := a.undoEnv(ctx, req, m, af, newTrasherResolver(req.cfg, strategy, dirs, m.ID, a.io.Err))
+	env, err := a.undoEnv(ctx, req, af, newTrasherResolver(req.cfg, strategy, dirs, m.ID, a.io.Err))
 	if err != nil {
 		return err
 	}
@@ -159,25 +159,15 @@ func knownSessions(store *session.Store) string {
 // undoEnv builds the action environment for undo. The guard is the scope of
 // the invocation (the repository around the working directory, or --path),
 // the same resolution scan uses, including its usage error
-// outside a repository. When entries fall outside it, the user-level
-// locations of the detectors are allowed too, so sessions of `brooom ai
-// --user` can be undone from any repository.
-func (a *app) undoEnv(ctx context.Context, req *scanRequest, m *session.Manifest, af applyFlags, r *trasherResolver) (*action.Env, error) {
+// outside a repository. The user-level locations of its repositories (their
+// agent data below the home directory) are allowed too, as in a scan.
+func (a *app) undoEnv(ctx context.Context, req *scanRequest, af applyFlags, r *trasherResolver) (*action.Env, error) {
 	runner, _ := newGitRunner()
 	ts, err := a.buildTargets(ctx, req, runner)
 	if err != nil {
 		return nil, err
 	}
-	env, err := a.envForAllowed(req.cfg, runner, ts, af, r)
-	if err != nil {
-		return nil, err
-	}
-	if !anyOutsideScope(action.PlanUndo(m, env)) {
-		return env, nil
-	}
-	withUser := *req.cfg
-	withUser.Detectors.AIArtifacts.UserLocations = true
-	ts.addExtraTargets(ctx, &withUser, detect.All())
+	ts.addExtraTargets(ctx, req.cfg, detect.All())
 	return a.envForAllowed(req.cfg, runner, ts, af, r)
 }
 
@@ -187,13 +177,4 @@ func (a *app) envForAllowed(cfg *config.Config, runner gitx.Runner, ts *targetSe
 		return nil, fmt.Errorf("build scope: %w", err)
 	}
 	return newActionEnv(cfg, runner, guard, af, r), nil
-}
-
-func anyOutsideScope(steps []action.UndoStep) bool {
-	for _, s := range steps {
-		if s.OutsideScope {
-			return true
-		}
-	}
-	return false
 }

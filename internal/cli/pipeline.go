@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -86,23 +85,7 @@ func (a *app) newScanRequest(opts scanOptions) (*scanRequest, error) {
 	if opts.targetsOnly {
 		detectors = nil
 	}
-	if opts.userLocations {
-		applyUserLocations(cfg, opts.detectors)
-	}
 	return &scanRequest{opts: opts, cfg: cfg, cfgPath: path, format: format, detectors: detectors}, nil
-}
-
-// applyUserLocations turns on the user_locations switch of the detector the
-// command selected, for this run only. --user of `brooom logs` must not
-// enable the ai locations and vice versa, so the selection decides; an empty
-// selection keeps the historical ai-artifacts behaviour.
-func applyUserLocations(cfg *config.Config, selected []string) {
-	if len(selected) == 0 || slices.Contains(selected, config.DetectorAIArtifacts) {
-		cfg.Detectors.AIArtifacts.UserLocations = true
-	}
-	if slices.Contains(selected, config.DetectorLogs) {
-		cfg.Detectors.Logs.UserLocations = true
-	}
 }
 
 // loadConfig loads the config file named by --config, or the default one.

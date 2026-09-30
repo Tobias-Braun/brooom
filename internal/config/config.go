@@ -191,9 +191,11 @@ type LargeUntracked struct {
 // AIArtifacts configures the ai-artifacts detector.
 type AIArtifacts struct {
 	Enabled bool `json:"enabled"`
-	// UserLocations enables scanning the user-level well-known locations
-	// from the catalog (e.g. ~/.cache/<tool>); off by default.
-	UserLocations bool `json:"user_locations"`
+	// LegacyUserLocations is the user_locations switch of earlier releases.
+	// The data of the scanned repositories below the home directory is always
+	// included now and other user-level locations never are, so the key is
+	// read (old files keep loading) but has no effect; Deprecated names it.
+	LegacyUserLocations *bool `json:"user_locations,omitempty"`
 	// Tools enables or disables catalog tools by id, e.g. {"cursor": false}.
 	// Tools not listed are enabled.
 	Tools map[string]bool `json:"tools,omitempty"`
@@ -208,10 +210,9 @@ type AIArtifacts struct {
 // Logs configures the log-and-runtime-files detector.
 type Logs struct {
 	Enabled bool `json:"enabled"`
-	// UserLocations enables scanning the user-level well-known locations
-	// from the catalog (pip, poetry, uv, npm and Go caches, npm _logs); off
-	// by default.
-	UserLocations bool `json:"user_locations"`
+	// LegacyUserLocations is the user_locations switch of earlier releases
+	// (global pip, npm, uv and Go caches); read, never used, see Deprecated.
+	LegacyUserLocations *bool `json:"user_locations,omitempty"`
 	// Categories enables or disables entry categories by id (e.g.
 	// {"os-junk": false}). Categories not listed are enabled.
 	Categories map[string]bool `json:"categories,omitempty"`

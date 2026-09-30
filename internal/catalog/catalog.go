@@ -101,12 +101,16 @@ type Protect struct {
 
 // Tool is one tool (or one family of files, e.g. "npm") in the catalog.
 type Tool struct {
-	ID       string    `json:"id"`
-	Name     string    `json:"name"`
-	Category Category  `json:"category"`
-	Homepage string    `json:"homepage,omitempty"`
-	Entries  []Entry   `json:"entries"`
-	Protect  []Protect `json:"protect,omitempty"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Category Category `json:"category"`
+	Homepage string   `json:"homepage,omitempty"`
+	// RepoKey names how the tool derives a per-repository directory name
+	// from the repository path (see RepoPlaceholder); empty for tools that
+	// keep nothing per repository in the home directory.
+	RepoKey string    `json:"repo_key,omitempty"`
+	Entries []Entry   `json:"entries"`
+	Protect []Protect `json:"protect,omitempty"`
 }
 
 // file is the on-disk format of ai_tools.json and dev_tools.json.

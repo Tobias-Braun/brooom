@@ -217,3 +217,23 @@ func TestEnsureDirsPermissions(t *testing.T) {
 		t.Errorf("sessions mode %v, want 0700", fi.Mode().Perm())
 	}
 }
+
+// TestLegacyUserLocationsLoadWithANote: user_locations of earlier releases
+// still load; true says it is ignored, false (what `config init` wrote) says
+// nothing, and neither is written back.
+func TestLegacyUserLocationsLoadWithANote(t *testing.T) {
+	cfg, err := Load(writeTemp(t, "config.json", `{"detectors":{"ai-artifacts":{"user_locations":true},"log-and-runtime-files":{"user_locations":false}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Deprecated) != 1 || !strings.Contains(cfg.Deprecated[0], "detectors.ai-artifacts.user_locations") {
+		t.Errorf("deprecated %q", cfg.Deprecated)
+	}
+	if cfg.Detectors.AIArtifacts.LegacyUserLocations != nil || cfg.Detectors.Logs.LegacyUserLocations != nil {
+		t.Error("legacy switches must be dropped after the note")
+	}
+	full, err := Marshal(cfg, true)
+	if err != nil || strings.Contains(string(full), "user_locations") {
+		t.Errorf("user_locations written back: %v\n%s", err, full)
+	}
+}

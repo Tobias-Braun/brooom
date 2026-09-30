@@ -99,7 +99,7 @@ func loadCatalog(cfg *config.Config) (*catalog.Catalog, error) {
 // entries are skipped.
 func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Target, emit func(findings.Finding)) error {
 	switch target.Kind {
-	case scope.TargetRepo, scope.TargetProject, scope.TargetUser:
+	case scope.TargetRepo, scope.TargetProject:
 	default:
 		return nil
 	}
@@ -145,12 +145,8 @@ func verified(cands []candidate) []candidate {
 	})
 }
 
-// effectiveConfig applies the per-root and per-repo overlay for project
-// targets. User-level targets have no overlay and use the global
-// configuration, exactly like the scan pipeline computes it.
+// effectiveConfig applies the repository's .brooom.json, exactly like the
+// scan pipeline computes it.
 func effectiveConfig(env *detect.Env, target scope.Target) (*config.Config, error) {
-	if target.Kind == scope.TargetUser {
-		return env.Config, nil
-	}
 	return env.Config.ForTarget(target.Path)
 }

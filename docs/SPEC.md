@@ -184,9 +184,11 @@ Files:
 
 - **ai-artifacts**: known agent artifact locations and patterns, both
   project-level (`.claude/`, `.cursor/`, `.aider*`, `.copilot/`, run
-  `*.jsonl`, agent scratch dirs) and user-level well-known locations (tool
-  caches and logs under `~/.cache`, `~/Library/Logs`, `%LOCALAPPDATA%`). This
-  is the differentiator; the list is maintained as data (embedded JSON),
+  `*.jsonl`, agent scratch dirs) and the data a tool keeps per repository in
+  the home directory (Claude Code's `~/.claude/projects/<repository>`
+  transcripts, including those of the repository's agent worktrees). Global
+  caches that belong to no repository are not cleaned. This is the
+  differentiator; the list is maintained as data (embedded JSON),
   extensible via config, with docs on how to contribute new tool entries.
   Configuration files of these tools (settings, instructions, skills,
   commands) are never clutter.

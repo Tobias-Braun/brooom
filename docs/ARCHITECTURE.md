@@ -119,10 +119,12 @@ Rules:
   An upstream that is a local branch (`Branch.UpstreamRef` under `refs/heads/`,
   remote ".") is checked against that ref and never counts as a push.
 
-A detector that needs user-level targets (catalog locations below the home
-directory) additionally implements the optional `detect.TargetSource`
-(`ExtraTargets(ctx, cfg) ([]scope.Target, error)`). The scan pipeline calls it
-once per scan for every selected, globally enabled detector, appends the
+A detector that needs user-level targets (the per-repository catalog
+locations below the home directory) additionally implements the optional
+`detect.TargetSource` (`ExtraTargets(ctx, cfg, repos) ([]scope.Target,
+error)`, where `repos` are the repository targets of the scan). The scan
+pipeline calls it once per scan for every selected, globally enabled
+detector, appends the
 `TargetUser` targets (deduplicated by declaring detector, tool and resolved
 path, so tools sharing a base directory are all scanned; missing locations dropped) and allows
 their paths in the guard. It only declares locations and never detects.
@@ -135,16 +137,17 @@ and nested repositories are not descended into). Catalog
 `protect` patterns always win: a candidate that is protected, below a
 protected path or a directory containing one is dropped, as is a matched
 directory containing a `.git` entry at any depth (`walk.DirSummary.HasVCS`,
-gathered by the fresh size pass). User-level targets exist only when
-`detectors.ai-artifacts.user_locations` is true; findings there are entries
-inside a location, never the location itself. `tracked_files` is the only
+gathered by the fresh size pass). User-level targets are the
+repository-keyed locations of the scanned repositories (`catalog.RepoLocations`,
+#288), declared for every scan; findings there are entries inside a location,
+never the location itself. `tracked_files` is the only
 blocking flag `--force` lifts; an open file keeps the action at `none`.
 
 The `log-and-runtime-files` detector (`internal/detectors/logs`) mirrors
 `ai-artifacts` for the catalog categories `logs`, `cache`, `os-junk` and
-`crash` (toggled by `detectors.log-and-runtime-files.categories`; user-level
-targets need `detectors.log-and-runtime-files.user_locations`, set for one run
-by `brooom clean --user` for the findings it accepts). The walk, protect and nested-repository rules are the
+`crash` (toggled by `detectors.log-and-runtime-files.categories`; it has no
+user-level targets, global caches are not cleaned). The walk, protect and
+nested-repository rules are the
 same (the code is duplicated locally on purpose; extracting a shared helper is
 a later cleanup). Differences: the size pass is `Fresh` because logs are written
 in place; a recently modified `*.log` / `*.log.N` file drops from high to medium
@@ -517,7 +520,7 @@ directory, or the repository or folder `--path` names), never from the
 report's `scopes` or a finding's `scope` (a note in `--verbose` only).
 
 Three guards are built: `project` (repo or folder), `user` (the
-`detect.TargetSource` locations, only with `--user`) and their union, which the
+`detect.TargetSource` locations of the scope's repositories) and their union, which the
 actions receive. A finding claiming `scope.type` `user` must resolve in `user`,
 all others in `project`, so a finding cannot pick the wider guard. Trash
 findings resolve with `ResolveParent`, all others with `Resolve`; a trash
@@ -589,7 +592,7 @@ replaces a configured `reflog_expire` / `prune_expire` only when it is shorter
 in the restricted comparison of `now`, `never`, `N.days.ago` and `N.weeks.ago`;
 longer, equal and unparseable values are kept, so the default `2.weeks.ago`
 prune expiry is never raised. Overlays only switch things off
-(`user_locations`, `include_stale` worktrees) and never touch age thresholds,
+(`include_stale` worktrees) and never touch age thresholds,
 `RecentDays`, protected branches, the trash strategy or `AllowDelete`.
 `--detector` is intersected with the preset; naming one outside it is a usage
 error that names the preset that runs it. `config.PresetNames` and

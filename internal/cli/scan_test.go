@@ -639,6 +639,11 @@ func TestExtraTargetsFromTargetSource(t *testing.T) {
 	if src.calls.Load() != 1 {
 		t.Errorf("ExtraTargets calls = %d, want 1", src.calls.Load())
 	}
+	// The source learns the repositories of the scan, so it can declare
+	// their data only.
+	if len(src.repos) != 1 || src.repos[0] == "" {
+		t.Errorf("ExtraTargets got repositories %v, want the scanned one", src.repos)
+	}
 	users := 0
 	for _, tg := range scanned {
 		if tg.Kind == scope.TargetUser {
