@@ -60,10 +60,16 @@ function New-Site([string]$site, [string]$version, [string]$arch) {
 # Runs the installer in a fresh child process of the current PowerShell edition
 # so a throw or exit inside it cannot end this test, and returns its exit code
 # and output. Environment changes are per process.
-function Invoke-Installer([hashtable]$environment) {
+function Invoke-Installer([hashtable]$environment, [string]$command) {
   $psi = [System.Diagnostics.ProcessStartInfo]::new()
   $psi.FileName = (Get-Process -Id $PID).Path
-  $psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $installer + '"'
+  # With a command the installer is run in that session instead (for example
+  # through iex) so what it leaves behind in the caller can be inspected.
+  if ($command) {
+    $psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+  } else {
+    $psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $installer + '"'
+  }
   $psi.UseShellExecute = $false
   $psi.CreateNoWindow = $true
   $psi.RedirectStandardOutput = $true
@@ -72,7 +78,7 @@ function Invoke-Installer([hashtable]$environment) {
   # changes and no case can leak into the next one. Installer variables are
   # cleared unless a case gives them; everything else, including the real
   # processor architecture, is inherited unless a case overrides it.
-  foreach ($n in @('BROOOM_VERSION', 'BROOOM_INSTALL_DIR', 'BROOOM_DOWNLOAD_BASE', 'BROOOM_LATEST_URL')) {
+  foreach ($n in @('BROOOM_VERSION', 'BROOOM_INSTALL_DIR', 'BROOOM_DOWNLOAD_BASE', 'BROOOM_LATEST_URL', 'BROOOM_ADD_TO_PATH')) {
     if ($psi.EnvironmentVariables.ContainsKey($n)) { $psi.EnvironmentVariables.Remove($n) }
   }
   foreach ($n in $environment.Keys) { $psi.EnvironmentVariables[$n] = [string]$environment[$n] }
@@ -138,6 +144,56 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not $reported) { Fail 'installed brooom.exe does not run' }
     Write-Host "installed binary reports: $reported"
   }
+
+  Write-Host '== PATH hint is usable with iex'
+  if ($result.Output -notmatch [regex]::Escape('& ([scriptblock]::Create((irm ')) { Fail "expected a scriptblock based -AddToPath hint: $($result.Output)" }
+  if ($result.Output -notmatch '-AddToPath') { Fail "expected the -AddToPath hint: $($result.Output)" }
+
+  Write-Host '== iex leaves the caller session untouched'
+  $dirI = Join-Path $work 'install-iex'
+  $probe = @"
+`$ErrorActionPreference = 'Continue'; `$ProgressPreference = 'Continue'
+`$vars = `$null; `$leaks = `$null
+`$vars = @(Get-Variable | ForEach-Object Name)
+Get-Content -Raw '$installer' | Invoke-Expression
+`$leaks = @()
+if (`$ErrorActionPreference -ne 'Continue') { `$leaks += 'ErrorActionPreference' }
+if (`$ProgressPreference -ne 'Continue') { `$leaks += 'ProgressPreference' }
+`$leaks += @(Get-Variable | ForEach-Object Name | Where-Object { `$vars -notcontains `$_ -and @('_', '?', 'args', 'input', 'PSItem') -notcontains `$_ })
+`$leaks += @(Get-ChildItem Function: | Where-Object { @('Get-Arch', 'Get-LatestTag', 'Install-Binary') -contains `$_.Name } | ForEach-Object { 'function:' + `$_.Name })
+if (`$leaks) { Write-Host ('LEAK: ' + (`$leaks -join ',')); exit 3 }
+"@
+  $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirI }) $probe
+  if ($result.Code -ne 0 -or $result.Output -match 'LEAK') { Fail "iex leaked into the caller ($($result.Code)): $($result.Output)" }
+  if (-not (Test-Path (Join-Path $dirI 'brooom.exe'))) { Fail "iex install did not install: $($result.Output)" }
+
+  Write-Host '== hint invocation through a scriptblock'
+  $dirS = Join-Path $work 'install-scriptblock'
+  $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirS }) "& ([scriptblock]::Create((Get-Content -Raw '$installer')))"
+  if ($result.Code -ne 0 -or -not (Test-Path (Join-Path $dirS 'brooom.exe'))) { Fail "scriptblock install failed: $($result.Output)" }
+
+  Write-Host '== upgrade while brooom.exe is running'
+  # A handle allowing rename and delete but not writes mimics a running image.
+  $exeI = Join-Path $dirI 'brooom.exe'
+  $held = [System.IO.File]::Open($exeI, 'Open', 'Read', ([System.IO.FileShare]'Read, Delete'))
+  try {
+    $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirI })
+  } finally { $held.Dispose() }
+  if ($result.Code -ne 0) { Fail "upgrade over a running exe failed: $($result.Output)" }
+  if (-not (Test-Path $exeI)) { Fail 'brooom.exe missing after the upgrade' }
+
+  Write-Host '== upgrade when brooom.exe cannot be moved'
+  $held = [System.IO.File]::Open($exeI, 'Open', 'Read', ([System.IO.FileShare]'Read'))
+  try {
+    $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirI })
+  } finally { $held.Dispose() }
+  if ($result.Code -eq 0 -or $result.Output -notmatch 'close any running brooom') { Fail "expected a close-brooom message: $($result.Output)" }
+  if (-not (Test-Path $exeI)) { Fail 'the old brooom.exe must stay in place after a failed upgrade' }
+
+  Write-Host '== stale .old is cleaned up'
+  Set-Content -Path "$exeI.old" -Value 'stale'
+  $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirI })
+  if ($result.Code -ne 0 -or (Test-Path "$exeI.old")) { Fail "a stale brooom.exe.old must be removed: $($result.Output)" }
 
   Write-Host '== 32-bit PowerShell on 64-bit Windows'
   $dir32 = Join-Path $work 'install-wow64'
