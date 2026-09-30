@@ -22,15 +22,6 @@ func configEnv(t *testing.T) (cfgPath, work, home string) {
 	return filepath.Join(brooom, config.ConfigFileName), work, home
 }
 
-func mkdir(t *testing.T, parts ...string) string {
-	t.Helper()
-	p := filepath.Join(parts...)
-	if err := os.MkdirAll(p, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
