@@ -17,12 +17,29 @@ type recordingRunner struct {
 	mu    sync.Mutex
 	calls [][]string
 	fn    func(args []string) (string, error)
+	// config is the answer to the core.ignorecase lookup.
+	config    string
+	configErr error
+}
+
+// lsCalls returns the recorded ls-files calls, leaving the config lookup out.
+func (r *recordingRunner) lsCalls() [][]string {
+	var out [][]string
+	for _, c := range r.calls {
+		if c[0] == "ls-files" {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func (r *recordingRunner) Run(_ context.Context, _ string, args ...string) (string, error) {
 	r.mu.Lock()
 	r.calls = append(r.calls, append([]string(nil), args...))
 	r.mu.Unlock()
+	if args[0] == "config" {
+		return r.config, r.configErr
+	}
 	return r.fn(args)
 }
 
@@ -43,8 +60,8 @@ func TestTrackedUnderMatchesFilesAndDirectories(t *testing.T) {
 			t.Errorf("tracked[%q] = %v, want %v", rel, got[rel], w)
 		}
 	}
-	if len(rr.calls) != 1 {
-		t.Errorf("git calls = %d, want 1", len(rr.calls))
+	if n := len(rr.lsCalls()); n != 1 {
+		t.Errorf("ls-files calls = %d, want 1", n)
 	}
 }
 
@@ -60,10 +77,77 @@ func TestTrackedUnderPrefixIsNotAncestor(t *testing.T) {
 // ignoring case on case-insensitive filesystems, so a case-only difference
 // is reported as tracked (blocking) rather than missed.
 func TestTrackedUnderCaseInsensitiveErrsOnTheSafeSide(t *testing.T) {
-	rr := &recordingRunner{fn: func([]string) (string, error) { return "Docs/README.md\x00", nil }}
+	rr := &recordingRunner{config: "true\n", fn: func([]string) (string, error) { return "Docs/README.md\x00", nil }}
 	got, err := gitx.TrackedUnder(context.Background(), rr, "/repo", []string{"docs"})
 	if err != nil || !got["docs"] {
 		t.Fatalf("got %v, %v, want docs reported tracked", got, err)
+	}
+	rr.configErr = errors.New("no config")
+	got, err = gitx.TrackedUnder(context.Background(), rr, "/repo", []string{"docs"})
+	if err != nil || !got["docs"] {
+		t.Fatalf("unreadable core.ignorecase: got %v, %v, want the safe side (tracked)", got, err)
+	}
+}
+
+// TestTrackedUnderCaseSensitiveComparesExactly: with core.ignorecase false a
+// tracked Logs/x.log must not block the distinct untracked logs directory.
+func TestTrackedUnderCaseSensitiveComparesExactly(t *testing.T) {
+	rr := &recordingRunner{config: "false\n", fn: func([]string) (string, error) { return "Logs/x.log\x00", nil }}
+	got, err := gitx.TrackedUnder(context.Background(), rr, "/repo", []string{"logs", "Logs"})
+	if err != nil || got["logs"] || !got["Logs"] {
+		t.Fatalf("got %v, %v, want only Logs tracked", got, err)
+	}
+}
+
+// TestTrackedUnderNonASCIIAsksGitPerPath: a candidate in NFD (as macOS finds
+// it on disk) must be matched against the NFC index entry by git itself,
+// which normalises the pathspec; a byte-wise match in Go would report it
+// untracked.
+func TestTrackedUnderNonASCIIAsksGitPerPath(t *testing.T) {
+	const nfd = "caf\u0065\u0301/x.log"
+	const nfc = "caf\u00e9/x.log"
+	rr := &recordingRunner{config: "false\n", fn: func(args []string) (string, error) {
+		for _, a := range args[3:] {
+			if a == ":(literal)"+nfd {
+				return nfc + "\x00", nil
+			}
+		}
+		return "", nil
+	}}
+	got, err := gitx.TrackedUnder(context.Background(), rr, "/repo", []string{nfd, "plain/y.log"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got[nfd] || got["plain/y.log"] {
+		t.Fatalf("got %v, want the NFD candidate tracked and the plain one not", got)
+	}
+	if n := len(rr.lsCalls()); n != 2 {
+		t.Errorf("ls-files calls = %d, want 2 (one per non-ASCII candidate, one batch)", n)
+	}
+}
+
+// TestTrackedChunksLimits pins both limits of the chunking.
+func TestTrackedChunksLimits(t *testing.T) {
+	var many []string
+	for i := 0; i < 1000; i++ {
+		many = append(many, fmt.Sprintf("d%d", i))
+	}
+	if n := len(gitx.TrackedChunks(many)); n != 3 {
+		t.Errorf("chunks by count = %d, want 3 (400+400+200)", n)
+	}
+	long := strings.Repeat("a", 5000)
+	var big []string
+	for i := 0; i < 10; i++ {
+		big = append(big, fmt.Sprintf("%s%d", long, i))
+	}
+	chunks := gitx.TrackedChunks(big)
+	if len(chunks) != 4 {
+		t.Fatalf("chunks by bytes = %d, want 4 (3+3+3+1)", len(chunks))
+	}
+	for _, c := range chunks {
+		if len(c) > 3 {
+			t.Errorf("chunk of %d long paths exceeds the byte budget", len(c))
+		}
 	}
 }
 
@@ -76,11 +160,11 @@ func TestTrackedUnderChunksAndUsesLiteralPathspecs(t *testing.T) {
 	if _, err := gitx.TrackedUnder(context.Background(), rr, "/repo", rels); err != nil {
 		t.Fatal(err)
 	}
-	if n := len(rr.calls); n < 2 || n > 5 {
-		t.Errorf("git calls = %d for 1000 candidates, want a few chunks", n)
+	if n := len(rr.lsCalls()); n != 3 {
+		t.Errorf("ls-files calls = %d for 1000 candidates, want 3 chunks", n)
 	}
 	total := 0
-	for _, c := range rr.calls {
+	for _, c := range rr.lsCalls() {
 		total += len(c) - 3
 		for _, a := range c[3:] {
 			if !strings.HasPrefix(a, ":(literal)") {

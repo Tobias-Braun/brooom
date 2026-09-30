@@ -17,6 +17,9 @@ import (
 // The batch is built once per repository: at plan time for the whole plan,
 // and once more at the start of an apply, so the apply-time answer is live
 // (taken after the confirmation prompt) but not repeated for every item.
+// Plan and Apply deliberately share no memo: a cached plan-time answer could
+// be stale when the user confirms, so each phase pays one batch, not one call
+// per target.
 type trackedBatch struct {
 	answers map[string]trackedAnswer
 }
@@ -119,7 +122,11 @@ func (e *Executor) batchTrackedForItems(ctx context.Context, items []Item) conte
 }
 
 // batchTrackedForFindings collects the trash targets of cands that survive
-// the static checks and batches their tracked check.
+// the static checks and batches their tracked check. The batch is only a
+// pre-warm of the per-step check: a target this function skips or resolves
+// differently from the step path is simply absent from the batch and falls
+// back to the single check, so drift between the two costs speed, never
+// correctness.
 func (e *Executor) batchTrackedForFindings(ctx context.Context, cands []findings.Finding) context.Context {
 	var paths []string
 	for _, f := range cands {
