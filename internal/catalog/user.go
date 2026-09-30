@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/Tobias-Braun/brooom/internal/scope"
 )
 
 // maxUserDepth bounds how deep below Base a "**" in a user pattern may
@@ -355,23 +357,17 @@ func (u *UserProtection) coveredBy(abs string) bool {
 	return false
 }
 
-// resolveExisting resolves symlinks (and junctions on Windows) in the longest
-// existing prefix of p and re-appends the part that does not exist, so
-// locations that are not there yet still get a comparable spelling. When
-// nothing can be resolved p is returned unchanged.
+// resolveExisting resolves symlinks and Windows junctions in the existing
+// prefix of p and keeps the part that does not exist, so locations that are
+// not there yet still get a comparable spelling. It uses the scope guard's
+// resolver, because filepath.EvalSymlinks no longer follows junctions (Go
+// 1.23, winsymlink=1) and the trash action compares guard-resolved paths.
+// When p cannot be resolved it is returned unchanged.
 func resolveExisting(p string) string {
-	rest := ""
-	for cur := p; ; {
-		if r, err := filepath.EvalSymlinks(cur); err == nil {
-			return filepath.Join(r, rest)
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return p
-		}
-		rest = filepath.Join(filepath.Base(cur), rest)
-		cur = parent
+	if r, err := scope.Resolve(p); err == nil {
+		return r
 	}
+	return p
 }
 
 func (r userProtect) covers(abs string, fold bool) bool {
