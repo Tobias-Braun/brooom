@@ -185,8 +185,11 @@ func TestCacheRepoResolvesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spy.calls != 1 {
-		t.Errorf("first lookup used %d git processes, want 1 combined rev-parse", spy.calls)
+	// One combined rev-parse plus the version check guarding every newly
+	// opened repository.
+	const firstLookup = 2
+	if spy.calls != firstLookup {
+		t.Errorf("first lookup used %d git processes, want %d", spy.calls, firstLookup)
 	}
 	for i := 0; i < 5; i++ {
 		again, err := cache.Repo(ctx, repo.Dir)
@@ -194,7 +197,7 @@ func TestCacheRepoResolvesOnce(t *testing.T) {
 			t.Fatalf("lookup %d: %p, %v; want the shared handle", i, again, err)
 		}
 	}
-	if spy.calls != 1 {
+	if spy.calls != firstLookup {
 		t.Errorf("repeated lookups spawned git: %d processes in total", spy.calls)
 	}
 }
