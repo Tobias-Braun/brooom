@@ -248,6 +248,25 @@ plus `[]Problem` for unreadable, corrupt or unsupported-version files, so one
 damaged file never hides the history. `brooom sessions [id] [--format json]`
 is the read-only view.
 
+#### macOS Trash and undo
+
+On macOS items are trashed with `NSFileManager trashItemAtURL` through
+`osascript -l JavaScript` (no Automation permission needed, Finder's "Put
+Back" works, other volumes use their `.Trashes`). Paths are passed as one JSON
+argv element, never interpolated into the script. If `osascript` is missing,
+times out or fails for an item, the item is moved into `~/.Trash` under a
+Finder-style unique name (`file 2.txt`); those items have no Put Back
+metadata, and if `~/.Trash` is not writable the error suggests
+`--trash-strategy quarantine` (never a silent permanent delete).
+
+Since macOS 10.15 `~/.Trash` is protected by TCC: without Full Disk Access
+the terminal gets `Operation not permitted` when it inspects or moves items
+inside the Trash. Trashing works, but `brooom undo` may not be able to restore
+them: it then reports "macOS denies access to the Trash; restore with Finder
+'Put Back' or grant Full Disk Access to your terminal" and leaves the item
+where it is. The trasher also implements the optional `trash.BatchTrasher`
+(`RemoveMany`, up to 100 paths per `osascript` call).
+
 ### Open files (`internal/procs`)
 
 `procs.OpenFiles(ctx, paths)` reports which paths (or directories with an
