@@ -13,23 +13,649 @@
           "kind": "file",
           "confidence": "high",
           "min_age_days": 14,
-          "description": "Debug logs npm leaves behind after a failed command",
+          "description": "Debug logs npm leaves behind after a failed command; the next run writes new ones",
           "source": "https://docs.npmjs.com/cli/v10/using-npm/logging"
         },
         {
           "scope": "user",
-          "patterns": ["~/.npm/_logs"],
+          "patterns": ["~/.npm/_logs/*.log"],
+          "os": ["linux", "darwin"],
           "kind": "file",
           "confidence": "high",
           "min_age_days": 14,
-          "description": "Timestamped npm debug logs in the npm cache",
+          "description": "Timestamped npm debug logs in the npm cache directory; npm writes new ones on every run",
           "source": "https://docs.npmjs.com/cli/v10/using-npm/logging"
+        },
+        {
+          "scope": "user",
+          "patterns": ["%LOCALAPPDATA%/npm-cache/_logs/*.log"],
+          "os": ["windows"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Timestamped npm debug logs in the npm cache directory; npm writes new ones on every run",
+          "source": "https://docs.npmjs.com/cli/v10/using-npm/logging"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "project",
+          "patterns": [".npmrc"],
+          "reason": "npm configuration and credentials, never clutter"
         }
       ]
     },
     {
-      "id": "macos-finder",
-      "name": "macOS Finder",
+      "id": "yarn",
+      "name": "Yarn",
+      "category": "logs",
+      "homepage": "https://yarnpkg.com",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": ["yarn-error.log"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Error log Yarn writes when a command fails; rewritten by the next failure",
+          "source": "https://classic.yarnpkg.com/en/docs/cli/"
+        },
+        {
+          "scope": "project",
+          "patterns": ["yarn-debug.log*"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Debug log Yarn writes when a command fails; rewritten by the next failure",
+          "source": "https://classic.yarnpkg.com/en/docs/cli/"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "project",
+          "patterns": [".yarnrc*"],
+          "reason": "Yarn configuration, never clutter"
+        }
+      ]
+    },
+    {
+      "id": "pnpm",
+      "name": "pnpm",
+      "category": "logs",
+      "homepage": "https://pnpm.io",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": ["pnpm-debug.log*"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Debug log pnpm writes when a command fails; rewritten by the next failure",
+          "source": "https://pnpm.io/cli/install"
+        }
+      ]
+    },
+    {
+      "id": "lerna",
+      "name": "Lerna",
+      "category": "logs",
+      "homepage": "https://lerna.js.org",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": ["lerna-debug.log*"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Debug log Lerna writes when a command fails; rewritten by the next failure",
+          "source": "https://lerna.js.org/docs/troubleshooting"
+        }
+      ]
+    },
+    {
+      "id": "jvm",
+      "name": "Java virtual machine",
+      "category": "logs",
+      "homepage": "https://openjdk.org",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": ["hs_err_pid*.log"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Fatal error report the HotSpot JVM writes to the working directory when it crashes",
+          "source": "https://docs.oracle.com/en/java/javase/21/troubleshoot/troubleshoot-system-crashes.html"
+        },
+        {
+          "scope": "project",
+          "patterns": ["replay_pid*.log"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Compiler replay data the JVM writes after a compiler crash; only useful for a bug report",
+          "source": "https://docs.oracle.com/en/java/javase/21/docs/specs/man/java.html"
+        }
+      ]
+    },
+    {
+      "id": "rotated-logs",
+      "name": "Rotated logs",
+      "category": "logs",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": ["*.log.[0-9]*", "*.log.gz"],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 14,
+          "description": "Rotated or compressed log archives (logrotate, log4j, winston); the live *.log file is deliberately not matched and archived history may still be wanted",
+          "source": "https://man7.org/linux/man-pages/man8/logrotate.8.html"
+        }
+      ]
+    },
+    {
+      "id": "pytest",
+      "name": "pytest",
+      "category": "cache",
+      "homepage": "https://pytest.org",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".pytest_cache"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "pytest cache of last-failed and node ids; recreated by the next run",
+          "source": "https://docs.pytest.org/en/stable/how-to/cache.html"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "project",
+          "patterns": ["pytest.ini"],
+          "reason": "pytest configuration, never clutter"
+        }
+      ]
+    },
+    {
+      "id": "mypy",
+      "name": "mypy",
+      "category": "cache",
+      "homepage": "https://mypy-lang.org",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".mypy_cache"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Incremental type check cache; rebuilt by the next mypy run",
+          "source": "https://mypy.readthedocs.io/en/stable/config_file.html#confval-cache_dir"
+        }
+      ]
+    },
+    {
+      "id": "ruff",
+      "name": "Ruff",
+      "category": "cache",
+      "homepage": "https://docs.astral.sh/ruff",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".ruff_cache"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Lint and format result cache; rebuilt by the next ruff run",
+          "source": "https://docs.astral.sh/ruff/settings/#cache-dir"
+        }
+      ]
+    },
+    {
+      "id": "hypothesis",
+      "name": "Hypothesis",
+      "category": "cache",
+      "homepage": "https://hypothesis.readthedocs.io",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".hypothesis"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Example database of failing inputs; regenerated by running the tests, though saved failures are lost",
+          "source": "https://hypothesis.readthedocs.io/en/latest/database.html"
+        }
+      ]
+    },
+    {
+      "id": "nox",
+      "name": "Nox",
+      "category": "cache",
+      "homepage": "https://nox.thea.codes",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".nox"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Virtual environments of nox sessions; recreated by the next nox run",
+          "source": "https://nox.thea.codes/en/stable/usage.html"
+        }
+      ]
+    },
+    {
+      "id": "eslint",
+      "name": "ESLint",
+      "category": "cache",
+      "homepage": "https://eslint.org",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".eslintcache"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Lint result cache; rebuilt by the next eslint run with --cache",
+          "source": "https://eslint.org/docs/latest/use/command-line-interface#--cache"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "project",
+          "patterns": [".eslintrc*"],
+          "reason": "ESLint configuration, never clutter"
+        }
+      ]
+    },
+    {
+      "id": "stylelint",
+      "name": "Stylelint",
+      "category": "cache",
+      "homepage": "https://stylelint.io",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".stylelintcache"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Lint result cache; rebuilt by the next stylelint run with --cache",
+          "source": "https://stylelint.io/user-guide/usage/options#cache"
+        }
+      ]
+    },
+    {
+      "id": "jest",
+      "name": "Jest",
+      "category": "cache",
+      "homepage": "https://jestjs.io",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".jest-cache"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Custom Jest cacheDirectory; rebuilt by the next jest run. The default jest_<hash> cache lives in the OS temp directory and cannot be matched safely, so it is omitted",
+          "source": "https://jestjs.io/docs/configuration#cachedirectory-string"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "project",
+          "patterns": ["jest.config.*"],
+          "reason": "Jest configuration, never clutter"
+        }
+      ]
+    },
+    {
+      "id": "sass",
+      "name": "Sass",
+      "category": "cache",
+      "homepage": "https://sass-lang.com",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".sass-cache"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Compiled stylesheet cache of legacy Ruby Sass; rebuilt by the next compile",
+          "source": "https://sass-lang.com/documentation/cli/legacy"
+        }
+      ]
+    },
+    {
+      "id": "coverage",
+      "name": "Test coverage",
+      "category": "cache",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": ["coverage"],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 14,
+          "description": "Coverage report directory of Jest, c8 and Istanbul; regenerated by the next coverage run, but the name is generic so confidence is medium",
+          "source": "https://jestjs.io/docs/configuration#coveragedirectory-string"
+        },
+        {
+          "scope": "project",
+          "patterns": [".nyc_output"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Raw coverage data of nyc; regenerated by the next coverage run",
+          "source": "https://github.com/istanbuljs/nyc#configuration-files"
+        },
+        {
+          "scope": "project",
+          "patterns": ["htmlcov"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "HTML report of coverage.py; regenerated by coverage html",
+          "source": "https://coverage.readthedocs.io/en/latest/cmd.html#html-reporting-coverage-html"
+        },
+        {
+          "scope": "project",
+          "patterns": [".coverage"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Data file of coverage.py; regenerated by the next coverage run",
+          "source": "https://coverage.readthedocs.io/en/latest/config.html#run-data-file"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "project",
+          "patterns": [".coveragerc"],
+          "reason": "coverage.py configuration, never clutter"
+        }
+      ]
+    },
+    {
+      "id": "pip",
+      "name": "pip",
+      "category": "cache",
+      "homepage": "https://pip.pypa.io",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": ["$XDG_CACHE_HOME/pip"],
+          "os": ["linux"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Download and wheel cache of pip; pip rebuilds it and downloads packages again on demand",
+          "source": "https://pip.pypa.io/en/stable/topics/caching/"
+        },
+        {
+          "scope": "user",
+          "patterns": ["~/Library/Caches/pip"],
+          "os": ["darwin"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Download and wheel cache of pip; pip rebuilds it and downloads packages again on demand",
+          "source": "https://pip.pypa.io/en/stable/topics/caching/"
+        },
+        {
+          "scope": "user",
+          "patterns": ["%LOCALAPPDATA%/pip/Cache"],
+          "os": ["windows"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Download and wheel cache of pip; pip rebuilds it and downloads packages again on demand",
+          "source": "https://pip.pypa.io/en/stable/topics/caching/"
+        }
+      ]
+    },
+    {
+      "id": "poetry",
+      "name": "Poetry",
+      "category": "cache",
+      "homepage": "https://python-poetry.org",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": ["$XDG_CACHE_HOME/pypoetry/cache", "$XDG_CACHE_HOME/pypoetry/artifacts"],
+          "os": ["linux"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Package download and artifact caches of Poetry (virtualenvs are not matched); Poetry downloads and builds packages again on demand",
+          "source": "https://python-poetry.org/docs/configuration/#cache-dir"
+        },
+        {
+          "scope": "user",
+          "patterns": ["~/Library/Caches/pypoetry/cache", "~/Library/Caches/pypoetry/artifacts"],
+          "os": ["darwin"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Package download and artifact caches of Poetry (virtualenvs are not matched); Poetry downloads and builds packages again on demand",
+          "source": "https://python-poetry.org/docs/configuration/#cache-dir"
+        },
+        {
+          "scope": "user",
+          "patterns": ["%LOCALAPPDATA%/pypoetry/Cache/cache", "%LOCALAPPDATA%/pypoetry/Cache/artifacts"],
+          "os": ["windows"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Package download and artifact caches of Poetry (virtualenvs are not matched); Poetry downloads and builds packages again on demand",
+          "source": "https://python-poetry.org/docs/configuration/#cache-dir"
+        }
+      ]
+    },
+    {
+      "id": "uv",
+      "name": "uv",
+      "category": "cache",
+      "homepage": "https://docs.astral.sh/uv",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": ["$XDG_CACHE_HOME/uv"],
+          "os": ["linux"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Package and wheel cache of uv; uv downloads and builds packages again on demand",
+          "source": "https://docs.astral.sh/uv/concepts/cache/"
+        },
+        {
+          "scope": "user",
+          "patterns": ["$XDG_CACHE_HOME/uv"],
+          "os": ["darwin"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Package and wheel cache of uv; uv downloads and builds packages again on demand",
+          "source": "https://docs.astral.sh/uv/concepts/cache/"
+        },
+        {
+          "scope": "user",
+          "patterns": ["%LOCALAPPDATA%/uv/cache"],
+          "os": ["windows"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Package and wheel cache of uv; uv downloads and builds packages again on demand",
+          "source": "https://docs.astral.sh/uv/concepts/cache/"
+        }
+      ]
+    },
+    {
+      "id": "yarn-cache",
+      "name": "Yarn package cache",
+      "category": "cache",
+      "homepage": "https://yarnpkg.com",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": ["$XDG_CACHE_HOME/yarn"],
+          "os": ["linux"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Downloaded package archives of Yarn; Yarn downloads them again on demand",
+          "source": "https://classic.yarnpkg.com/en/docs/cli/cache"
+        },
+        {
+          "scope": "user",
+          "patterns": ["~/Library/Caches/Yarn"],
+          "os": ["darwin"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Downloaded package archives of Yarn; Yarn downloads them again on demand",
+          "source": "https://classic.yarnpkg.com/en/docs/cli/cache"
+        },
+        {
+          "scope": "user",
+          "patterns": ["%LOCALAPPDATA%/Yarn/Cache"],
+          "os": ["windows"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Downloaded package archives of Yarn; Yarn downloads them again on demand",
+          "source": "https://classic.yarnpkg.com/en/docs/cli/cache"
+        },
+        {
+          "scope": "user",
+          "patterns": ["~/.yarn/berry/cache"],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Global package archive cache of Yarn Berry; Yarn downloads the archives again on demand",
+          "source": "https://yarnpkg.com/configuration/yarnrc#cacheFolder"
+        }
+      ]
+    },
+    {
+      "id": "pnpm-store",
+      "name": "pnpm store",
+      "category": "cache",
+      "homepage": "https://pnpm.io",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": ["$XDG_DATA_HOME/pnpm/store"],
+          "os": ["linux"],
+          "kind": "dir",
+          "confidence": "low",
+          "min_age_days": 14,
+          "description": "Content-addressable package store of pnpm; files are hard-linked into node_modules, so clearing it costs a full re-download on the next install",
+          "source": "https://pnpm.io/cli/store"
+        },
+        {
+          "scope": "user",
+          "patterns": ["~/Library/pnpm/store"],
+          "os": ["darwin"],
+          "kind": "dir",
+          "confidence": "low",
+          "min_age_days": 14,
+          "description": "Content-addressable package store of pnpm; files are hard-linked into node_modules, so clearing it costs a full re-download on the next install",
+          "source": "https://pnpm.io/cli/store"
+        },
+        {
+          "scope": "user",
+          "patterns": ["%LOCALAPPDATA%/pnpm/store"],
+          "os": ["windows"],
+          "kind": "dir",
+          "confidence": "low",
+          "min_age_days": 14,
+          "description": "Content-addressable package store of pnpm; files are hard-linked into node_modules, so clearing it costs a full re-download on the next install",
+          "source": "https://pnpm.io/cli/store"
+        }
+      ]
+    },
+    {
+      "id": "npm-cache",
+      "name": "npm cache",
+      "category": "cache",
+      "homepage": "https://www.npmjs.com",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": ["~/.npm/_cacache"],
+          "os": ["linux"],
+          "kind": "dir",
+          "confidence": "low",
+          "min_age_days": 14,
+          "description": "Content-addressable download cache of npm; npm downloads packages again on demand (npm cache clean --force is the official way)",
+          "source": "https://docs.npmjs.com/cli/v10/commands/npm-cache"
+        },
+        {
+          "scope": "user",
+          "patterns": ["~/.npm/_cacache"],
+          "os": ["darwin"],
+          "kind": "dir",
+          "confidence": "low",
+          "min_age_days": 14,
+          "description": "Content-addressable download cache of npm; npm downloads packages again on demand (npm cache clean --force is the official way)",
+          "source": "https://docs.npmjs.com/cli/v10/commands/npm-cache"
+        },
+        {
+          "scope": "user",
+          "patterns": ["%LOCALAPPDATA%/npm-cache/_cacache"],
+          "os": ["windows"],
+          "kind": "dir",
+          "confidence": "low",
+          "min_age_days": 14,
+          "description": "Content-addressable download cache of npm; npm downloads packages again on demand (npm cache clean --force is the official way)",
+          "source": "https://docs.npmjs.com/cli/v10/commands/npm-cache"
+        }
+      ]
+    },
+    {
+      "id": "go-build",
+      "name": "Go build cache",
+      "category": "cache",
+      "homepage": "https://go.dev",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": ["$XDG_CACHE_HOME/go-build"],
+          "os": ["linux"],
+          "kind": "dir",
+          "confidence": "low",
+          "min_age_days": 14,
+          "description": "Build and test result cache of the go command; rebuilt on demand, and go clean -cache is the official alternative",
+          "source": "https://pkg.go.dev/cmd/go#hdr-Remove_object_files_and_cached_files"
+        },
+        {
+          "scope": "user",
+          "patterns": ["~/Library/Caches/go-build"],
+          "os": ["darwin"],
+          "kind": "dir",
+          "confidence": "low",
+          "min_age_days": 14,
+          "description": "Build and test result cache of the go command; rebuilt on demand, and go clean -cache is the official alternative",
+          "source": "https://pkg.go.dev/cmd/go#hdr-Remove_object_files_and_cached_files"
+        },
+        {
+          "scope": "user",
+          "patterns": ["%LOCALAPPDATA%/go-build"],
+          "os": ["windows"],
+          "kind": "dir",
+          "confidence": "low",
+          "min_age_days": 14,
+          "description": "Build and test result cache of the go command; rebuilt on demand, and go clean -cache is the official alternative",
+          "source": "https://pkg.go.dev/cmd/go#hdr-Remove_object_files_and_cached_files"
+        }
+      ]
+    },
+    {
+      "id": "macos",
+      "name": "macOS",
       "category": "os-junk",
       "entries": [
         {
@@ -38,8 +664,136 @@
           "kind": "file",
           "confidence": "high",
           "min_age_days": 0,
-          "description": "Finder view metadata that is recreated on demand",
+          "description": "Finder view metadata; recreated when the folder is opened again",
           "source": "https://en.wikipedia.org/wiki/.DS_Store"
+        },
+        {
+          "scope": "project",
+          "patterns": ["._*"],
+          "kind": "file",
+          "confidence": "low",
+          "min_age_days": 0,
+          "description": "AppleDouble sidecar of extended attributes; only clutter on non-macOS volumes (exFAT, FAT, network shares) and normally absent on APFS, so review before removing",
+          "source": "https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats"
+        }
+      ]
+    },
+    {
+      "id": "windows",
+      "name": "Windows Explorer",
+      "category": "os-junk",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": ["Thumbs.db", "ehthumbs.db"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 0,
+          "description": "Explorer thumbnail cache; recreated when the folder is opened again",
+          "source": "https://en.wikipedia.org/wiki/Windows_thumbnail_cache"
+        },
+        {
+          "scope": "project",
+          "patterns": ["desktop.ini"],
+          "kind": "file",
+          "confidence": "low",
+          "min_age_days": 0,
+          "description": "Explorer folder customisation; may carry a folder icon or localized name the user set, so review before removing",
+          "source": "https://learn.microsoft.com/en-us/windows/win32/shell/how-to-customize-folders-with-desktop-ini"
+        }
+      ]
+    },
+    {
+      "id": "editors",
+      "name": "Editor swap and backup files",
+      "category": "os-junk",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": ["*.swp", "*.swo"],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 0,
+          "description": "Vim swap files; a fresh one means the file is open in an editor or a session crashed with unsaved changes, so files open in a process are flagged",
+          "source": "https://vimhelp.org/recover.txt.html"
+        },
+        {
+          "scope": "project",
+          "patterns": ["*~"],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 0,
+          "description": "Backup copies left by Emacs, gedit and Vim",
+          "source": "https://www.gnu.org/software/emacs/manual/html_node/emacs/Backup.html"
+        },
+        {
+          "scope": "project",
+          "patterns": [".#*"],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 0,
+          "description": "Emacs lock files, present while the file is being edited",
+          "source": "https://www.gnu.org/software/emacs/manual/html_node/emacs/Interlocking.html"
+        },
+        {
+          "scope": "project",
+          "patterns": ["#*#"],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 0,
+          "description": "Emacs auto-save files, present while the file is being edited or after a crash",
+          "source": "https://www.gnu.org/software/emacs/manual/html_node/emacs/Auto-Save-Files.html"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "project",
+          "patterns": [".editorconfig", ".gitignore"],
+          "reason": "Project configuration is never clutter, which also guards over-broad extra patterns"
+        }
+      ]
+    },
+    {
+      "id": "crash-dumps",
+      "name": "Crash dumps",
+      "category": "crash",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": ["core", "core.[0-9]*"],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 14,
+          "description": "Unix core dump of a crashed process; only useful for debugging that crash",
+          "source": "https://man7.org/linux/man-pages/man5/core.5.html"
+        },
+        {
+          "scope": "project",
+          "patterns": ["*.dmp"],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 14,
+          "description": "Windows minidump of a crashed process; only useful for debugging that crash",
+          "source": "https://learn.microsoft.com/en-us/windows/win32/dxtecharts/crash-dump-analysis"
+        },
+        {
+          "scope": "project",
+          "patterns": ["*.stackdump"],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 14,
+          "description": "Cygwin and MSYS stack dump of a crashed process",
+          "source": "https://cygwin.com/cygwin-ug-net/using-cygwinenv.html"
+        },
+        {
+          "scope": "user",
+          "patterns": ["~/Library/Logs/DiagnosticReports/node-20[0-9][0-9]-*", "~/Library/Logs/DiagnosticReports/java-20[0-9][0-9]-*", "~/Library/Logs/DiagnosticReports/python*-20[0-9][0-9]-*", "~/Library/Logs/DiagnosticReports/go-20[0-9][0-9]-*", "~/Library/Logs/DiagnosticReports/Code-20[0-9][0-9]-*", "~/Library/Logs/DiagnosticReports/Code Helper*-20[0-9][0-9]-*"],
+          "os": ["darwin"],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 14,
+          "description": "macOS crash reports of dev tools only (node, java, python, go, VS Code), matched by process prefix and date; other apps' reports are never matched",
+          "source": "https://developer.apple.com/documentation/xcode/acquiring-crash-reports-and-diagnostic-logs"
         }
       ]
     }
