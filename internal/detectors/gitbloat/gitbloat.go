@@ -96,14 +96,13 @@ func (d *Detector) detect(ctx context.Context, env *detect.Env, target scope.Tar
 	for _, f := range fs {
 		emit(f)
 	}
+	// The findings are emitted before the error is returned: a failed blob
+	// scan is reported as a scan error next to everything else that was found.
 	blobs, err := d.blobFindings(ctx, env, info)
-	if err != nil {
-		return err
-	}
 	for _, f := range blobs {
 		emit(f)
 	}
-	return nil
+	return err
 }
 
 // resolve returns nil (and no error) for targets the detector silently

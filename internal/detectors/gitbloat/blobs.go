@@ -24,10 +24,10 @@ const (
 
 // blob is one large object found in history.
 type blob struct {
-	sha  string
-	size int64
-	// path is the first path that referenced the blob.
-	path string
+	SHA  string `json:"sha"`
+	Size int64  `json:"size"`
+	// Path is the first path that referenced the blob.
+	Path string `json:"path,omitempty"`
 }
 
 // blobScan is the memoized result of one history scan.
@@ -36,6 +36,9 @@ type blobScan struct {
 	blobs []blob
 	// total is the number of such blobs before capping.
 	total int
+	// failure is why the scan gave up (timeout, git error); empty on success.
+	// Failures are memoized per repository handle but never cached on disk.
+	failure string
 }
 
 // parseBlobLine parses one `cat-file --batch-check` line of the format
@@ -50,9 +53,9 @@ func parseBlobLine(line string) (b blob, ok bool) {
 	if err != nil {
 		return blob{}, false
 	}
-	b = blob{sha: fields[1], size: size}
+	b = blob{SHA: fields[1], Size: size}
 	if len(fields) == 4 {
-		b.path = fields[3]
+		b.Path = fields[3]
 	}
 	return b, true
 }
@@ -66,7 +69,7 @@ func scanBlobs(ctx context.Context, r gitx.Runner, dir string, min int64) (blobS
 		[]string{"rev-list", "--objects", "--all"},
 		[]string{"cat-file", "--batch-check=%(objecttype) %(objectname) %(objectsize) %(rest)"},
 		func(line string) {
-			if b, ok := parseBlobLine(line); ok && b.size >= min {
+			if b, ok := parseBlobLine(line); ok && b.Size >= min {
 				found = append(found, b)
 			}
 		})
@@ -74,10 +77,10 @@ func scanBlobs(ctx context.Context, r gitx.Runner, dir string, min int64) (blobS
 		return blobScan{}, err
 	}
 	sort.Slice(found, func(i, j int) bool {
-		if found[i].size != found[j].size {
-			return found[i].size > found[j].size
+		if found[i].Size != found[j].Size {
+			return found[i].Size > found[j].Size
 		}
-		return found[i].sha < found[j].sha
+		return found[i].SHA < found[j].SHA
 	})
 	total := len(found)
 	if total > maxBlobFindings {
@@ -87,9 +90,14 @@ func scanBlobs(ctx context.Context, r gitx.Runner, dir string, min int64) (blobS
 }
 
 // blobFindings reports the largest blobs in history, for information only:
-// Brooom never rewrites history, so there is no suggested action. Timeout and
-// other scan failures drop the blob findings without failing the target, while
-// cancellation of the parent context is returned.
+// Brooom never rewrites history, so there is no suggested action.
+//
+// A timeout or other scan failure does not fail the target's other findings,
+// but it is returned as an error (alongside no blob findings) so it shows up
+// as a scan error: "no large blobs" must be distinguishable from "gave up".
+// Successful scans are cached on disk (see blobcache.go), so the expensive
+// history walk is repeated only after refs or packs change. Cancellation of
+// the parent context is returned as the context error.
 func (d *Detector) blobFindings(ctx context.Context, env *detect.Env, info *repoInfo) ([]findings.Finding, error) {
 	min := info.cfg.LargeBlobBytes
 	if min <= 0 {
@@ -97,21 +105,16 @@ func (d *Detector) blobFindings(ctx context.Context, env *detect.Env, info *repo
 	}
 	key := "git-bloat/blobs/" + strconv.FormatInt(min, 10)
 	scan, err := memoized(info.repo, key, func() (blobScan, error) {
-		sctx, cancel := context.WithTimeout(ctx, d.blobTimeout)
-		defer cancel()
-		s, err := scanBlobs(sctx, info.repo.Runner, info.repo.Dir, min)
-		if err != nil && ctx.Err() == nil {
-			// Timeout or a scan failure (for example missing objects in a
-			// partial clone): report nothing rather than something wrong.
-			return blobScan{}, nil
-		}
-		return s, err
+		return d.cachedScan(ctx, env, info, min)
 	})
 	if err == nil {
 		err = ctx.Err()
 	}
 	if err != nil {
 		return nil, err
+	}
+	if scan.failure != "" {
+		return nil, fmt.Errorf("git-bloat: large blob scan of %s incomplete (%s); large blobs were not checked", info.repo.Dir, scan.failure)
 	}
 	out := make([]findings.Finding, 0, len(scan.blobs))
 	for _, b := range scan.blobs {
@@ -120,13 +123,45 @@ func (d *Detector) blobFindings(ctx context.Context, env *detect.Env, info *repo
 	return out, nil
 }
 
+// cachedScan returns the on-disk result when refs, packs and threshold are
+// unchanged and otherwise scans the history under the blob timeout, storing a
+// successful result. A failure other than parent cancellation is returned as
+// blobScan.failure, not as an error.
+func (d *Detector) cachedScan(ctx context.Context, env *detect.Env, info *repoInfo, min int64) (blobScan, error) {
+	var file, ckey string
+	if env.CacheDir != "" {
+		if k, ok := blobCacheKey(ctx, info, min); ok {
+			ckey, file = k, blobCachePath(env.CacheDir, info.repo.Common)
+			if s, hit := loadBlobCache(file, ckey, min); hit {
+				return s, nil
+			}
+		}
+	}
+	sctx, cancel := context.WithTimeout(ctx, d.blobTimeout)
+	defer cancel()
+	s, err := scanBlobs(sctx, info.repo.Runner, info.repo.Dir, min)
+	if err != nil {
+		if ctx.Err() != nil {
+			return blobScan{}, err
+		}
+		if sctx.Err() != nil {
+			return blobScan{failure: "timed out after " + d.blobTimeout.String()}, nil
+		}
+		return blobScan{failure: err.Error()}, nil
+	}
+	if file != "" {
+		storeBlobCache(file, ckey, s)
+	}
+	return s, nil
+}
+
 func blobFinding(info *repoInfo, b blob, total int) findings.Finding {
-	f := info.base(findings.KindGitLargeBlob, b.sha)
+	f := info.base(findings.KindGitLargeBlob, b.SHA)
 	f.Confidence = findings.ConfidenceLow
 	f.Evidence = append(f.Evidence, findings.Evidence{
 		Code:    "large_blob",
-		Message: fmt.Sprintf("blob %s is %s (threshold %s)", shortSHA(b.sha), humanBytes(b.size), humanBytes(info.cfg.LargeBlobBytes)),
-		Value:   b.size,
+		Message: fmt.Sprintf("blob %s is %s (threshold %s)", shortSHA(b.SHA), humanBytes(b.Size), humanBytes(info.cfg.LargeBlobBytes)),
+		Value:   b.Size,
 	})
 	if total > maxBlobFindings {
 		f.Evidence = append(f.Evidence, findings.Evidence{
@@ -135,9 +170,9 @@ func blobFinding(info *repoInfo, b blob, total int) findings.Finding {
 			Value:   total,
 		})
 	}
-	f.Meta = map[string]string{"blob_size": strconv.FormatInt(b.size, 10)}
-	if b.path != "" {
-		f.Meta["blob_path"] = b.path
+	f.Meta = map[string]string{"blob_size": strconv.FormatInt(b.Size, 10)}
+	if b.Path != "" {
+		f.Meta["blob_path"] = b.Path
 	}
 	f.SuggestedAction = findings.SuggestedAction{
 		Type:   findings.ActionNone,

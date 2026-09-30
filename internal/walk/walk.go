@@ -293,4 +293,8 @@ type DirSummary struct {
 	// itself and survives the cache, so callers that must refuse trees
 	// holding a repository need no second traversal.
 	HasGit bool
+	// Incomplete is true when some directory or entry of the tree could not
+	// be read (permissions, I/O errors). The sizes are then a lower bound and
+	// must not be presented as the size of the tree.
+	Incomplete bool
 }

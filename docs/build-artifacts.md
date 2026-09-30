@@ -75,6 +75,14 @@ A failing `git ls-files` counts as tracked. The `trash` action re-checks this at
 apply time. Targets that are plain project folders have no git state: no
 `tracked_files`, no `last_commit`, and inactivity uses file times only.
 
+## Unreadable directories
+
+When part of the artifact cannot be read (for example a `chmod 000`
+subdirectory), `walk.DirSummary.Incomplete` is set and the size is only a lower
+bound. The finding is kept, with evidence `unreadable` and the suggested action
+`none` (reason "cannot read part of the directory"), because the `trash` action
+refuses such directories at apply time anyway.
+
 ## Claim matcher
 
 `buildartifacts.Claims(dir)` returns a pure predicate `func(rel string, isDir

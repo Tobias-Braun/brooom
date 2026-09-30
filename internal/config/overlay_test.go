@@ -389,3 +389,14 @@ func TestLoadRepoConfigSizeCap(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// A relative target cannot be matched against the absolute roots, so it must
+// be rejected instead of silently skipping the root overlay.
+func TestForTargetRejectsRelativeTarget(t *testing.T) {
+	cfg := Default()
+	for _, target := range []string{"repo", "./repo", "../repo", ""} {
+		if _, err := cfg.ForTarget("", target); err == nil || !strings.Contains(err.Error(), "not an absolute path") {
+			t.Errorf("ForTarget(%q): want absolute-path error, got %v", target, err)
+		}
+	}
+}

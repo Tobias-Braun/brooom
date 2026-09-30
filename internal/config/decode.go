@@ -36,6 +36,9 @@ func decodeStrict(label string, data []byte, dst any) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
+	if err := checkDuplicateKeys(data); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
 	if err := checkKeys(generic, reflect.TypeOf(dst).Elem(), ""); err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
@@ -283,4 +286,53 @@ func editDistance(a, b string) int {
 		prev = cur
 	}
 	return prev[len(rb)]
+}
+
+// checkDuplicateKeys rejects an object that repeats a key at any depth.
+// encoding/json keeps the last value silently, which would let an untrusted
+// .brooom.json hide a tightening key behind a later loosened copy (or the
+// reverse), so the raw token stream is walked instead of the parsed value.
+// data has already been parsed successfully, so token errors cannot occur
+// and are only passed on defensively.
+func checkDuplicateKeys(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	return dupValue(dec, "")
+}
+
+// dupValue consumes one JSON value from dec, checking every object below it.
+func dupValue(dec *json.Decoder, path string) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return nil
+	}
+	if delim == '[' {
+		for i := 0; dec.More(); i++ {
+			if err := dupValue(dec, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+		_, _ = dec.Token() // closing ]
+		return nil
+	}
+	seen := map[string]bool{}
+	for dec.More() {
+		kt, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		key, _ := kt.(string)
+		if seen[key] {
+			return fmt.Errorf("duplicate key %q", joinPath(path, key))
+		}
+		seen[key] = true
+		if err := dupValue(dec, joinPath(path, key)); err != nil {
+			return err
+		}
+	}
+	_, _ = dec.Token() // closing }
+	return nil
 }

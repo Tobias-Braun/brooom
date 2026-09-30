@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -425,14 +426,123 @@ func TestBlobScanTimeoutKeepsOtherFindings(t *testing.T) {
 	d := New()
 	d.blobTimeout = time.Nanosecond
 	got, err := f.run(t, d, repoTarget(r.Dir))
-	if err != nil {
-		t.Fatalf("timeout must not fail the target: %v", err)
+	// The gap is reported as a (non-fatal) scan error, never silently.
+	if err == nil || !strings.Contains(err.Error(), "large blob scan") || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("timeout must be reported, got %v", err)
 	}
 	if len(byKind(got, findings.KindGitLargeBlob)) != 0 {
 		t.Errorf("blob findings after timeout: %+v", got)
 	}
 	if len(byKind(got, findings.KindGitObjects)) != 1 {
 		t.Errorf("other findings lost: %+v", got)
+	}
+}
+
+// rescan drops the per-scan memoization so the next run behaves like a new
+// brooom invocation that shares only the on-disk cache.
+func (f *fixture) rescan() { f.env.Repos = gitx.NewCache(f.runner) }
+
+// tamperBlobCache marks the cached scan so a later run shows whether it was
+// served from disk (the marker survives) or rescanned (it is gone). The
+// history walk itself runs through gitx.Pipe and cannot be counted with the
+// runner.
+func tamperBlobCache(t *testing.T, cacheDir string) {
+	t.Helper()
+	files, _ := filepath.Glob(filepath.Join(cacheDir, "gitbloat-blobs-*.json"))
+	if len(files) != 1 {
+		t.Fatalf("want one blob cache file, got %v", files)
+	}
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = []byte(strings.ReplaceAll(string(data), "data/big.bin", "from/cache.bin"))
+	if err := os.WriteFile(files[0], data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func blobPaths(fs []findings.Finding) []string {
+	var out []string
+	for _, x := range byKind(fs, findings.KindGitLargeBlob) {
+		out = append(out, x.Meta["blob_path"])
+	}
+	return out
+}
+
+func TestBlobScanCachedOnDisk(t *testing.T) {
+	r := largeBlobRepo(t)
+	f := newFixture(t, tune{blob: 4096}, r.Dir)
+	f.env.CacheDir = testutil.ResolvedTempDir(t)
+	first, err := f.run(t, New(), repoTarget(r.Dir))
+	if err != nil || len(blobPaths(first)) != 2 || blobPaths(first)[0] != "data/big.bin" {
+		t.Fatalf("first run: %v, %v", err, blobPaths(first))
+	}
+	tamperBlobCache(t, f.env.CacheDir)
+
+	f.rescan()
+	second, err := f.run(t, New(), repoTarget(r.Dir))
+	if err != nil || blobPaths(second)[0] != "from/cache.bin" {
+		t.Fatalf("unchanged repo must be served from the cache: %v, %v", err, blobPaths(second))
+	}
+
+	t.Run("new commit invalidates", func(t *testing.T) {
+		r.WriteFile("data/new.bin", strings.Repeat("n", 9000))
+		r.CommitAll("more", testutil.BaseTime.Add(2*time.Hour))
+		f.rescan()
+		got, err := f.run(t, New(), repoTarget(r.Dir))
+		if err != nil || len(blobPaths(got)) != 3 || blobPaths(got)[1] != "data/new.bin" {
+			t.Fatalf("%v, %v", err, blobPaths(got))
+		}
+		tamperBlobCache(t, f.env.CacheDir)
+	})
+	t.Run("threshold invalidates", func(t *testing.T) {
+		f.cfg.Detectors.GitBloat.LargeBlobBytes = 8000
+		f.rescan()
+		got, err := f.run(t, New(), repoTarget(r.Dir))
+		if err != nil || len(blobPaths(got)) != 2 || blobPaths(got)[1] != "data/new.bin" {
+			t.Fatalf("%v, %v", err, blobPaths(got))
+		}
+	})
+}
+
+func TestBlobScanFailureIsNotCached(t *testing.T) {
+	r := largeBlobRepo(t)
+	f := newFixture(t, tune{blob: 4096}, r.Dir)
+	f.env.CacheDir = testutil.ResolvedTempDir(t)
+	slow := New()
+	slow.blobTimeout = time.Nanosecond
+	if _, err := f.run(t, slow, repoTarget(r.Dir)); err == nil {
+		t.Fatal("timeout must be reported")
+	}
+	f.rescan()
+	got, err := f.run(t, New(), repoTarget(r.Dir))
+	if err != nil || len(byKind(got, findings.KindGitLargeBlob)) != 2 {
+		t.Fatalf("a failed scan must not poison the cache: %v %+v", err, got)
+	}
+}
+
+func TestBlobCacheRejectsBadFiles(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "c.json")
+	good := `{"version":1,"key":"k","total":1,"blobs":[{"sha":"abc","size":5000}]}`
+	for name, tc := range map[string]struct {
+		content string
+		want    bool
+	}{
+		"valid":       {good, true},
+		"other key":   {strings.Replace(good, `"k"`, `"z"`, 1), false},
+		"old version": {strings.Replace(good, `"version":1`, `"version":0`, 1), false},
+		"below min":   {strings.Replace(good, "5000", "10", 1), false},
+		"empty sha":   {strings.Replace(good, `"abc"`, `""`, 1), false},
+		"corrupt":     {"{nope", false},
+	} {
+		if err := os.WriteFile(file, []byte(tc.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := loadBlobCache(file, "k", 4096); ok != tc.want {
+			t.Errorf("%s: ok = %v, want %v", name, ok, tc.want)
+		}
 	}
 }
 

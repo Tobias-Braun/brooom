@@ -311,6 +311,8 @@ func TestClaimedDirsAreNotDuplicated(t *testing.T) {
 	h.big("node_modules/pkg/huge.bin")
 	h.big("node_modules/pkg/other.bin")
 	// Untracked but not ignored: git lists each file, claims must still apply.
+	// dist is only a build artifact next to a project marker.
+	h.repo.WriteFile("package.json", "{}")
 	h.big("dist/bundle.js")
 	h.big(".agent/runs/run.jsonl")
 	h.big("keep/plain.bin")
@@ -325,6 +327,23 @@ func TestClaimedDirsAreNotDuplicated(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestClaimsFollowBuildArtifactsMatcher pins that the claims are the
+// build-artifacts matcher itself: every directory it reports is skipped here
+// (including catalog entries missing from any name list, like Pods), and a
+// directory with a common name but no project marker is not claimed because
+// build-artifacts would not report it either.
+func TestClaimsFollowBuildArtifactsMatcher(t *testing.T) {
+	h := newHarness(t)
+	h.repo.WriteFile("ios/Podfile", "x")
+	h.big("ios/Pods/dep/blob.bin")
+	h.repo.WriteFile("app/package.json", "{}")
+	h.big("app/dist/bundle.js")
+	h.big("loose/dist/bundle.js") // no marker next to it: not a build artifact
+	h.big("keep/plain.bin")
+
+	h.want(h.run(), "loose/dist/bundle.js", "keep/plain.bin")
 }
 
 func TestClaimsOnlyApplyWhenOtherDetectorIsEnabled(t *testing.T) {

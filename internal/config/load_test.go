@@ -114,6 +114,9 @@ func TestLoadRejects(t *testing.T) {
 		{"version too new", `{"version": 2}`, "upgrade Brooom"},
 		{"version zero", `{"version": 0}`, "version 0 is invalid"},
 		{"version negative", `{"version": -1}`, "invalid"},
+		{"duplicate top-level key", `{"update_check": true, "update_check": false}`, `duplicate key "update_check"`},
+		{"duplicate nested key", `{"thresholds":{"min_age_days":1,"min_age_days":2}}`, `duplicate key "thresholds.min_age_days"`},
+		{"duplicate key in array element", `{"roots":[{"path":"/a"},{"path":"/b","path":"/c"}]}`, `duplicate key "roots[1].path"`},
 		{"validation failure", `{"output":{"format":"xml"}}`, "output.format"},
 	}
 	for _, tt := range tests {

@@ -154,8 +154,10 @@ scan).
   (`git filter-repo`), which Brooom does not do. At most the 20 largest per
   repository are reported (evidence `truncated`), with `size_bytes` 0. The scan
   pipes `rev-list --objects --all` into `cat-file --batch-check` (`gitx.Pipe`)
-  and is bounded by a 20 s deadline per repository; on timeout the blob
-  findings are dropped and everything else is still reported.
+  and is bounded by a 20 s deadline per repository; on timeout or failure the
+  blob findings are dropped, everything else is still reported and the gap
+  is returned as a scan error (never silence). Successful scans are cached in
+  the scan cache dir, keyed by ref tips, HEAD, pack set and threshold.
 - All findings sit on the repository's main worktree and measurements are
   memoized per common dir (`gitx.Repo.Memo`), so every linked worktree target
   yields the same IDs and does not rescan.
