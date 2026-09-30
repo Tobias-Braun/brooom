@@ -109,6 +109,59 @@ winget and AUR stay `skip_upload: true` even after the tap and bucket are
 enabled: they need separate accounts and manual review (the winget PR is
 reviewed by Microsoft, the first AUR push needs the package registered).
 
+## Site releases
+
+The landing page (`site/`) is released independently of the CLI by
+`.github/workflows/site.yml`. It is not hosted on GitHub Pages: the
+maintainer's infrastructure runs the site image and deploys new versions with
+FluxCD.
+
+- Every push to `main` that touches `site/**` (or the workflow) runs the checks
+  and then releases the next version: the patch part of the highest `site-v*`
+  tag is increased, and the first release is `1.0.0`. A manual run
+  (`workflow_dispatch`) can increase the minor or major part instead.
+- The image is `ghcr.io/tobias-braun/brooom-site`, built for `linux/amd64` from
+  `site/Dockerfile`: an unprivileged nginx serving the static build on port
+  8080, with `/healthz` for probes. Each release pushes the tags `X.Y.Z`,
+  `sha-<commit>` and `latest`, and then creates the git tag `site-vX.Y.Z`.
+- Site releases create no GitHub Release, so `/releases/latest` (read by the
+  install scripts and the update check) always points at the CLI, and the
+  `site-v*` tags never trigger the CLI release workflow (`v*`).
+- The public origin is baked into the image at build time from the repository
+  variable `SITE_URL` (Settings > Secrets and variables > Actions > Variables).
+  Without it, canonical and Open Graph URLs point to `http://localhost:4321`
+  and the release job shows a warning.
+
+A FluxCD image policy that follows the releases and ignores `latest` and the
+`sha-*` tags:
+
+```yaml
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: brooom-site
+spec:
+  image: ghcr.io/tobias-braun/brooom-site
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: brooom-site
+spec:
+  imageRepositoryRef:
+    name: brooom-site
+  filterTags:
+    pattern: '^\d+\.\d+\.\d+$'
+  policy:
+    semver:
+      range: '>=1.0.0'
+```
+
+One-time setup: after the first release, make the `brooom-site` package public
+(package settings on GitHub) or give Flux an image pull secret, set `SITE_URL`,
+and disable GitHub Pages in the repository settings.
+
 ## Identity
 
 All commits for this project use `Tobias Braun <mail@tobi-braun.com>`: the

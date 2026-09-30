@@ -1,0 +1,158 @@
+name: Site
+
+# Checks the landing page (site/) on pull requests and publishes it as a
+# container image to ghcr.io when a change lands on main. The maintainer's
+# infrastructure deploys new image versions with FluxCD; see "Site releases" in
+# docs/releasing.md for the tag scheme and a matching ImagePolicy.
+#
+# Every release gets the next semantic version after the highest site-v* tag
+# (patch by default, minor or major via a manual run). The image is pushed as
+# X.Y.Z, sha-<commit> and latest, and only then is the git tag site-vX.Y.Z
+# created. No GitHub Release is created: the CLI's install scripts and update
+# check read /releases/latest, and site-v* tags do not match the v* filter of
+# the CLI release workflow.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/site.yml'
+  pull_request:
+    paths:
+      - 'site/**'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version part to increase
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: read
+
+# Releases share one group and are never cancelled mid-flight, so two merges
+# can never compute the same version. Pull request runs have their own groups
+# and may be superseded freely.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('site-pr-{0}', github.event.number) || 'site-release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/tobias-braun/brooom-site
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: site/.nvmrc
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+
+  image:
+    name: Image
+    needs: check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Build the image (not pushed)
+        run: docker build --tag "$IMAGE:pr" site
+      - name: Serve it and probe
+        run: |
+          docker run --detach --name site --publish 8080:8080 "$IMAGE:pr"
+          trap 'docker logs site; docker rm --force site' EXIT
+          for _ in $(seq 1 20); do
+            curl --fail --silent http://localhost:8080/healthz && break
+            sleep 1
+          done
+          curl --fail --silent --show-error http://localhost:8080/healthz
+          curl --fail --silent --show-error http://localhost:8080/ | grep -q '<title>'
+
+  release:
+    name: Release
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the site-v* tag
+      packages: write # push the image to ghcr.io
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # All tags are needed to find the highest released version. The
+          # token is not kept in .git/config: the tag is created through the
+          # API below instead of git push.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump || 'patch' }}
+        run: |
+          last=$(git tag --list 'site-v*' --sort=-v:refname | head -n 1)
+          if [ -z "$last" ]; then
+            next=1.0.0
+          else
+            IFS=. read -r major minor patch <<< "${last#site-v}"
+            case "$BUMP" in
+              major) next="$((major + 1)).0.0" ;;
+              minor) next="$major.$((minor + 1)).0" ;;
+              *) next="$major.$minor.$((patch + 1))" ;;
+            esac
+          fi
+          echo "Releasing site $next (previous: ${last:-none})"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+      - name: Warn when SITE_URL is unset
+        if: vars.SITE_URL == ''
+        run: echo "::warning::The repository variable SITE_URL is not set, so canonical and Open Graph URLs in this image point to http://localhost:4321."
+      - name: Log in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build and push the image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          docker buildx build --platform linux/amd64 --push \
+            --build-arg SITE_URL="$SITE_URL" \
+            --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.version="$VERSION" \
+            --label org.opencontainers.image.created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --label org.opencontainers.image.title="brooom-site" \
+            --tag "$IMAGE:$VERSION" \
+            --tag "$IMAGE:sha-${GITHUB_SHA::7}" \
+            --tag "$IMAGE:latest" \
+            site
+      - name: Log out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io
+      - name: Tag the release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/site-v$VERSION" -f sha="$GITHUB_SHA" > /dev/null
+          {
+            echo "### Site $VERSION"
+            echo
+            echo "- Image: \`$IMAGE:$VERSION\`"
+            echo "- Git tag: \`site-v$VERSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -34,11 +34,15 @@ conventions every change follows.
 ## Working on the site
 
 The landing page is an Astro project in `site/` (Node 22 LTS, see
-`site/.nvmrc`) and is deployed to GitHub Pages from `main`.
+`site/.nvmrc`). Every change merged to `main` is published as a container
+image to ghcr.io (see "Site releases" in [docs/releasing.md](docs/releasing.md)).
 
 ```sh
-cd site && npm ci && npm run dev   # local dev server under /brooom/
-npm run check && npm run build     # what CI runs
+cd site && npm ci --ignore-scripts && npm run dev   # local dev server on http://localhost:4321/
+npm run check && npm test && npm run build   # what CI runs
+
+# The image CI publishes: nginx serving the built site on port 8080.
+docker build -t brooom-site site && docker run --rm -p 8080:8080 brooom-site
 ```
 
 Keep the copy accurate to `docs/SPEC.md` and the README: no invented
