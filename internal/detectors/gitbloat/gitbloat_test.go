@@ -702,6 +702,70 @@ func TestShallowCloneAndAlternates(t *testing.T) {
 
 func toSlash(p string) string { return strings.ReplaceAll(p, string(os.PathSeparator), "/") }
 
+// TestBlobCacheKeyCoversHistoryFiles: files that change the reachable history
+// without touching a ref or pack (alternates, shallow, grafts) and a
+// refs/replace entry must change the cache key, so a stale scan is not served.
+func TestBlobCacheKeyCoversHistoryFiles(t *testing.T) {
+	r := largeBlobRepo(t)
+	f := newFixture(t, tune{blob: 4096}, r.Dir)
+	common := mustCommon(t, r)
+	info := func() *repoInfo {
+		repo, err := f.env.Repo(context.Background(), r.Dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &repoInfo{repo: repo}
+	}
+	keyOf := func() string {
+		k, ok := blobCacheKey(context.Background(), info(), 4096)
+		if !ok {
+			t.Fatal("no cache key")
+		}
+		return k
+	}
+	base := keyOf()
+	if keyOf() != base {
+		t.Fatal("key is not stable for an unchanged repository")
+	}
+	tests := []struct {
+		name  string
+		apply func()
+	}{
+		{"shallow", func() { testutil.WriteFile(t, common, "shallow", r.Head()+"\n") }},
+		{"grafts", func() { testutil.WriteFile(t, common, "info/grafts", r.Head()+"\n") }},
+		{"alternates", func() { testutil.WriteFile(t, common, "objects/info/alternates", t.TempDir()+"\n") }},
+		{"replace ref", func() { r.Git("update-ref", "refs/replace/"+r.Head(), r.Head()) }},
+	}
+	for _, tc := range tests {
+		tc.apply()
+		got := keyOf()
+		if got == base {
+			t.Errorf("%s did not change the cache key", tc.name)
+		}
+		base = got
+	}
+}
+
+// TestBlobScanFailureReportedOncePerRepository pins that a memoized scan
+// failure is not repeated for every linked worktree target of the repository.
+func TestBlobScanFailureReportedOncePerRepository(t *testing.T) {
+	r := largeBlobRepo(t)
+	wt := r.AddWorktree("linked", "feat")
+	f := newFixture(t, tune{blob: 4096}, r.Dir, wt)
+	d := New()
+	d.blobTimeout = time.Nanosecond
+
+	var failures int
+	for _, dir := range []string{r.Dir, wt, r.Dir} {
+		if _, err := f.run(t, d, repoTarget(dir)); err != nil {
+			failures++
+		}
+	}
+	if failures != 1 {
+		t.Fatalf("scan failure reported %d times for one repository, want 1", failures)
+	}
+}
+
 func TestMissingGitBinary(t *testing.T) {
 	r := testutil.NewRepo(t)
 	f := newFixture(t, tune{loose: 1}, r.Dir)

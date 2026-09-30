@@ -52,6 +52,23 @@ func TestDirSizeWithOversizedCacheWritesNothing(t *testing.T) {
 	}
 }
 
+// TestOversizedTreeIsNeverMarshalled pins that a tree known to exceed the cache
+// limit does not pay for encoding its document on every scan.
+func TestOversizedTreeIsNeverMarshalled(t *testing.T) {
+	root, opts := cachedTree(t)
+	smallCacheLimit(t, 64)
+	var calls int
+	orig := marshalCache
+	marshalCache = func(cf cacheFile) ([]byte, error) { calls++; return orig(cf) }
+	t.Cleanup(func() { marshalCache = orig })
+	for range 3 {
+		mustSize(t, root, opts)
+	}
+	if calls != 0 {
+		t.Errorf("marshalled %d times although the document cannot fit", calls)
+	}
+}
+
 func TestUnchangedScanDoesNotRewriteCacheButTouchesIt(t *testing.T) {
 	root, opts := cachedTree(t)
 	mustSize(t, root, opts)

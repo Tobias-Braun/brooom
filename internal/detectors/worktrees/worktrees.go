@@ -88,6 +88,7 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	if err != nil {
 		return err
 	}
+	s.prefetchOpen(ctx, wts)
 	for _, wt := range wts {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -133,6 +134,8 @@ type scan struct {
 	hasBase  bool
 	squash   bool
 	branches map[string]gitx.Branch
+	// open is the batched open-file check, nil until prefetchOpen ran.
+	open *openBatch
 }
 
 // newScan prepares the shared state. It returns nil (and no error) when the

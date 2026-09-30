@@ -173,7 +173,11 @@ scan).
   and is bounded by a 20 s deadline per repository; on timeout or failure the
   blob findings are dropped, everything else is still reported and the gap
   is returned as a scan error (never silence). Successful scans are cached in
-  the scan cache dir, keyed by ref tips, HEAD, pack set and threshold.
+  the scan cache dir, keyed by ref tips (`refs/replace` included), HEAD, pack set,
+  the alternates, shallow and grafts files and the threshold; objects inside an
+  alternate store are not fingerprinted (documented limitation). A failed scan
+  is memoized per repository and reported by the first target only, so linked
+  worktrees do not repeat the error.
 - All findings sit on the repository's main worktree and measurements are
   memoized per common dir (`gitx.Repo.Memo`), so every linked worktree target
   yields the same IDs and does not rescan.
@@ -355,7 +359,9 @@ an older or unparseable git is an error (`ErrGitTooOld`). On git older than
 `<common>/worktrees/<id>/locked` and treats a worktree whose state cannot be
 determined as locked.
 
-The `worktrees` detector protects active worktrees the same way: a candidate
+The `worktrees` detector protects active worktrees the same way (one batched
+`procs.OpenFiles` call per scan covers all worktrees, so macOS runs lsof once
+instead of once per candidate): a candidate
 containing the current directory or open by a process gets the blocking
 `file_open_by_process` flag (evidence `worktree_in_use`, action `none`), and a
 candidate modified within `thresholds.recent_days` (fresh mtimes) gets
@@ -672,7 +678,8 @@ a deadline the budget is `procs.Budget(n)` (3 s plus 50 ms per additional path,
 at most 30 s).
 
 The `DirSize` cache file is never written when the marshalled document exceeds
-`maxCacheBytes` (an existing file is removed) and not rewritten when no
+`maxCacheBytes` (an existing file is removed; a cheap lower bound of the encoded
+size skips the marshal for trees that are certainly too large) and not rewritten when no
 directory was re-read or dropped (its mtime is refreshed instead, as the "last
 used" stamp). `walk.PruneCache` deletes `dirsize-v1-*.json` files unused for 30
 days, unreadable or oversized ones, those of vanished roots (`CheckRoots`) and

@@ -39,7 +39,7 @@ are rebuilt by the next scan, so this frees disk space only.`,
 			return a.runPurge(cmd, apply, yes)
 		},
 	}
-	cmd.Flags().BoolVar(&apply, "apply", false, "delete the listed sessions (default is a dry run)")
+	cmd.Flags().BoolVar(&apply, "apply", false, "delete the listed sessions and cache files (default is a dry run)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation (for scripts)")
 	return cmd
 }
@@ -62,13 +62,22 @@ func (a *app) runPurge(cmd *cobra.Command, apply, yes bool) error {
 	if err != nil {
 		return err
 	}
-	a.printPurgeListing(listing, days, now)
-	staleCache := a.listStaleCache(dirs, now)
+	// The cache listing is gathered first (printed after the sessions) so the
+	// session header can say "nothing to purge" only when that is true for
+	// both kinds of files.
+	staleCache := a.findStaleCache(dirs, now)
+	a.printPurgeListing(listing, days, now, len(staleCache) > 0)
+	a.printStaleCache(staleCache)
 	if len(listing.Expired) == 0 && len(staleCache) == 0 {
 		return nil
 	}
 	if !apply {
-		fmt.Fprintf(a.io.Out, "dry run: nothing was deleted; re-run '%s' to delete them permanently\n", a.applyCommand(cmd))
+		what := "them"
+		if len(listing.Expired) == 0 {
+			// Only caches are listed; do not talk about sessions.
+			what = "the stale cache files"
+		}
+		fmt.Fprintf(a.io.Out, "dry run: nothing was deleted; re-run '%s' to delete %s permanently\n", a.applyCommand(cmd), what)
 		return nil
 	}
 	if !yes {
@@ -85,17 +94,21 @@ func (a *app) runPurge(cmd *cobra.Command, apply, yes bool) error {
 	return errors.Join(a.applyPurge(dirs, listing, now), a.applyCachePrune(staleCache))
 }
 
-// listStaleCache prints the stale directory size caches and returns them. A
-// cache that cannot be listed is a note, never an error: it is only a
-// performance artefact.
-func (a *app) listStaleCache(dirs config.Dirs, now time.Time) []walk.StaleCacheFile {
+// findStaleCache lists the stale directory size caches. A cache that cannot be
+// listed is a note, never an error: it is only a performance artefact.
+func (a *app) findStaleCache(dirs config.Dirs, now time.Time) []walk.StaleCacheFile {
 	stale, err := walk.ListStaleCache(dirs.Cache, walk.PruneOptions{Now: now, CheckRoots: true})
 	if err != nil {
 		fmt.Fprintf(a.io.Err, "brooom: cannot list the scan cache: %v\n", err)
 		return nil
 	}
+	return stale
+}
+
+// printStaleCache prints the listing of stale caches.
+func (a *app) printStaleCache(stale []walk.StaleCacheFile) {
 	if len(stale) == 0 {
-		return nil
+		return
 	}
 	var total int64
 	fmt.Fprintln(a.io.Out, "stale scan cache files:")
@@ -104,7 +117,6 @@ func (a *app) listStaleCache(dirs config.Dirs, now time.Time) []walk.StaleCacheF
 		fmt.Fprintf(a.io.Out, "  %s  %s  (%s)\n", filepath.Base(f.Path), output.FormatSize(f.SizeBytes), f.Reason)
 	}
 	fmt.Fprintf(a.io.Out, "total: %d cache file(s), %s\n", len(stale), output.FormatSize(total))
-	return stale
 }
 
 // applyCachePrune deletes the listed cache files and reports the result.
@@ -126,16 +138,21 @@ func (a *app) applyCachePrune(stale []walk.StaleCacheFile) error {
 
 // printPurgeListing prints the expired sessions with age and size and the
 // total, or why there is nothing to list.
-func (a *app) printPurgeListing(l *trash.QuarantineListing, days int, now time.Time) {
+func (a *app) printPurgeListing(l *trash.QuarantineListing, days int, now time.Time, cacheStale bool) {
 	for _, p := range l.Skipped {
 		fmt.Fprintf(a.io.Err, "brooom: skipping %s: a symlink is never followed or deleted\n", output.Sanitize(p))
 	}
+	// With stale cache files listed below, "nothing to purge" would be false.
+	nothing := "nothing to purge"
+	if cacheStale {
+		nothing = "no session to purge"
+	}
 	switch {
 	case days == 0:
-		fmt.Fprintln(a.io.Out, "quarantine retention is 0 (never expire); nothing to purge")
+		fmt.Fprintf(a.io.Out, "quarantine retention is 0 (never expire); %s\n", nothing)
 		return
 	case len(l.Expired) == 0:
-		fmt.Fprintf(a.io.Out, "nothing to purge: no quarantined session is older than %d days\n", days)
+		fmt.Fprintf(a.io.Out, "%s: no quarantined session is older than %d days\n", nothing, days)
 		return
 	}
 	fmt.Fprintf(a.io.Out, "quarantined sessions older than %d days:\n", days)

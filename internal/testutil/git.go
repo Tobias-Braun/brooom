@@ -37,6 +37,13 @@ func NewRepo(t testing.TB) *Repo {
 	dir := ResolvedTempDir(t)
 	r := &Repo{t: t, Dir: dir, home: ResolvedTempDir(t)}
 	r.Git("init", "-q", "-b", "main")
+	// Every commit lets git start automatic maintenance, which may detach
+	// and keep rewriting files below .git after the commit command returned.
+	// Tests that snapshot the repository (issue #180: a snapshot of .git
+	// differed right after the fixture was built) must not race with such a
+	// background process, and the tests decide themselves when to gc.
+	r.Git("config", "gc.auto", "0")
+	r.Git("config", "maintenance.auto", "false")
 	r.WriteFile("README.md", "# test\n")
 	r.CommitAll("initial commit", BaseTime)
 	return r
