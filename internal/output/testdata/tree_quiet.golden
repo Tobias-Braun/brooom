@@ -1,0 +1,19 @@
+/work/shop
+├── node_modules  1.2 GB  1y  high  build-artifacts  trash
+│   └── .cache  500.0 MB  1mo  low  build-artifacts  trash
+├── packages/storefront/.next/cache/webpack/client-production  88.0 MB  6mo  high  build-artifacts  trash
+├── /work/shop-wt2  10.0 MB  2mo  high  worktrees  remove-worktree
+├── [git-packs]  3.0 MB  -  medium  git-bloat  git-gc
+├── dist  1.0 MB  -  medium  build-artifacts  trash
+├── /work/gone-wt  0 B
+│   └── [worktree-missing]  -  -  high  worktrees  prune-worktrees
+├── /work/shop-wt  52.0 MB  3d  low  worktrees  none  dirty  (flagged: worktree has uncommitted changes)
+├── [branch] feat/old-cart  -  3mo  high  merged-branch  delete-branch  gone
+└── [branch] feat/wip  -  12d  medium  merged-branch  none  unpushed,no-remote  (flagged: unpushed)
+
+/home/dev/.cache/tool
+└── logs/a&b<c>.log  4.1 kB  1mo  high  ai-artifacts  trash  outside
+
+
+Scan errors (1):
+  git-bloat /work/shop: git count-objects failed

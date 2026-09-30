@@ -9,6 +9,35 @@ The schema is versioned by `schema_version` (currently **1**). Fields may be
 added without a version bump; removing or renaming fields, or changing their
 meaning, bumps the version. Go types: [`internal/findings`](../internal/findings).
 
+A machine-readable [JSON Schema](findings.schema.json) (draft 2020-12) describes
+the `Report`. It is kept in sync with the Go types by a reflection test
+(`internal/output/schema_test.go`): every JSON field must be documented in the
+schema and `required` must match the fields without `omitempty`. Objects stay
+open (`additionalProperties`) on purpose, so reports from newer producers with
+added fields still validate.
+
+## Output formats
+
+`--format` selects how a report is rendered:
+
+| Format | Content |
+| --- | --- |
+| `table` | Human-readable, grouped by detector. |
+| `tree` | Findings in their directory structure, one tree per scope. |
+| `json` | The full `Report`; arrays are never `null`. |
+| `ndjson` | One compact `Finding` per line, streamable; errors are not part of it. |
+| `plain` | Paths only, one per line, for `xargs`. |
+| `summary` | Counts and reclaimable bytes per detector. |
+
+`plain` is deliberately conservative because its output is piped into other
+tools. It lists only actionable findings of kind `file`, `dir`, `worktree` and
+`branch` (branches as `<repo path>TAB<branch>`). Flagged findings, the git
+maintenance kinds and `worktree-missing` are omitted, and findings whose path
+contains a line break are skipped with an error; use `--format json` for
+everything. Worktree paths are listed for inspection only: removing them with
+`rm` leaves git metadata behind (run `git worktree prune` or use
+`brooom worktrees --apply`).
+
 ## Finding
 
 | Field | Type | Description |

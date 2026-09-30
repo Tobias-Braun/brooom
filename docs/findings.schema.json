@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Tobias-Braun/brooom/main/docs/findings.schema.json",
+  "title": "Brooom findings report",
+  "description": "The report printed by `brooom scan --format json`. Kept in sync with internal/findings by TestSchemaMatchesGoTypes. additionalProperties is open on purpose: fields may be added without a schema_version bump.",
+  "$ref": "#/$defs/Report",
+  "$defs": {
+    "Report": {
+      "type": "object",
+      "required": ["schema_version", "brooom_version", "generated_at", "scopes", "findings", "totals"],
+      "properties": {
+        "schema_version": { "type": "integer", "minimum": 1 },
+        "brooom_version": { "type": "string" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "scopes": { "type": "array", "items": { "$ref": "#/$defs/Scope" } },
+        "findings": { "type": "array", "items": { "$ref": "#/$defs/Finding" } },
+        "totals": { "$ref": "#/$defs/Totals" },
+        "errors": { "type": "array", "items": { "$ref": "#/$defs/ScanError" } }
+      }
+    },
+    "Scope": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "type": "string", "enum": ["repo", "root", "user"] },
+        "path": { "type": "string" }
+      }
+    },
+    "Finding": {
+      "type": "object",
+      "required": ["id", "detector", "scope", "path", "kind", "size_bytes", "age_days", "confidence", "evidence", "suggested_action", "risk_flags"],
+      "properties": {
+        "id": { "type": "string" },
+        "detector": { "type": "string" },
+        "scope": { "$ref": "#/$defs/Scope" },
+        "path": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["file", "dir", "branch", "worktree", "worktree-missing", "git-loose-objects", "git-packs", "git-reflog", "git-large-blob"]
+        },
+        "ref": { "type": "string" },
+        "tool": { "type": "string" },
+        "size_bytes": { "type": "integer" },
+        "last_modified": { "type": "string", "format": "date-time" },
+        "age_days": { "type": "integer" },
+        "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/Evidence" } },
+        "suggested_action": { "$ref": "#/$defs/SuggestedAction" },
+        "risk_flags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "unpushed_commits",
+              "uncommitted_changes",
+              "file_open_by_process",
+              "worktree_dirty",
+              "worktree_locked",
+              "has_open_pr",
+              "current_branch",
+              "protected_branch",
+              "tracked_files",
+              "recently_modified",
+              "gitignored",
+              "never_pushed",
+              "upstream_gone",
+              "symlink",
+              "outside_repo"
+            ]
+          }
+        },
+        "meta": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "value": {}
+      }
+    },
+    "SuggestedAction": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["none", "trash", "delete-branch", "remove-worktree", "prune-worktrees", "git-gc", "git-prune", "git-reflog-expire"]
+        },
+        "args": { "type": "object", "additionalProperties": { "type": "string" } },
+        "command": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
+    "ScanError": {
+      "type": "object",
+      "required": ["message"],
+      "properties": {
+        "detector": { "type": "string" },
+        "path": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "Totals": {
+      "type": "object",
+      "required": ["findings", "actionable", "reclaimable_bytes", "by_detector"],
+      "properties": {
+        "findings": { "type": "integer" },
+        "actionable": { "type": "integer" },
+        "reclaimable_bytes": { "type": "integer" },
+        "by_detector": { "type": "object", "additionalProperties": { "$ref": "#/$defs/DetectorTotal" } }
+      }
+    },
+    "DetectorTotal": {
+      "type": "object",
+      "required": ["findings", "actionable", "reclaimable_bytes"],
+      "properties": {
+        "findings": { "type": "integer" },
+        "actionable": { "type": "integer" },
+        "reclaimable_bytes": { "type": "integer" }
+      }
+    }
+  }
+}
