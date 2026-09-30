@@ -51,7 +51,8 @@ func Default() *Config {
 				UserLocations: false,
 			},
 			Logs: Logs{
-				Enabled: true,
+				Enabled:       true,
+				UserLocations: false,
 			},
 			BuildArtifacts: BuildArtifacts{
 				Enabled:      true,

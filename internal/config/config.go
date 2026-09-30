@@ -204,6 +204,10 @@ type AIArtifacts struct {
 // Logs configures the log-and-runtime-files detector.
 type Logs struct {
 	Enabled bool `json:"enabled"`
+	// UserLocations enables scanning the user-level well-known locations
+	// from the catalog (pip, poetry, uv, npm and Go caches, npm _logs); off
+	// by default.
+	UserLocations bool `json:"user_locations"`
 	// Categories enables or disables entry categories by id (e.g.
 	// {"os-junk": false}). Categories not listed are enabled.
 	Categories map[string]bool `json:"categories,omitempty"`

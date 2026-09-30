@@ -21,8 +21,8 @@ type scanOptions struct {
 	// force is passed to the detectors as detect.Env.Force (--force of the
 	// commands that can apply).
 	force bool
-	// userLocations turns on detectors.ai-artifacts.user_locations for this
-	// run only (`brooom ai --user`); the config file is never changed.
+	// userLocations turns on user_locations of the selected ai/logs detector for this
+	// run only (`brooom ai --user`, `brooom logs --user`); the config file is never changed.
 	userLocations bool
 	// configOverlay adjusts the loaded configuration right after it was
 	// read and before any per-root or per-repo layer (ForTarget), so a

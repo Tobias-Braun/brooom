@@ -116,6 +116,19 @@ gathered by the fresh size pass). User-level targets exist only when
 inside a location, never the location itself. `tracked_files` is the only
 blocking flag `--force` lifts; an open file keeps the action at `none`.
 
+The `log-and-runtime-files` detector (`internal/detectors/logs`) mirrors
+`ai-artifacts` for the catalog categories `logs`, `cache`, `os-junk` and
+`crash` (toggled by `detectors.log-and-runtime-files.categories`; user-level
+targets need `detectors.log-and-runtime-files.user_locations`, set for one run
+by `brooom logs --user`). The walk, protect and nested-repository rules are the
+same (the code is duplicated locally on purpose; extracting a shared helper is
+a later cleanup). Differences: the size pass is `Fresh` because logs are written
+in place; a recently modified `*.log` / `*.log.N` file drops from high to medium
+confidence; and one batched `procs.OpenFiles` per target flags files a process
+has open with `file_open_by_process`, which is blocking and never overridable,
+so those findings suggest `none` even with `--force`. `tracked_files` is
+force-overridable and then suggests `trash` with a `forced: ...` reason.
+
 Detector names (config keys, `--detector` values): `stale-branch`,
 `merged-branch`, `worktrees`, `git-bloat`, `large-untracked`,
 `ai-artifacts`, `log-and-runtime-files`, `build-artifacts`.

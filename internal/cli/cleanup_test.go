@@ -486,6 +486,44 @@ func TestSelectionFlagsPassThrough(t *testing.T) {
 	}
 }
 
+// TestUserFlagTargetsTheSelectedDetector: `brooom logs --user` enables the
+// user locations of log-and-runtime-files only, `brooom ai --user` those of
+// ai-artifacts only, and neither is on without the flag.
+func TestUserFlagTargetsTheSelectedDetector(t *testing.T) {
+	cases := []struct {
+		name         string
+		opts         scanOptions
+		wantAI, logs bool
+	}{
+		{"logs with --user", scanOptions{detectors: []string{config.DetectorLogs}, userLocations: true}, false, true},
+		{"logs without --user", scanOptions{detectors: []string{config.DetectorLogs}}, false, false},
+		{"ai with --user", scanOptions{detectors: []string{config.DetectorAIArtifacts}, userLocations: true}, true, false},
+		{"ai without --user", scanOptions{detectors: []string{config.DetectorAIArtifacts}}, false, false},
+		{"no selection keeps the ai behaviour", scanOptions{userLocations: true}, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolate(t)
+			req, err := (&app{}).newScanRequest(tc.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := req.cfg.Detectors
+			if d.AIArtifacts.UserLocations != tc.wantAI || d.Logs.UserLocations != tc.logs {
+				t.Errorf("ai=%v logs=%v, want ai=%v logs=%v", d.AIArtifacts.UserLocations, d.Logs.UserLocations, tc.wantAI, tc.logs)
+			}
+		})
+	}
+}
+
+func TestLogsCommandHasUserFlag(t *testing.T) {
+	isolate(t)
+	code, out, _ := brooom(t, "", "logs", "--help")
+	if code != ExitOK || !strings.Contains(out, "--user") {
+		t.Errorf("logs --help: code %d\n%s", code, out)
+	}
+}
+
 func TestCommandLineQuoting(t *testing.T) {
 	a := &app{args: []string{"branches", "--config", "/tmp/my dir/c.json", ""}}
 	want := `brooom branches --config "/tmp/my dir/c.json" ""`
