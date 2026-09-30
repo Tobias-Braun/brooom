@@ -19,6 +19,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/output"
+	"github.com/Tobias-Braun/brooom/internal/procs"
 	"github.com/Tobias-Braun/brooom/internal/progress"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 )
@@ -334,6 +335,8 @@ func newEnv(req *scanRequest, runner gitx.Runner, guard *scope.Guard) (*detect.E
 		Guard:  guard,
 		Now:    time.Now(),
 		Force:  req.opts.force,
+		// One lazily loaded listing serves every detector of the scan.
+		Open: procs.NewSnapshot(),
 	}
 	if runner != nil {
 		env.Repos = gitx.NewCache(runner)

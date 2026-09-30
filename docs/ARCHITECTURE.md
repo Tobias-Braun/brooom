@@ -807,9 +807,23 @@ timeout (`DefaultTimeout` when the context has no deadline). `ErrUnavailable`
 and `ErrIncomplete` (partial map still returned, `true` entries reliable) mean
 unknown for `false` entries, never "safe". Per OS: `/proc/<pid>/fd` plus the
 `cwd`, `root` and `exe` links on Linux (so a shell standing in a directory
-counts; `(deleted)` targets and `/` are ignored), `lsof` on macOS, Restart
-Manager on Windows. `gitx.CwdWithin` additionally answers on every OS whether
-this process's own working directory is inside a path.
+counts; `(deleted)` targets and `/` are ignored), `lsof` on macOS (a process
+whose working directory is exactly the directory counts), Restart Manager on
+Windows. The Restart Manager only knows regular files: a shell or IDE whose
+working directory is inside a directory holds just a directory handle and is
+not detected there. Under the delete strategy `remove-worktree` therefore
+probes with a rename to a sibling and back before `git worktree remove`
+(`action.checkWorktreeRenamable`, Apply only) and refuses on a sharing
+violation, non-overridably; trash and quarantine move the directory with one
+rename and need no probe. `gitx.CwdWithin` additionally answers on every OS
+whether this process's own working directory is inside a path.
+
+`procs.Snapshot` (`detect.Env.Open`, set once per scan by the pipeline) lets
+all detectors share one memoised listing of open files on macOS instead of
+one lsof run per target: files are matched exactly, directories by prefix.
+Elsewhere, or when the listing is unavailable, it delegates to `OpenFiles`.
+It is a conservative pre-filter taken at the first query, so it can be stale on
+a long scan; the executor's Plan-time check stays live and per target.
 
 ### Sizes and suggested commands
 

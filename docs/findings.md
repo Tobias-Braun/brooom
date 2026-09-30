@@ -70,7 +70,7 @@ on them without `--force`. `--force` never overrides `file_open_by_process`,
 | Flag | Blocking | Meaning |
 | --- | --- | --- |
 | `unpushed_commits` | yes | Branch has commits on no remote. |
-| `file_open_by_process` | yes | A process has the file open (e.g. log still written) or stands in the directory (Linux: cwd, root, exe; a worktree containing the current directory is flagged the same way). |
+| `file_open_by_process` | yes | A process has the file open (e.g. log still written) or stands in the directory (Linux: cwd, root, exe; macOS: cwd and maps; not detected on Windows, whose Restart Manager sees only files, so `remove-worktree` probes with a rename there; a worktree containing brooom's own current directory is flagged the same way). |
 | `worktree_dirty` | yes | Worktree has uncommitted changes. |
 | `worktree_locked` | yes | Worktree is locked. |
 | `worktree_operation_in_progress` | yes | A rebase, merge, cherry-pick, revert or bisect is in progress in the worktree. |

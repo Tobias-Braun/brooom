@@ -18,13 +18,16 @@
 //     one listing of every open file that is matched against their prefixes,
 //     so the number of lsof runs does not grow with the number of
 //     directories. lsof only reports other users' processes when permitted
-//     to. The listing also counts working directories and memory maps of
+//     to. A Snapshot shares one such listing across a whole scan. The listing also counts working directories and memory maps of
 //     subdirectories, which errs on the side of "open". APFS is usually
 //     case-insensitive, so names are matched case-insensitively as a fallback.
 //   - Windows uses the Restart Manager. It only knows handles it can attribute
 //     to a process and does not cover network shares. It cannot say which
 //     registered file is locked, so batches are bisected. Directories are
-//     enumerated up to a cap of files and levels.
+//     enumerated up to a cap of files and levels. Only regular files are
+//     registered, so a process whose working directory is inside a directory
+//     (a directory handle only) is a blind spot; callers that delete a
+//     directory probe with a rename instead (action.checkWorktreeRenamable).
 //   - Other platforms report ErrUnavailable.
 //
 // Every non-nil error means "unknown" for entries that are false; only true
