@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/findings"
+	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/session"
 )
 
@@ -397,7 +398,7 @@ func (rs *runState) record(en session.Entry) error {
 	}
 	if err := rs.e.opts.Store.Save(rs.m); err != nil {
 		if en.RecoveryHint != "" {
-			fmt.Fprintf(rs.e.opts.IO.Err, "recovery hint for %s: %s\n", entryLabel(en.Path, en.Ref), en.RecoveryHint)
+			fmt.Fprintf(rs.e.opts.IO.Err, "recovery hint for %s: %s\n", entryLabel(en.Path, en.Ref), output.Sanitize(en.RecoveryHint))
 		}
 		return fmt.Errorf("save session manifest %s after %s: %w", rs.m.ID, entryLabel(en.Path, en.Ref), err)
 	}

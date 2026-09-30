@@ -99,9 +99,9 @@ func treePathParts(scopePath, path string) []string {
 	// equality check also covers rooted-but-driveless paths on Windows, which
 	// IsAbs does not consider absolute.
 	if rel == path || filepath.IsAbs(rel) {
-		return []string{rel}
+		return []string{Sanitize(rel)}
 	}
-	return strings.Split(filepath.ToSlash(rel), "/")
+	return strings.Split(Sanitize(filepath.ToSlash(rel)), "/")
 }
 
 // addFinding inserts f below root, recording it in the aggregate of every node
@@ -124,12 +124,12 @@ func addFinding(root *treeNode, f findings.Finding) {
 // without a ref. A second filesystem finding for an already used path is
 // labelled with its detector, which is the only thing telling the two apart.
 func pseudoLabel(f findings.Finding) string {
-	label := "[" + string(f.Kind) + "]"
+	label := "[" + Sanitize(string(f.Kind)) + "]"
 	if isFSKind(f.Kind) {
-		label = "[" + f.Detector + "]"
+		label = "[" + Sanitize(f.Detector) + "]"
 	}
 	if f.Ref != "" {
-		label += " " + f.Ref
+		label += " " + Sanitize(f.Ref)
 	}
 	return label
 }
@@ -214,7 +214,7 @@ func renderTrees(buf *bytes.Buffer, p painter, r *findings.Report, opts Options)
 			continue
 		}
 		root := buildScopeTree(sp, fs)
-		head := p.bold(sp)
+		head := p.bold(Sanitize(sp))
 		if !opts.Quiet {
 			head += "  " + p.dim(FormatSize(root.size()))
 		}
@@ -256,7 +256,7 @@ func renderNode(p painter, n *treeNode) string {
 func renderLeaf(p painter, name string, f findings.Finding) string {
 	cells := []string{name, cellText(f, colSize), cellText(f, colAge)}
 	conf := cellText(f, colConf)
-	tail := []string{f.Detector, cellText(f, colAction)}
+	tail := []string{Sanitize(f.Detector), cellText(f, colAction)}
 
 	if !f.Actionable() {
 		parts := append(append(cells, conf), tail...)

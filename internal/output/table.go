@@ -80,11 +80,11 @@ func renderErrors(buf *bytes.Buffer, p painter, errs []findings.ScanError) {
 				parts = append(parts, s)
 			}
 		}
-		line := strings.Join(parts, " ")
+		line := Sanitize(strings.Join(parts, " "))
 		if line != "" {
 			line += ": "
 		}
-		buf.WriteString("  " + line + e.Message + "\n")
+		buf.WriteString("  " + line + Sanitize(e.Message) + "\n")
 	}
 }
 
@@ -128,6 +128,7 @@ func groupByDetector(sorted []findings.Finding) [][]findings.Finding {
 // from the detector registry because the JSON schema deliberately does not
 // carry it; reports loaded from a file may name unregistered detectors.
 func groupHeader(name string, count int) string {
+	name = Sanitize(name)
 	if d, ok := detect.Get(name); ok && d.Description() != "" {
 		return fmt.Sprintf("%s - %s (%d)", name, d.Description(), count)
 	}
@@ -215,9 +216,9 @@ func cellText(f findings.Finding, c colID) string {
 	case colAction:
 		return string(f.SuggestedAction.Type)
 	case colPath:
-		return relPath(f.Scope.Path, f.Path)
+		return Sanitize(relPath(f.Scope.Path, f.Path))
 	case colRef:
-		return f.Ref
+		return Sanitize(f.Ref)
 	default:
 		return ShortRiskFlags(f.RiskFlags)
 	}
@@ -249,7 +250,7 @@ func renderRows(buf *bytes.Buffer, p painter, l layout, fs []findings.Finding) {
 // blocking flags, else a generic statement, so a dimmed row is never silent.
 func notSuggestedReason(f findings.Finding) string {
 	if r := f.SuggestedAction.Reason; r != "" {
-		return r
+		return Sanitize(r)
 	}
 	if l := blockingLabels(f.RiskFlags); l != "" {
 		return l

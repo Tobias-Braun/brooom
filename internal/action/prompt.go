@@ -92,7 +92,7 @@ func (c *confirmer) confirm(p *Plan) bool {
 	for gi := range p.Groups {
 		g := &p.Groups[gi]
 		prompt := fmt.Sprintf("%s / %s: apply %s (%s)? [y]es/[n]o/[i]ndividually/[q]uit ",
-			g.Detector, g.Action, plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
+			output.Sanitize(g.Detector), g.Action, plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
 		switch c.ask(prompt, "yniq") {
 		case ansYes:
 			for i := range g.Items {
@@ -115,7 +115,7 @@ func (c *confirmer) confirm(p *Plan) bool {
 func (c *confirmer) confirmItems(g *Group) bool {
 	for i := range g.Items {
 		it := &g.Items[i]
-		prompt := fmt.Sprintf("  %s (%s)? [y]es/[n]o/[q]uit ", it.Step.Description, output.FormatSize(it.Step.Finding.SizeBytes))
+		prompt := fmt.Sprintf("  %s (%s)? [y]es/[n]o/[q]uit ", output.Sanitize(it.Step.Description), output.FormatSize(it.Step.Finding.SizeBytes))
 		switch c.ask(prompt, "ynq") {
 		case ansYes:
 			it.Confirmed = true
@@ -147,9 +147,9 @@ func plural(n int, noun string) string {
 // the skipped list and the plan-time failures.
 func renderPlan(w io.Writer, p *Plan) {
 	for _, g := range p.Groups {
-		fmt.Fprintf(w, "%s / %s: %s, %s\n", g.Detector, g.Action, plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
+		fmt.Fprintf(w, "%s / %s: %s, %s\n", output.Sanitize(g.Detector), g.Action, plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
 		for _, it := range g.Items {
-			fmt.Fprintf(w, "  %s (%s)\n", it.Step.Description, output.FormatSize(it.Step.Finding.SizeBytes))
+			fmt.Fprintf(w, "  %s (%s)\n", output.Sanitize(it.Step.Description), output.FormatSize(it.Step.Finding.SizeBytes))
 			if it.Step.Command != "" {
 				fmt.Fprintf(w, "    $ %s\n", it.Step.Command)
 			}
@@ -171,16 +171,16 @@ func renderSkips(w io.Writer, title string, skips []Skip) {
 	}
 	fmt.Fprintf(w, "%s (%d):\n", title, len(skips))
 	for _, s := range skips {
-		fmt.Fprintf(w, "  %s: %s\n", describeFinding(s.Finding), s.Reason)
+		fmt.Fprintf(w, "  %s: %s\n", describeFinding(s.Finding), output.Sanitize(s.Reason))
 	}
 }
 
 // describeFinding names a finding by path and ref for skip and failure lines.
 func describeFinding(f findings.Finding) string {
 	if f.Ref != "" {
-		return fmt.Sprintf("%s (%s)", f.Path, f.Ref)
+		return fmt.Sprintf("%s (%s)", output.Sanitize(f.Path), output.Sanitize(f.Ref))
 	}
-	return f.Path
+	return output.Sanitize(f.Path)
 }
 
 // renderSummary prints the end-of-run summary. applyPhaseSkips are the skips
@@ -196,7 +196,7 @@ func renderSummary(w io.Writer, r *Result, applyPhaseSkips []Skip) {
 	if len(r.Failures) > 0 {
 		fmt.Fprintf(w, "failures (%d):\n", len(r.Failures))
 		for _, f := range r.Failures {
-			fmt.Fprintf(w, "  %s: %s\n", entryLabel(f.Path, f.Ref), f.Error)
+			fmt.Fprintf(w, "  %s: %s\n", entryLabel(f.Path, f.Ref), output.Sanitize(f.Error))
 		}
 	}
 	renderHints(w, r)
@@ -209,7 +209,7 @@ func renderHints(w io.Writer, r *Result) {
 	var lines []string
 	for _, e := range r.Entries {
 		if e.RecoveryHint != "" {
-			lines = append(lines, fmt.Sprintf("  %s: %s", entryLabel(e.Path, e.Ref), e.RecoveryHint))
+			lines = append(lines, fmt.Sprintf("  %s: %s", entryLabel(e.Path, e.Ref), output.Sanitize(e.RecoveryHint)))
 		}
 	}
 	if len(lines) > 0 {
@@ -220,7 +220,7 @@ func renderHints(w io.Writer, r *Result) {
 
 func entryLabel(path, ref string) string {
 	if ref != "" {
-		return fmt.Sprintf("%s (%s)", path, ref)
+		return fmt.Sprintf("%s (%s)", output.Sanitize(path), output.Sanitize(ref))
 	}
-	return path
+	return output.Sanitize(path)
 }

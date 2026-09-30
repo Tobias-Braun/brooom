@@ -12,6 +12,7 @@ import (
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
+	"github.com/Tobias-Braun/brooom/internal/output"
 )
 
 // stdinSource is the value of --from that reads the report from stdin.
@@ -227,13 +228,13 @@ func (a *app) printVerdict(v verdict) {
 	if len(v.refused) > 0 {
 		fmt.Fprintf(out, "refused findings (%d), not acted on because they do not fit this run's scope or are invalid:\n", len(v.refused))
 		for _, r := range v.refused {
-			fmt.Fprintf(out, "  %s  %s: %s\n", r.finding.ID, r.finding.Path, r.reason)
+			fmt.Fprintf(out, "  %s  %s: %s\n", output.Sanitize(r.finding.ID), output.Sanitize(r.finding.Path), output.Sanitize(r.reason))
 		}
 	}
 	if len(v.skipped) > 0 {
 		fmt.Fprintf(out, "skipped findings (%d), nothing to act on:\n", len(v.skipped))
 		for _, r := range v.skipped {
-			fmt.Fprintf(out, "  %s  %s: %s\n", r.finding.ID, r.finding.Path, r.reason)
+			fmt.Fprintf(out, "  %s  %s: %s\n", output.Sanitize(r.finding.ID), output.Sanitize(r.finding.Path), output.Sanitize(r.reason))
 		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
 )
@@ -193,7 +194,7 @@ func (r *UndoResult) fail(label, msg string, conflict bool) {
 func renderUndoPlan(w io.Writer, m *session.Manifest, steps []UndoStep) {
 	fmt.Fprintf(w, "undo session %s", m.ID)
 	if m.Command != "" {
-		fmt.Fprintf(w, " (%s)", m.Command)
+		fmt.Fprintf(w, " (%s)", output.Sanitize(m.Command))
 	}
 	fmt.Fprintln(w)
 	if len(steps) == 0 {
@@ -211,18 +212,18 @@ func renderUndoStep(w io.Writer, s UndoStep) {
 	label := entryLabel(s.Entry.Path, s.Entry.Ref)
 	switch s.Kind {
 	case UndoRestore:
-		fmt.Fprintf(w, "  %s\n", s.Description)
+		fmt.Fprintf(w, "  %s\n", output.Sanitize(s.Description))
 		return
 	case UndoConflict:
-		fmt.Fprintf(w, "  conflict %s: %s\n", label, s.Reason)
+		fmt.Fprintf(w, "  conflict %s: %s\n", label, output.Sanitize(s.Reason))
 	case UndoDone:
-		fmt.Fprintf(w, "  skip %s: %s\n", label, s.Reason)
+		fmt.Fprintf(w, "  skip %s: %s\n", label, output.Sanitize(s.Reason))
 		return
 	default:
-		fmt.Fprintf(w, "  cannot restore %s: %s\n", label, s.Reason)
+		fmt.Fprintf(w, "  cannot restore %s: %s\n", label, output.Sanitize(s.Reason))
 	}
 	if s.Entry.RecoveryHint != "" {
-		fmt.Fprintf(w, "    recovery: %s\n", s.Entry.RecoveryHint)
+		fmt.Fprintf(w, "    recovery: %s\n", output.Sanitize(s.Entry.RecoveryHint))
 	}
 }
 
@@ -232,7 +233,7 @@ func renderUndoSummary(w io.Writer, r *UndoResult) {
 		if p.Conflict {
 			kind = "conflict"
 		}
-		fmt.Fprintf(w, "  %s %s: %s\n", kind, p.Label, p.Message)
+		fmt.Fprintf(w, "  %s %s: %s\n", kind, output.Sanitize(p.Label), output.Sanitize(p.Message))
 	}
 	fmt.Fprintf(w, "summary: %d restored, %d conflicts, %d failed, %d not restorable, %d already restored\n",
 		r.Restored, r.Conflicts, r.Failed, r.NotRestorable, r.AlreadyRestored)

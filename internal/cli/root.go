@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/Tobias-Braun/brooom/internal/output"
 )
 
 // Exit codes.
@@ -121,7 +123,7 @@ func executeContext(ctx context.Context, a *app, args []string) int {
 	if err == nil {
 		return ExitOK
 	}
-	fmt.Fprintln(stdio.Err, "brooom:", err)
+	fmt.Fprintln(stdio.Err, "brooom:", output.Sanitize(err.Error()))
 	var ue usageError
 	if errors.As(err, &ue) {
 		return ExitUsage
