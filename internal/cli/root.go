@@ -21,6 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Tobias-Braun/brooom/internal/cli/progressui"
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/output"
 )
@@ -58,6 +59,7 @@ type globalFlags struct {
 	quiet      bool
 	noColor    bool
 	verbose    bool
+	progress   string
 	configPath string
 }
 
@@ -90,6 +92,13 @@ type app struct {
 	// stdinTTY reports whether prompting is possible; nil means "io.In is a
 	// terminal". Tests inject it to script confirmations.
 	stdinTTY func() bool
+	// stderrTTY is stdinTTY's counterpart for the live progress display; nil
+	// means "io.Err is a terminal". Tests inject it to fake a terminal.
+	stderrTTY func() bool
+	// progressDecided is set by the first useProgress call; display is the
+	// live progress display, nil when none runs (see progress.go).
+	progressDecided bool
+	display         *progressui.Display
 	// clock returns the current time; nil means time.Now. Tests inject it to
 	// age quarantined sessions.
 	clock func() time.Time
@@ -173,6 +182,9 @@ func executeContext(ctx context.Context, a *app, args []string) int {
 	root.SetOut(stdio.Out)
 	root.SetErr(stdio.Err)
 	err := root.ExecuteContext(ctx)
+	// The live display must end before anything else is printed to stderr and
+	// on every path, so the terminal is restored after errors and Ctrl-C too.
+	a.stopProgress(err == nil)
 	if err == nil {
 		return ExitOK
 	}
@@ -216,6 +228,9 @@ Without flags Brooom only looks at the git repository you are in. Use
 			if err := rejectIgnoredScanFlags(cmd); err != nil {
 				return err
 			}
+			if _, err := parseProgressMode(a.flags.progress); err != nil {
+				return err
+			}
 			a.startUpdateCheck(cmd)
 			return nil
 		},
@@ -235,6 +250,7 @@ Without flags Brooom only looks at the git repository you are in. Use
 	pf.BoolVarP(&a.flags.quiet, "quiet", "q", false, "print only essential output")
 	pf.BoolVar(&a.flags.noColor, "no-color", false, "disable colors (also honours NO_COLOR)")
 	pf.BoolVarP(&a.flags.verbose, "verbose", "v", false, "print progress and diagnostics to stderr")
+	pf.StringVar(&a.flags.progress, "progress", progressAuto, "live progress display on stderr: auto (terminals only), always, never")
 	pf.StringVar(&a.flags.configPath, "config", "", "config file (default ~/.brooom/config.json)")
 
 	a.postRunHooks = append(a.postRunHooks, a.finishUpdateCheck, a.retentionNotice)

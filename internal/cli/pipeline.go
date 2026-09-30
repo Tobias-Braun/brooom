@@ -19,6 +19,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/output"
+	"github.com/Tobias-Braun/brooom/internal/progress"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 )
 
@@ -81,6 +82,7 @@ func (a *app) newScanRequest(opts scanOptions) (*scanRequest, error) {
 	if err != nil {
 		return nil, err
 	}
+	a.useProgress(format)
 	if opts.configOverlay != nil {
 		opts.configOverlay(cfg)
 	}
@@ -241,6 +243,7 @@ func intersect(a, b []string) []string {
 // assembles the report. Nothing here modifies the file system.
 func (a *app) execute(ctx context.Context, req *scanRequest, onFinding func(findings.Finding)) (*scanResult, error) {
 	runner, gitErr := newGitRunner()
+	a.reporter().Phase(progress.PhaseDiscover, 0)
 	ts, err := a.buildTargets(ctx, req, runner)
 	if err != nil {
 		return nil, err
@@ -267,6 +270,8 @@ func (a *app) execute(ctx context.Context, req *scanRequest, onFinding func(find
 		a.progressf("dropped %d finding(s) below minimum confidence %s", len(found)-len(kept), req.opts.minConfidence)
 		found = kept
 	}
+	// Whatever renders the results next writes to the terminal too.
+	a.reporter().Pause()
 	a.logDetectorStats(req.detectors, found, stats)
 	sort.SliceStable(runErrs, func(i, j int) bool {
 		x, y := runErrs[i], runErrs[j]
@@ -363,6 +368,7 @@ func (a *app) runDetectors(ctx context.Context, env *detect.Env, targets []scope
 		Concurrency: req.cfg.Scan.Concurrency,
 		Applies:     appliesFunc(effective),
 		OnFinding:   onFinding,
+		Progress:    a.reporter(),
 	})
 	return found, errs, stats
 }

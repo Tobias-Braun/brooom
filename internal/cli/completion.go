@@ -36,6 +36,7 @@ func registerCompletions(root *cobra.Command, a *app) {
 	// deliberately not surfaced at runtime.
 	_ = root.RegisterFlagCompletionFunc("detector", completeDetectors)
 	_ = root.RegisterFlagCompletionFunc("format", completeFormats)
+	_ = root.RegisterFlagCompletionFunc("progress", completeProgressModes)
 	_ = root.RegisterFlagCompletionFunc("root", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return a.completeRoots(cmd, toComplete, true)
 	})
@@ -141,6 +142,16 @@ func completeDetectors(_ *cobra.Command, _ []string, toComplete string) ([]strin
 // completeFormats offers the registered output formats.
 func completeFormats(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return filterPrefix(output.Names(), toComplete, nil), completionDirective
+}
+
+// completeProgressModes offers the values of --progress.
+func completeProgressModes(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	descriptions := map[string]string{
+		progressAuto:   "draw on stderr only for an interactive terminal (default)",
+		progressAlways: "always draw, also without a terminal",
+		progressNever:  "never draw",
+	}
+	return filterPrefix(progressModes, toComplete, descriptions), completionDirective
 }
 
 // presetNames is the single place the --preset completion gets its values

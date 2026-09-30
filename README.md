@@ -122,6 +122,23 @@ bash completion installs per user with
 `brooom completion bash > ~/.local/share/bash-completion/completions/brooom`
 (the system path `/etc/bash_completion.d` needs `sudo`).
 
+### Live progress
+
+While `scan`, `sweep`, the shortcut commands, `clean`, `git purge` and `undo`
+run, stderr shows a live display: the phase (discover, scan, plan, apply), a
+spinner and progress bar, finding counts per detector and per target, and the
+bytes reclaimed so far. When the command ends it collapses to one summary line;
+the results (table, tree, summary) stay on stdout, and the display steps aside
+for confirmation prompts.
+
+`--progress=auto|always|never` (default `auto`) controls it. `auto` draws only
+when stderr is a terminal, the format is `table`, `tree` or `summary`, and
+neither `--quiet`, `--verbose`, `CI` nor `TERM=dumb` is in effect. `NO_COLOR`
+and `--no-color` only remove the colours. The machine formats (`json`,
+`ndjson`, `plain`) never show it, whatever `--progress` says, so scripts and AI
+agents get exactly the same stdout as before; `--progress=never` turns it off
+explicitly.
+
 ### Sweep presets
 
 `brooom sweep [--preset safe|standard|aggressive]` runs a fixed detector set

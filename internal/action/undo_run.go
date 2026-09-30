@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/Tobias-Braun/brooom/internal/output"
+	"github.com/Tobias-Braun/brooom/internal/progress"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
 )
@@ -27,6 +28,9 @@ type UndoOptions struct {
 	// RerunHint completes "dry run: nothing was restored; ..." (default
 	// "re-run with --apply").
 	RerunHint string
+	// Progress receives the undo phase (default: none). It is paused before
+	// the plan is printed, so the prompt never shares the terminal with it.
+	Progress progress.Reporter
 }
 
 // UndoProblem is an entry that could not be restored during the run.
@@ -82,6 +86,7 @@ func RunUndo(ctx context.Context, env *Env, m *session.Manifest, opts UndoOption
 	steps := PlanUndo(m, env)
 	res := &UndoResult{SessionID: m.ID, Steps: steps}
 	res.tally()
+	opts.Progress.Pause()
 	renderUndoPlan(opts.IO.Out, m, steps)
 	if !opts.Apply {
 		fmt.Fprintf(opts.IO.Out, "dry run: nothing was restored; %s to restore\n", output.Sanitize(opts.RerunHint))
@@ -96,7 +101,9 @@ func RunUndo(ctx context.Context, env *Env, m *session.Manifest, opts UndoOption
 			return res, nil
 		}
 	}
+	opts.Progress.Phase(progress.PhaseUndo, n)
 	err := res.apply(ctx, env, m, opts)
+	opts.Progress.Pause()
 	renderUndoSummary(opts.IO.Out, res)
 	return res, err
 }
@@ -115,6 +122,7 @@ func (o UndoOptions) withDefaults() UndoOptions {
 		in := o.IO.In
 		o.StdinIsTTY = func() bool { return isTerminal(in) }
 	}
+	o.Progress = progress.OrNop(o.Progress)
 	return o
 }
 
@@ -153,7 +161,9 @@ func (r *UndoResult) apply(ctx context.Context, env *Env, m *session.Manifest, o
 		if ctx.Err() != nil {
 			return ErrInterrupted
 		}
-		if err := r.restoreOne(ctx, env, m, opts, st); err != nil {
+		err := r.restoreOne(ctx, env, m, opts, st)
+		opts.Progress.Step(entryLabel(st.Entry.Path, st.Entry.Ref))
+		if err != nil {
 			return err
 		}
 	}

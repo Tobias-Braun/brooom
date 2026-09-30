@@ -67,6 +67,8 @@ packages and the same findings schema.
 | `internal/trash` | `Trasher` interface; OS trash per OS (`trash_windows.go`, `trash_darwin.go`, `trash_unix.go` freedesktop), quarantine, delete. |
 | `internal/session` | Session manifests in `~/.brooom/sessions`, listing, undo bookkeeping. |
 | `internal/output` | Formatters, one file per format, registered by name. Color/TTY handling helpers. |
+| `internal/progress` | The terminal-free `Reporter` interface the engine, executor and undo report progress through, plus the no-op `Nop` and the `progresstest.Recorder` for tests. |
+| `internal/cli/progressui` | The live stderr display: a bubbletea model (spinner, progress bar, lipgloss styles) and the `Display` reporter that owns its lifecycle. The only package that imports the Charm libraries. |
 | `internal/procs` | "Is this file open by a process?" per OS (best effort, never blocks a scan). |
 | `internal/updatecheck` | The opt-in update check: latest-release lookup, semver compare, install-method detection, 24h cache. The only package allowed to import `net/http` (enforced by a test). |
 | `internal/testutil` | Deterministic throwaway git repos and file trees for tests. |
@@ -859,7 +861,9 @@ only when no branch, remote-tracking branch or tag still holds the deleted tip
 `Formatter.Write(w, *findings.Report, Options)`. `json` is the `Report` as
 is; `ndjson` is one `Finding` per line; `plain` is paths only (for branches:
 `<repo>\t<branch>`), one per line. Formats never write ANSI codes when
-`Options.Color` is false.
+`Options.Color` is false. Formatters only ever write to stdout: the live
+progress display lives on stderr, is never shown for the machine formats and
+leaves the final results output unchanged (see "Live progress" below).
 
 Every human-readable output (table, tree, summary, sessions, executor plans,
 prompts and summaries, undo plans, error printing) passes untrusted text
@@ -876,6 +880,38 @@ The displayed shell command of a plan step (`Step.Command`) goes through
 `output.Sanitize` as well: shell quoting keeps a command copy-pasteable but
 does not neutralise control characters, so an ESC in a file name would still
 reach the terminal.
+
+### Live progress (`internal/progress`, `internal/cli/progressui`)
+
+Long-running loops report to a `progress.Reporter` (`Phase`, `Step`, `Finding`,
+`Reclaimed`, `Pause`), given as an option (`detect.RunOptions.Progress`,
+`action.Options.Progress`, `action.UndoOptions.Progress`); nil means `Nop`, so
+libraries have no TUI dependency and a reporter can never influence what a run
+does. Phases: discover (scope resolution), scan (one step per target x detector
+pair, one finding event per unique finding), plan, apply, undo.
+
+The CLI decides once per invocation (`app.useProgress`, first call wins) with
+the pure `showProgress`: `--progress=never` and the machine formats (json,
+ndjson, plain) never draw; `always` draws otherwise, even without a terminal;
+`auto` needs stderr to be a terminal and neither `--quiet`, `--verbose` (its log
+lines would shred the live region), `CI` (any value) nor `TERM=dumb`. The format
+is the one the command actually prints (an applying run, `git purge` with flags,
+`clean` and `undo` print text whatever `output.format` says). Until decided the
+reporter is the no-op, so a path that forgets to decide fails closed.
+
+`progressui.Display` keeps the run state under a mutex (reporter methods never
+wait for the terminal) and renders it with a bubbletea program on stderr that
+takes no input and installs no signal handler, so Ctrl-C keeps cancelling the
+command context and prompts read stdin undisturbed. Terminal ownership is
+strictly serialized: `Pause` stops the program and returns only once the
+terminal is restored, and anything written to stdout (the scan report, the plan,
+prompts, the apply summary) happens paused. The next `Phase` starts a fresh
+program from the same state. `Stop` (deferred in `executeContext`, before any
+error text is printed, so also after errors and Ctrl-C) collapses the display to
+one summary line, `done` or `stopped`. All text shown from paths and labels goes
+through `output.Sanitize`. Known cost of bubbletea v1: its package `init` asks an
+interactive stdout terminal for its background colour once at process start
+(skipped when stdout is not a terminal, and for `TERM=screen*`, `tmux*`, `dumb`).
 
 ### Completions and the CLI reference (`internal/cli`)
 
@@ -912,7 +948,9 @@ The full key reference, merge semantics, validation rules and the
 ## Conventions
 
 - Go 1.24, `CGO_ENABLED=0`, no runtime dependencies. Keep third-party
-  dependencies minimal (cobra, golang.org/x/sys, golang.org/x/term).
+  dependencies minimal (cobra, golang.org/x/sys, golang.org/x/term, and the
+  Charm libraries bubbletea, bubbles and lipgloss, imported only by
+  `internal/cli/progressui`).
 - Cross-platform: use `filepath`, never hard-code `/`; OS-specific code in
   `_windows.go` / `_darwin.go` / `_unix.go` files with build tags as needed;
   every package must build for linux, darwin and windows on amd64 and arm64.

@@ -65,6 +65,9 @@ func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags
 	if err != nil {
 		return err
 	}
+	// The acting format decides, not the scan's own resolution: an applying
+	// run with a machine format in the config still prints human text.
+	a.useProgress(format)
 	machine := machineFormats[format]
 	if machine && af.apply {
 		return usageError{fmt.Errorf("--format %s cannot be combined with --apply", format)}
@@ -293,6 +296,7 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 		StdinIsTTY: a.canPrompt, // as in undo, so a test can stand in for a terminal
 		Store:      &session.Store{Dir: dirs.Sessions},
 		Env:        buildActionEnv(in, af, resolver),
+		Progress:   a.reporter(),
 		Command:    a.commandLine(),
 		Workspaces: a.flags.workspaces,
 		UndoFlags:  a.scopeFlags(),

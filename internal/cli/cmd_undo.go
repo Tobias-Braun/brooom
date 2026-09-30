@@ -60,6 +60,8 @@ func (a *app) runUndo(cmd *cobra.Command, args []string, af applyFlags) error {
 	if err != nil {
 		return err
 	}
+	// Undo prints text whatever output.format says.
+	a.useProgress(defaultFormat)
 	dirs, err := config.ResolveDirs()
 	if err != nil {
 		return err
@@ -88,6 +90,7 @@ func (a *app) runUndo(cmd *cobra.Command, args []string, af applyFlags) error {
 		IO:         action.IO{In: a.io.In, Out: a.io.Out, Err: a.io.Err},
 		Store:      store,
 		StdinIsTTY: a.canPrompt,
+		Progress:   a.reporter(),
 		RerunHint:  "re-run '" + cmd.CommandPath() + " " + m.ID + " --apply'",
 	})
 	return mapUndoError(res, err, af.apply)
