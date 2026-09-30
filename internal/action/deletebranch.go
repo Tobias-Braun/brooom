@@ -303,10 +303,22 @@ func (d *decision) recheckFlags(ctx context.Context, env *Env, f findings.Findin
 			return skipf("cannot check for unpushed commits: %v", err)
 		}
 		if n > 0 {
-			return skipf("%d commits exist on no remote (use --force to override)", n)
+			return skipf("%s (use --force to override)", d.unpushedWording(ctx))
 		}
 	}
 	return nil
+}
+
+// unpushedWording explains the unpushed block. The gate counts every commit on
+// no remote, which includes history shared with the base; the number shown is
+// the count of commits only this branch holds. When that count cannot be
+// determined the wording stays free of numbers.
+func (d *decision) unpushedWording(ctx context.Context) string {
+	n, err := d.repo.UniqueCount(ctx, d.name)
+	if err != nil {
+		return "commits of this branch exist on no remote"
+	}
+	return gitx.OnlyOnBranchPhrase(n)
 }
 
 // relyOnRemote reports whether the finding's safety depends on the commits
@@ -340,7 +352,9 @@ func (d *decision) chooseFlag(ctx context.Context, env *Env, b gitx.Branch, f fi
 func (d *decision) gitAccepts(ctx context.Context, b gitx.Branch) bool {
 	target := "HEAD"
 	if b.Upstream != "" && !b.UpstreamGone {
-		target = "refs/remotes/" + b.Upstream
+		// UpstreamRef also names a local upstream (remote "."), which lives
+		// under refs/heads/ and not under refs/remotes/.
+		target = b.UpstreamRef
 	}
 	ok, err := d.repo.IsAncestor(ctx, d.tip, target)
 	return err == nil && ok

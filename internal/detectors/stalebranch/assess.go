@@ -2,6 +2,7 @@ package stalebranch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,8 +13,13 @@ import (
 // remoteState is what the repository says about where a branch's commits
 // live.
 type remoteState struct {
-	// unpushed is the number of commits on no remote.
+	// unpushed is the number of commits on no remote. It is the safety gate:
+	// it also counts history shared with the base and other local branches.
 	unpushed int
+	// unique is the number of commits only this branch holds (on no other
+	// local branch and no remote); it is what deleting would make
+	// unreachable and is used for display only.
+	unique int
 	// contained is a remote-tracking ref containing the tip, "" if none.
 	contained string
 	// neverPushed: no upstream and no remote-tracking twin of the same name.
@@ -36,6 +42,8 @@ func (s *scan) assessRemote(ctx context.Context, b gitx.Branch) (remoteState, er
 		if st.contained, err = s.repo.RemoteContaining(ctx, b.Tip); err != nil {
 			return st, err
 		}
+	} else if st.unique, err = s.repo.UniqueCount(ctx, b.Name); err != nil {
+		return st, err
 	}
 	if st.neverPushed, err = s.repo.NeverPushed(ctx, b); err != nil {
 		return st, err
@@ -43,7 +51,9 @@ func (s *scan) assessRemote(ctx context.Context, b gitx.Branch) (remoteState, er
 	if b.Upstream != "" && !b.UpstreamGone {
 		// A failed ancestor check only downgrades the command to -D, which
 		// the action re-verifies anyway.
-		ok, aerr := s.repo.IsAncestor(ctx, b.Tip, "refs/remotes/"+b.Upstream)
+		// UpstreamRef also covers an upstream that is a local branch
+		// (remote "."), which has no refs/remotes/ counterpart.
+		ok, aerr := s.repo.IsAncestor(ctx, b.Tip, b.UpstreamRef)
 		st.upstreamHasTip = aerr == nil && ok
 	}
 	return st, nil
@@ -51,19 +61,27 @@ func (s *scan) assessRemote(ctx context.Context, b gitx.Branch) (remoteState, er
 
 // assess turns a branch into a finding, or reports false when it is not
 // reported (too young, base, protected, merged, omitted unpushed work or
-// unassessable).
-func (s *scan) assess(ctx context.Context, b gitx.Branch) (findings.Finding, bool) {
-	if !s.isCandidate(b) || s.mergedSkip(ctx, b.Name) {
-		return findings.Finding{}, false
+// unassessable). A branch that cannot be assessed returns the git error next
+// to false so the caller can surface it instead of dropping the branch
+// silently.
+func (s *scan) assess(ctx context.Context, b gitx.Branch) (findings.Finding, bool, error) {
+	if !s.isCandidate(b) {
+		return findings.Finding{}, false, nil
+	}
+	merged, merr := s.mergedSkip(ctx, b.Name)
+	if merged {
+		return findings.Finding{}, false, nil
 	}
 	st, err := s.assessRemote(ctx, b)
 	if err != nil {
-		return findings.Finding{}, false
+		return findings.Finding{}, false, errors.Join(merr, fmt.Errorf("stale-branch: assess branch %q: %w", b.Name, err))
 	}
 	if st.unpushed > 0 && !s.cfg.Detectors.StaleBranch.IncludeUnpushed {
-		return findings.Finding{}, false
+		return findings.Finding{}, false, merr
 	}
-	return s.build(b, st), true
+	// A failed merged check is unknown, never merged: the branch is still
+	// assessed and reported, and the failure is surfaced next to it.
+	return s.build(b, st), true, merr
 }
 
 // build assembles the finding for an assessed branch.
@@ -142,7 +160,10 @@ func evidence(b gitx.Branch, st remoteState, age int) []findings.Evidence {
 		ev = append(ev, findings.Evidence{Code: "contained_in_remote", Message: fmt.Sprintf("all commits are contained in %s", st.contained), Value: st.contained})
 	}
 	if st.unpushed > 0 {
-		ev = append(ev, findings.Evidence{Code: "unpushed_commits", Message: fmt.Sprintf("%d commits exist on no remote", st.unpushed), Value: st.unpushed})
+		ev = append(ev,
+			findings.Evidence{Code: "unpushed_commits", Message: fmt.Sprintf("%d reachable commits are contained in no remote-tracking branch", st.unpushed), Value: st.unpushed},
+			findings.Evidence{Code: "unique_commits", Message: gitx.OnlyOnBranchPhrase(st.unique), Value: st.unique},
+		)
 	}
 	return ev
 }
@@ -207,7 +228,7 @@ func blockedReason(b gitx.Branch, st remoteState, blocking []findings.RiskFlag) 
 	for _, f := range blocking {
 		switch f {
 		case findings.RiskUnpushedCommits:
-			parts = append(parts, fmt.Sprintf("%d commits exist on no remote; deleting would lose them (re-run with --force to override)", st.unpushed))
+			parts = append(parts, gitx.OnlyOnBranchPhrase(st.unique)+"; "+unpushedConsequence(st.unique)+" (re-run with --force to override)")
 		case findings.RiskHasOpenPR:
 			parts = append(parts, "an open pull request uses this branch (re-run with --force to override)")
 		case findings.RiskCurrentBranch:
@@ -215,6 +236,16 @@ func blockedReason(b gitx.Branch, st remoteState, blocking []findings.RiskFlag) 
 		}
 	}
 	return strings.Join(parts, "; ")
+}
+
+// unpushedConsequence states what the unpushed block protects: commits that
+// deleting would lose, or, when all of them also sit on other local branches,
+// only the missing remote copy.
+func unpushedConsequence(unique int) string {
+	if unique > 0 {
+		return "deleting would lose them"
+	}
+	return "no remote has them"
 }
 
 // joinFlags renders flags as a comma separated list.

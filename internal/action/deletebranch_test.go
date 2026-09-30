@@ -277,7 +277,7 @@ func TestDeleteBranchInRemoteRemoteRefGone(t *testing.T) {
 	fx.repo.Fetch()
 
 	_, err := fx.plan(f)
-	wantBranchSkip(t, err, "exist on no remote")
+	wantBranchSkip(t, err, "1 commit exists only on this branch")
 	// --force skips the unpushed check and falls through to the -D rule.
 	fx.env.Force = true
 	step, err := fx.plan(f)
