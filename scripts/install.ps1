@@ -1,12 +1,16 @@
 <#
 .SYNOPSIS
-Installs the latest (or a chosen) Brooom release from GitHub releases.
+Installs the latest or a chosen Brooom release.
 
 .DESCRIPTION
   irm https://raw.githubusercontent.com/Tobias-Braun/brooom/main/scripts/install.ps1 | iex
 
 Environment: BROOOM_VERSION, BROOOM_INSTALL_DIR, BROOOM_DOWNLOAD_BASE,
-BROOOM_LATEST_URL (see scripts/install.sh). The zip name must match
+BROOOM_LATEST_URL (see scripts/install.sh; here it is a URL answering with the
+GitHub releases/latest JSON, of which only tag_name is read). Resolving the
+latest release calls the GitHub API, which allows 60 unauthenticated requests
+per hour and IP; set GITHUB_TOKEN to authenticate (sent only to the default
+GitHub API URL) or pin BROOOM_VERSION. The zip name must match
 archives.name_template in .goreleaser.yaml. The checksum is verified before
 anything is extracted. The user PATH is only changed with -AddToPath.
 #>
@@ -20,28 +24,38 @@ $ProgressPreference = 'SilentlyContinue'
 
 $repoUrl = 'https://github.com/Tobias-Braun/brooom/releases'
 $downloadBase = if ($env:BROOOM_DOWNLOAD_BASE) { $env:BROOOM_DOWNLOAD_BASE } else { "$repoUrl/download" }
-$latestUrl = if ($env:BROOOM_LATEST_URL) { $env:BROOOM_LATEST_URL } else { "$repoUrl/latest" }
+$latestUrl = if ($env:BROOOM_LATEST_URL) { $env:BROOOM_LATEST_URL } else { "https://api.github.com/repos/Tobias-Braun/brooom/releases/latest" }
 
 function Get-Arch {
-  switch ($env:PROCESSOR_ARCHITECTURE) {
+  # A 32-bit PowerShell on 64-bit Windows reports PROCESSOR_ARCHITECTURE=x86
+  # and keeps the real architecture in PROCESSOR_ARCHITEW6432.
+  $raw = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+  switch ($raw) {
     'AMD64' { return 'amd64' }
     'ARM64' { return 'arm64' }
-    default { throw "Unsupported architecture '$($env:PROCESSOR_ARCHITECTURE)'; supported: AMD64, ARM64" }
+    default { throw "Unsupported architecture '$raw'; supported: AMD64, ARM64" }
   }
 }
 
 function Get-LatestTag {
-  # The releases/latest URL redirects to .../tag/<tag>; read the redirect
-  # instead of following it.
+  # The releases API answers with plain JSON on every PowerShell edition. The
+  # releases/latest redirect is not used: reading it needs different flags on
+  # Windows PowerShell 5 and PowerShell 7 and fails on the latter.
   try {
-    $response = Invoke-WebRequest -Uri $latestUrl -MaximumRedirection 0 -UseBasicParsing -ErrorAction SilentlyContinue
+    # Windows PowerShell 5 may default to protocols GitHub no longer accepts.
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+  } catch {}
+  $headers = @{ Accept = 'application/vnd.github+json' }
+  # The token must not leak to an overridden URL.
+  if ($env:GITHUB_TOKEN -and -not $env:BROOOM_LATEST_URL) { $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
+  try {
+    $release = Invoke-RestMethod -Uri $latestUrl -Headers $headers
   } catch {
-    $response = $_.Exception.Response
+    throw "Cannot resolve the latest release from $latestUrl ($($_.Exception.Message)); the GitHub API allows 60 unauthenticated requests per hour, so set GITHUB_TOKEN or BROOOM_VERSION"
   }
-  $location = $null
-  if ($response -and $response.Headers) { $location = [string]($response.Headers['Location'] | Select-Object -First 1) }
-  if (-not $location) { throw "Cannot resolve the latest release from $latestUrl; set BROOOM_VERSION" }
-  return ($location.TrimEnd('/') -split '/')[-1]
+  $tag = [string]$release.tag_name
+  if (-not $tag) { throw "Cannot resolve the latest release from $latestUrl (no tag_name); set BROOOM_VERSION" }
+  return $tag
 }
 
 $arch = Get-Arch

@@ -66,6 +66,27 @@ nothing. `scripts/test-install.sh` tests the install script against a local
 fake release. Pull requests touching the release files run the same checks in
 `.github/workflows/release-check.yml`.
 
+The `Release` workflow first verifies that the tagged commit is reachable from
+`origin/main` and fails before building anything otherwise. Pull requests that
+touch the release files (or `internal/trash/**`) additionally smoke-test the
+snapshot: the darwin arm64 and Intel binaries run `scripts/smoke-darwin.sh`
+(version, quarantine with undo, macOS Trash), and `scripts/test-install.ps1`
+installs the Windows snapshot under Windows PowerShell and PowerShell 7. The
+CI `Test purego` jobs run the trash tests with `CGO_ENABLED=0` on both macOS
+architectures, as the shipped binary is built.
+
+`scripts/install.ps1` resolves the latest tag from the GitHub releases API;
+its `BROOOM_LATEST_URL` override must answer with that JSON (only `tag_name`
+is read), unlike `install.sh` where it is a redirecting URL.
+
+## Homebrew cask and Gatekeeper
+
+The darwin binaries are ad-hoc signed but not notarized, and Homebrew
+downloads casks with `com.apple.quarantine`, so Gatekeeper blocks the first
+run. The cask therefore has a `hooks.post.install` that removes the attribute
+from the staged binary. Notarization (`notarize.macos`, needs Apple developer
+credentials) makes the hook unnecessary; drop it then.
+
 ## Enabling package managers
 
 Each integration is configured but disabled. To enable one, create the
