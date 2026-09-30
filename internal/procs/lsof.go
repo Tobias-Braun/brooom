@@ -17,6 +17,9 @@ const (
 	lsofMaxArgBytes = 64 * 1024
 )
 
+// lsofListAllArgs lists every open file of every inspectable process.
+var lsofListAllArgs = []string{"-n", "-P", "-w", "-F0n"}
+
 // lsofRunner runs lsof with the given arguments and returns its stdout. It is
 // a parameter so the parsing and mapping logic is testable without lsof. An
 // unusable lsof (not installed) must be reported as ErrUnavailable.
@@ -64,7 +67,7 @@ func lsofOpenFiles(ctx context.Context, run lsofRunner, files, dirs []string, re
 	// Without file arguments lsof lists all open files of every process it
 	// may inspect, including working directories, executables and memory
 	// maps, which is what a worktree in use looks like.
-	names, err := runNames(ctx, run, []string{"-n", "-P", "-w", "-F0n"})
+	names, err := runNames(ctx, run, lsofListAllArgs)
 	// A listing cut short may still have seen an open file.
 	for _, dir := range dirs {
 		if anyBelow(names, dirPrefix(dir)) {
@@ -151,8 +154,11 @@ func fileReported(f string, names []string, exact map[string]struct{}) bool {
 // subdirectories, which is conservative: it can only flag more, never less.
 func anyBelow(names []string, prefix string) bool {
 	for _, sp := range lsofSpellings(prefix) {
+		// The directory itself is reported when a process stands in it (its
+		// cwd), so the name without the trailing separator counts too.
+		dir := strings.TrimSuffix(sp, "/")
 		for _, n := range names {
-			if len(n) > len(sp) && strings.EqualFold(n[:len(sp)], sp) {
+			if len(n) >= len(dir) && strings.EqualFold(n[:len(dir)], dir) && (len(n) == len(dir) || n[len(dir)] == '/') {
 				return true
 			}
 		}

@@ -68,7 +68,7 @@ func (r *run) markOpen(ctx context.Context, items []*item) error {
 	if len(paths) == 0 {
 		return nil
 	}
-	open, err := openFiles(ctx, paths)
+	open, err := r.env.OpenFiles(ctx, paths, openFiles)
 	if cerr := ctx.Err(); cerr != nil {
 		return cerr
 	}

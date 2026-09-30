@@ -292,7 +292,7 @@ func (s *scan) checkOpen(ctx context.Context, cands []candidate) (map[string]boo
 	for i, c := range cands {
 		paths[i] = c.path
 	}
-	res, err := openFiles(ctx, paths)
+	res, err := s.env.OpenFiles(ctx, paths, openFiles)
 	if err != nil && !errors.Is(err, procs.ErrUnavailable) && !errors.Is(err, procs.ErrIncomplete) {
 		// Any failure means unknown, never safe, and must not fail the scan.
 		err = fmt.Errorf("%w: %w", procs.ErrUnavailable, err)

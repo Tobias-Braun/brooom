@@ -26,6 +26,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
+	"github.com/Tobias-Braun/brooom/internal/procs"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 )
 
@@ -89,6 +90,24 @@ type Env struct {
 	// NewestModTime is only a lower-bound hint, cached sizes are fine for
 	// sizing and ranking.
 	CacheDir string
+	// Open optionally shares one open-file snapshot between all detectors of
+	// a scan (see procs.Snapshot), so macOS runs one lsof per scan instead of
+	// one per target. When nil, OpenFiles asks per call. The snapshot is a
+	// conservative pre-filter; actions still re-check their own target.
+	Open *procs.Snapshot
+}
+
+// OpenFilesFunc is the signature of procs.OpenFiles.
+type OpenFilesFunc func(ctx context.Context, paths []string) (map[string]bool, error)
+
+// OpenFiles answers "is any of these paths open?" from the scan's shared
+// snapshot when there is one and from fallback (the detector's own,
+// test-replaceable procs.OpenFiles seam) otherwise.
+func (e *Env) OpenFiles(ctx context.Context, paths []string, fallback OpenFilesFunc) (map[string]bool, error) {
+	if e != nil && e.Open != nil {
+		return e.Open.OpenAmong(ctx, paths)
+	}
+	return fallback(ctx, paths)
 }
 
 // AgeDays returns the whole number of days between t and the scan time.

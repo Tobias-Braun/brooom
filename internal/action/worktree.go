@@ -398,6 +398,14 @@ func (removeWorktree) Apply(ctx context.Context, env *Env, s Step) (session.Entr
 // where nothing is left to lose. git's own refusals (submodules, untracked files that appeared since the
 // check, a lock taken meanwhile) surface as the failure message.
 func (ev *removeEval) applyClean(ctx context.Context, env *Env, en session.Entry, undo map[string]string) (session.Entry, error) {
+	// Only here, not in Plan: the probe renames the directory briefly, which
+	// a dry run must never do.
+	if err := checkWorktreeRenamable(ev.path); errors.Is(err, ErrSkipped) {
+		en.Status, en.Error = session.StatusSkipped, skipReason(err)
+		return en, nil
+	} else if err != nil {
+		return failedTrash(en, err)
+	}
 	if _, err := env.Git.Run(ctx, ev.repo.Dir, "worktree", "remove", "--", ev.path); err != nil {
 		return failedTrash(en, fmt.Errorf("git worktree remove %s: %w", ev.path, err))
 	}

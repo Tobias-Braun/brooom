@@ -21,6 +21,17 @@ func openFiles(ctx context.Context, files, dirs []string, res map[string]bool) e
 	return lsofOpenFiles(ctx, execLsof(bin), files, dirs, res)
 }
 
+// platformListing is one lsof run listing every open file, working directory
+// and memory map of every process lsof may inspect. A Snapshot answers all
+// queries of a scan from it.
+func platformListing(ctx context.Context) ([]string, error) {
+	bin, err := findLsof()
+	if err != nil {
+		return nil, err
+	}
+	return runNames(ctx, execLsof(bin), lsofListAllArgs)
+}
+
 // findLsof prefers the system binary over whatever PATH offers, so a
 // user-controlled PATH entry cannot substitute the tool; missing lsof is
 // ErrUnavailable.

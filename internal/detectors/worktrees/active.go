@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
@@ -51,7 +52,7 @@ func (s *scan) markInUse(ctx context.Context, e *entry, v *verdict) error {
 			return cerr
 		}
 		inUse = res[e.path]
-		msg = "a process has a file open in the worktree or its working directory there"
+		msg = inUseMessage(runtime.GOOS)
 		if !inUse && err != nil {
 			v.evidence = append(v.evidence, unknownOpenEvidence(err))
 		}
@@ -64,6 +65,17 @@ func (s *scan) markInUse(ctx context.Context, e *entry, v *verdict) error {
 	v.action = findings.ActionNone
 	v.reason = "worktree is in use (" + msg + "); finish or close that first"
 	return nil
+}
+
+// inUseMessage words the evidence for what the platform's check can actually
+// see: Linux and macOS also report a process standing in the worktree, while
+// the Windows Restart Manager only knows open files, so claiming a working
+// directory there would promise more than the check delivers.
+func inUseMessage(goos string) string {
+	if goos == "windows" {
+		return "a process has a file open in the worktree"
+	}
+	return "a process has a file open in the worktree or its working directory there"
 }
 
 // openBatch is the outcome of the one open-file check of a scan. Every
@@ -99,7 +111,7 @@ func (s *scan) prefetchOpen(ctx context.Context, wts []gitx.Worktree) {
 	if len(paths) == 0 {
 		return
 	}
-	res, err := openFiles(ctx, paths)
+	res, err := s.env.OpenFiles(ctx, paths, openFiles)
 	s.open = &openBatch{paths: set, res: res, err: err}
 }
 
@@ -109,7 +121,7 @@ func (s *scan) openState(ctx context.Context, path string) (map[string]bool, err
 	if b := s.open; b != nil && b.paths[path] {
 		return b.res, b.err
 	}
-	return openFiles(ctx, []string{path})
+	return s.env.OpenFiles(ctx, []string{path}, openFiles)
 }
 
 func unknownOpenEvidence(err error) findings.Evidence {

@@ -289,15 +289,17 @@ func TestLsofCancelledContext(t *testing.T) {
 	}
 }
 
-func TestAnyBelowIgnoresDirItselfAndLookalikes(t *testing.T) {
+// The directory itself counts as open since a process may stand in it (see
+// TestLsofDirectoryItselfCountsAsOpen); lookalike siblings do not.
+func TestAnyBelowCountsDirItselfButNotLookalikes(t *testing.T) {
 	prefix := "/tmp/dir/"
 	tests := []struct {
 		names []string
 		want  bool
 	}{
 		{nil, false},
-		{[]string{"/tmp/dir"}, false},
-		{[]string{"/tmp/dir/"}, false},
+		{[]string{"/tmp/dir"}, true},
+		{[]string{"/tmp/dir/"}, true},
 		{[]string{"/tmp/dirx/file"}, false},
 		{[]string{"/tmp/dir/file"}, true},
 		{[]string{"/TMP/DIR/file"}, true},
