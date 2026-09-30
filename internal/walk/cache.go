@@ -19,9 +19,6 @@ const (
 	// Incomplete, version 4 renamed HasGit to HasVCS and widened it (other VCS
 	// metadata, bare repository shape), so older records are rebuilt.
 	cacheVersion = 4
-	// maxCacheBytes caps the size of a cache file that is read. A larger
-	// file is treated as corrupt so a broken cache can never exhaust memory.
-	maxCacheBytes = 32 << 20
 	// maxCacheDirs caps the number of directory records persisted per
 	// queried path; huge trees are recomputed instead of cached.
 	maxCacheDirs = 250_000
