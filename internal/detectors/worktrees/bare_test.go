@@ -12,6 +12,10 @@ import (
 // The bare entry itself is never reported, the merged linked worktree is.
 func TestBareAnchorLayout(t *testing.T) {
 	l := testutil.NewBareLayout(t)
+	// The branch must have been worked on and then merged: a branch still at
+	// the base tip counts as unstarted and is never reported as merged.
+	l.Repo.Git("-C", l.Feat, "commit", "-q", "--allow-empty", "-m", "work")
+	l.Repo.Git("-C", l.Main, "merge", "-q", "--ff-only", "feat/x")
 	ageTree(t, l.Feat, testutil.BaseTime)
 	h := newHarness(t, l.Repo, l.Root)
 

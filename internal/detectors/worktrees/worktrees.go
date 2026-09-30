@@ -48,6 +48,7 @@ package worktrees
 
 import (
 	"context"
+	"errors"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/detect"
