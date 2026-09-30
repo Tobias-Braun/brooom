@@ -42,6 +42,11 @@ func VerifyFile(verifier, path string) bool {
 		return false
 	}
 	defer f.Close()
+	// The file may have been swapped for a symlink or another file between
+	// Lstat and Open; only the handle we actually read must be the one checked.
+	if fi2, err := f.Stat(); err != nil || !fi2.Mode().IsRegular() || !os.SameFile(fi, fi2) {
+		return false
+	}
 	buf := make([]byte, headerLen)
 	n, err := io.ReadFull(f, buf)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {

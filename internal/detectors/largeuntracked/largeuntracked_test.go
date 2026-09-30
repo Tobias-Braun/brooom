@@ -284,6 +284,17 @@ func TestIgnoredFilesAndDirs(t *testing.T) {
 	}
 }
 
+// TestUnverifiedCrashDumpNameIsReported: logs drops a large ignored file named
+// *.dmp or core whose header is no dump, so large-untracked must report it.
+func TestUnverifiedCrashDumpNameIsReported(t *testing.T) {
+	h := newHarness(t)
+	h.repo.WriteFile(".gitignore", "*.dmp\ncore\n")
+	h.big("export.dmp")
+	h.big("core")
+	h.repo.WriteFile("real.dmp", "MDMP"+strings.Repeat("x", bigSize))
+	h.want(h.run(), "export.dmp", "core")
+}
+
 func TestIncludeIgnoredOff(t *testing.T) {
 	h := newHarness(t)
 	h.cfg().IncludeIgnored = false

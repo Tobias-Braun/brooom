@@ -51,6 +51,11 @@ var HugeDirNames = []string{
 // (.gradle, .next), so descending would only slow the scan and produce
 // overlapping findings. One list keeps both detectors in step. Treat the
 // slice as read-only.
+//
+// It differs from HugeDirNames on purpose: that list guards workspace
+// discovery from the home directory (caches, package stores, trash), while
+// this one guards walks inside a single project, where dist and build are
+// ordinary output directories and .cache or .git are handled elsewhere.
 var ProjectSkipDirs = []string{
 	"node_modules", "vendor", ".venv", "venv", "target", "dist", "build",
 	".gradle", ".next",

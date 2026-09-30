@@ -126,8 +126,9 @@ their paths in the guard. It only declares locations and never detects.
 
 The `ai-artifacts` detector (`internal/detectors/aiartifacts`) matches the
 `ai` category of the catalog. Project targets get one pruned `walk.Walk`
-(`.git`, `scan.skip_dirs`, the shared `scope.ProjectSkipDirs` list (also used by `log-and-runtime-files`), matched directories, root and
-repo excludes and nested repositories are not descended into). Catalog
+(`.git`, `scan.skip_dirs`, the shared `scope.ProjectSkipDirs` list (also
+used by `log-and-runtime-files`), matched directories, root and repo excludes
+and nested repositories are not descended into). Catalog
 `protect` patterns always win: a candidate that is protected, below a
 protected path or a directory containing one is dropped, as is a matched
 directory containing a `.git` entry at any depth (`walk.DirSummary.HasVCS`,

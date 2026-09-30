@@ -113,9 +113,12 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	}
 	r := &run{d: d, env: env, cfg: cfg, cat: cat, target: target}
 	cands, err := r.candidates(ctx)
-	cands = verified(cands)
-	if err != nil || len(cands) == 0 {
+	if err != nil {
 		return err
+	}
+	cands = verified(cands)
+	if len(cands) == 0 {
+		return nil
 	}
 	items, err := r.measureAll(ctx, cands)
 	if err != nil {

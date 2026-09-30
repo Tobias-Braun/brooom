@@ -66,6 +66,24 @@ func TestClaimsCovers(t *testing.T) {
 	}
 }
 
+// TestClaimsHonourVerify: a file named like a crash dump is claimed for the
+// logs detector only when its header verifies, since logs drops the rest.
+func TestClaimsHonourVerify(t *testing.T) {
+	dir := testutil.ResolvedTempDir(t)
+	testutil.WriteFile(t, dir, "export.dmp", "not a dump")
+	testutil.WriteFile(t, dir, "real.dmp", "MDMP\x00\x00\x00\x00")
+	c, err := newClaims(dir, config.Default(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Covers("export.dmp", false) {
+		t.Error("unverified *.dmp must not be claimed")
+	}
+	if !c.Covers("real.dmp", false) {
+		t.Error("verified *.dmp must be claimed")
+	}
+}
+
 // TestClaimsFoldCaseOnCaseInsensitiveSystems pins the decision for issue #180:
 // build directory names are matched case-insensitively exactly where the
 // filesystem is (macOS, Windows), through the build-artifacts matcher, so
