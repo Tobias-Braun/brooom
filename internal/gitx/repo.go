@@ -90,6 +90,9 @@ type Repo struct {
 	Common string
 
 	memoize bool
+	// gh is the scan-wide breaker shared by all handles of one Cache; nil
+	// for uncached handles, which always call gh.
+	gh *ghBreaker
 
 	version        memo[struct{}, Version]
 	branches       memo[struct{}, []Branch]
@@ -98,7 +101,10 @@ type Repo struct {
 	bases          memo[string, Base]
 	remoteHolder   memo[string, string]
 	unpushed       memo[string, int]
-	patchIDs       memo[patchKey, patchSet]
+	patches        patchCache
+	commits        memo[string, string]
+	refTips        memo[struct{}, map[string]string]
+	mergedRefs     memo[string, map[string]struct{}]
 	merged         memo[mergeKey, MergeResult]
 	prs            memo[struct{}, PRInfo]
 	objectStats    memo[struct{}, ObjectStats]
@@ -119,11 +125,7 @@ func Open(ctx context.Context, r Runner, dir string) (*Repo, error) {
 }
 
 func open(ctx context.Context, r Runner, dir string, memoize bool) (*Repo, error) {
-	top, err := TopLevel(ctx, r, dir)
-	if err != nil {
-		return nil, err
-	}
-	common, err := CommonDir(ctx, r, dir)
+	top, common, err := resolveRepo(ctx, r, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +134,31 @@ func open(ctx context.Context, r Runner, dir string, memoize bool) (*Repo, error
 		return nil, err
 	}
 	return repo, nil
+}
+
+// resolveRepo returns the top level and common dir of the repository around
+// dir with one `git rev-parse` instead of three. Any failure (not a
+// repository, or a bare one, where --show-toplevel is fatal) falls back to the
+// individual queries, which produce the precise ErrNotRepo / ErrBareRepo.
+func resolveRepo(ctx context.Context, r Runner, dir string) (top, common string, err error) {
+	out, cerr := r.Run(ctx, dir, "rev-parse", "--is-bare-repository", "--show-toplevel", "--git-common-dir")
+	if lines := Lines(out); cerr == nil && len(lines) == 3 && lines[0] == "false" {
+		return NormalizePath(lines[1]), absCommonDir(dir, lines[2]), nil
+	}
+	if top, err = TopLevel(ctx, r, dir); err != nil {
+		return "", "", err
+	}
+	common, err = CommonDir(ctx, r, dir)
+	return top, common, err
+}
+
+// absCommonDir makes the --git-common-dir output absolute relative to dir.
+func absCommonDir(dir, out string) string {
+	p := filepath.FromSlash(out)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(dir, p)
+	}
+	return NormalizePath(p)
 }
 
 // run executes git in the handle's worktree.
@@ -164,11 +191,7 @@ func CommonDir(ctx context.Context, r Runner, dir string) (string, error) {
 	if err != nil {
 		return "", mapNotRepo(dir, err)
 	}
-	p := filepath.FromSlash(out)
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(dir, p)
-	}
-	return NormalizePath(p), nil
+	return absCommonDir(dir, out), nil
 }
 
 // MainWorktree returns the path of the main worktree of the repository dir
@@ -234,34 +257,42 @@ type Cache struct {
 	runner Runner
 	mu     sync.Mutex
 	repos  map[string]*Repo
+	// byDir remembers the handle per directory asked for, so the many
+	// env.Repo calls of one scan cost no git process after the first.
+	byDir map[string]*Repo
+	// gh is the breaker all handles of this scan share.
+	gh *ghBreaker
 }
 
 // NewCache returns an empty cache using runner for all repositories.
 func NewCache(runner Runner) *Cache {
-	return &Cache{runner: runner, repos: make(map[string]*Repo)}
+	return &Cache{runner: runner, repos: make(map[string]*Repo), byDir: make(map[string]*Repo), gh: &ghBreaker{}}
 }
 
 // Repo returns the shared handle for the repository containing dir. Linked
 // worktrees of one repository share the handle of the first one seen.
 func (c *Cache) Repo(ctx context.Context, dir string) (*Repo, error) {
-	top, err := TopLevel(ctx, c.runner, dir)
-	if err != nil {
-		return nil, err
+	c.mu.Lock()
+	r, ok := c.byDir[dir]
+	c.mu.Unlock()
+	if ok {
+		return r, nil
 	}
-	common, err := CommonDir(ctx, c.runner, dir)
+	top, common, err := resolveRepo(ctx, c.runner, dir)
 	if err != nil {
 		return nil, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if r, ok := c.repos[common]; ok {
-		return r, nil
+	r, ok = c.repos[common]
+	if !ok {
+		r = &Repo{Runner: c.runner, Dir: top, Common: common, memoize: true, gh: c.gh}
+		if err := r.requireGit(ctx); err != nil {
+			return nil, err
+		}
+		c.repos[common] = r
 	}
-	r := &Repo{Runner: c.runner, Dir: top, Common: common, memoize: true}
-	if err := r.requireGit(ctx); err != nil {
-		return nil, err
-	}
-	c.repos[common] = r
+	c.byDir[dir] = r
 	return r, nil
 }
 
@@ -295,12 +326,15 @@ func (r *Repo) requireGit(ctx context.Context) error {
 }
 
 // resolveCommit resolves ref to a full commit SHA without side effects.
+// Memoized on cached handles, where refs are stable for the length of a scan.
 func (r *Repo) resolveCommit(ctx context.Context, ref string) (string, error) {
-	out, err := r.run(ctx, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out), nil
+	return cached(r, &r.commits, ref, func() (string, error) {
+		out, err := r.run(ctx, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(out), nil
+	})
 }
 
 // refExists reports whether the fully qualified ref resolves to a commit.

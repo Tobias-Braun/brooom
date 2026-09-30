@@ -46,16 +46,18 @@ var ghEnv = []string{"GH_PROMPT_DISABLED=1", "NO_COLOR=1", "GH_PAGER=cat"}
 // `gh pr list`. This is the only network use in detection; callers gate it on
 // the UseGH configuration, not this function. Any failure yields
 // PRInfo{Known:false} and no error, so a missing or offline gh never aborts a
-// scan. The branch-name-only check ignores forks: a fork PR with the same
+// scan. On cached handles a scan-wide breaker stops asking gh after the first
+// timeout, network error or missing binary: every later repository gets
+// PRInfo{Known:false} immediately. The branch-name-only check ignores forks: a fork PR with the same
 // head name is a false positive, which errs on the safe side.
 func (r *Repo) OpenPRBranches(ctx context.Context, dir string, opts PROptions) PRInfo {
 	info, _ := cached(r, &r.prs, struct{}{}, func() (PRInfo, error) {
-		return fetchOpenPRs(ctx, dir, opts), nil
+		return r.gh.do(func() (PRInfo, ghVerdict) { return fetchOpenPRs(ctx, dir, opts) }), nil
 	})
 	return info
 }
 
-func fetchOpenPRs(ctx context.Context, dir string, opts PROptions) PRInfo {
+func fetchOpenPRs(parent context.Context, dir string, opts PROptions) (PRInfo, ghVerdict) {
 	timeout := opts.Timeout
 	if timeout <= 0 {
 		timeout = defaultGHTimeout
@@ -64,23 +66,26 @@ func fetchOpenPRs(ctx context.Context, dir string, opts PROptions) PRInfo {
 	if gh == nil {
 		gh = execGH
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	out, err := gh(ctx, dir, ghEnv, "pr", "list", "--state", "open", "--json", "headRefName", "--limit", "500")
-	if err != nil || ctx.Err() != nil {
-		return PRInfo{}
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		return PRInfo{}, classifyGHError(parent, ctx, err)
 	}
 	var prs []struct {
 		HeadRefName string `json:"headRefName"`
 	}
 	if err := json.Unmarshal(out, &prs); err != nil {
-		return PRInfo{}
+		return PRInfo{}, ghNeutral
 	}
 	info := PRInfo{Known: true, Branches: make(map[string]bool, len(prs))}
 	for _, p := range prs {
 		info.Branches[p.HeadRefName] = true
 	}
-	return info
+	return info, ghHealthy
 }
 
 // execGH runs the gh binary from PATH.
@@ -92,5 +97,8 @@ func execGH(ctx context.Context, dir string, env []string, args ...string) ([]by
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
+	// A grandchild (gh spawns helpers) may hold the output pipe past the
+	// deadline; WaitDelay force-closes it so the timeout is real.
+	cmd.WaitDelay = waitDelay
 	return cmd.Output()
 }

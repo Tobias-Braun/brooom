@@ -51,7 +51,7 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `thresholds.recent_days` | `2` | Window for the `recently_modified` risk flag. |
 | `git.protected_branches` | `main, master, develop, dev, trunk, release/*, release-*, gh-pages` | Branch globs never suggested for deletion. Must not be empty. |
 | `git.base_branches` | `main, master, develop, trunk` | Candidate base branches for merge detection. Must not be empty. |
-| `git.use_gh` | `true` | Query open PRs through `gh` when available. |
+| `git.use_gh` | `true` | Query open PRs through `gh` when available. This is a network call (the only one in detection), bounded by a 5 s timeout per call; after the first timeout, network error or missing `gh` the rest of the scan skips it and open-PR status is reported as unknown, which never blocks a scan. Set `false` for a fully offline run. |
 | `detectors.stale-branch` | enabled, `min_age_days` 90, `include_unpushed` | Stale branch detector. |
 | `detectors.merged-branch` | enabled, `mode` `ancestor+squash`, `include_remote` false | `mode` is `ancestor` or `ancestor+squash`. |
 | `detectors.worktrees` | enabled, `include_stale`, `min_age_days` 30 | Worktree detector. |

@@ -2,7 +2,10 @@ package config
 
 // Default returns the built-in configuration. Brooom must work with nothing
 // but these defaults inside a repository, so every value here is chosen to be
-// safe: conservative ages, OS trash, no user-level locations, no network.
+// safe: conservative ages, OS trash, no user-level locations. The one network use is
+// git.use_gh (open PR lookup through the gh CLI), which stays on by default
+// because it protects branches with open PRs; it is bounded by a timeout and a
+// scan-wide circuit breaker and never blocks when gh is missing or offline.
 func Default() *Config {
 	return &Config{
 		Version: CurrentVersion,
