@@ -2,7 +2,9 @@ name: Pages
 
 # Builds and checks the landing page (site/) on every relevant pull request and
 # deploys it to GitHub Pages when the change lands on main. One-time manual
-# step: Settings > Pages > Source must be set to "GitHub Actions".
+# step: Settings > Pages > Source must be set to "GitHub Actions". The site URL
+# and base path are fixed in site/astro.config.mjs, so the build job needs no
+# Pages API access (configure-pages would require pages: write there).
 on:
   push:
     branches: [main]
@@ -42,8 +44,6 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
-      - uses: actions/configure-pages@v6
-        if: github.event_name != 'pull_request'
       - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
         with:
