@@ -5,6 +5,7 @@ package all
 
 import (
 	_ "github.com/Tobias-Braun/brooom/internal/detectors/gitbloat"
+	_ "github.com/Tobias-Braun/brooom/internal/detectors/largeuntracked"
 	_ "github.com/Tobias-Braun/brooom/internal/detectors/mergedbranch"
 	_ "github.com/Tobias-Braun/brooom/internal/detectors/stalebranch"
 	_ "github.com/Tobias-Braun/brooom/internal/detectors/worktrees"
