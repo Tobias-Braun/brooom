@@ -307,7 +307,7 @@ func TestWorktreesCleanup(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	if !strings.Contains(out, "re-run 'brooom worktrees --apply'") {
+	if !strings.Contains(out, "re-run 'brooom worktrees --detector worktrees --apply'") {
 		t.Errorf("dry run lacks the hint:\n%s", out)
 	}
 	if _, err := os.Stat(merged); err != nil {
@@ -370,6 +370,85 @@ func TestMachineFormats(t *testing.T) {
 	}
 	if !f.hasBranch("feat/merged") {
 		t.Errorf("a rejected apply changed something")
+	}
+}
+
+// TestConfigFormatDoesNotBlockApply reproduces #110: a machine format that
+// only comes from output.format in the config must not make --apply fail with
+// a complaint about a flag the user never passed. Reads still honour it.
+func TestConfigFormatDoesNotBlockApply(t *testing.T) {
+	for _, format := range []string{"json", "ndjson", "plain"} {
+		t.Run(format, func(t *testing.T) {
+			f := newCleanupFixture(t, map[string]any{"output": map[string]any{"format": format}})
+			f.mergedAndSquashed()
+
+			_, out, _ := brooom(t, "", "branches")
+			if strings.Contains(out, "dry run") {
+				t.Errorf("a dry run ignored the configured %s format:\n%s", format, out)
+			}
+			code, out, errOut := brooom(t, "", "branches", "--apply", "--yes")
+			if code != ExitOK {
+				t.Fatalf("code %d, stderr %q", code, errOut)
+			}
+			if !strings.Contains(out, "applied") && !strings.Contains(out, "deleted") {
+				t.Errorf("no human summary:\n%s", out)
+			}
+			if f.hasBranch("feat/merged") {
+				t.Errorf("--apply did not run: %v", f.branches())
+			}
+		})
+	}
+}
+
+// TestExplicitFormatStillRejectedWithConfigFormat: the explicit flag is what
+// gets refused, whatever the config says.
+func TestExplicitFormatStillRejectedWithConfigFormat(t *testing.T) {
+	f := newCleanupFixture(t, map[string]any{"output": map[string]any{"format": "json"}})
+	f.mergedAndSquashed()
+	code, _, errOut := brooom(t, "", "branches", "--format", "ndjson", "--apply", "--yes")
+	if code != ExitUsage || !strings.Contains(errOut, "--format ndjson cannot be combined with --apply") {
+		t.Errorf("code %d, stderr %q", code, errOut)
+	}
+	if !f.hasBranch("feat/merged") {
+		t.Error("a rejected apply changed something")
+	}
+}
+
+// TestConfigFormatDoesNotBlockCleanAndPurge: the other acting commands follow
+// the same rule; clean --from never looks at the format when applying.
+func TestConfigFormatDoesNotBlockCleanAndPurge(t *testing.T) {
+	f := newCleanupFixture(t, map[string]any{"output": map[string]any{"format": "json"}})
+	dir, _ := junkDir(t, f.repo.Dir, "target")
+	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
+	code, _, errOut := brooom(t, "", "clean", "--from", report, "--apply", "--yes", "--trash-strategy", "quarantine")
+	if code != ExitOK || exists(dir) {
+		t.Errorf("clean: code %d, stderr %q, dir exists %v", code, errOut, exists(dir))
+	}
+	code, _, errOut = brooom(t, "", "git", "purge", "--prune", "now")
+	if code != ExitOK {
+		t.Errorf("git purge: code %d, stderr %q", code, errOut)
+	}
+}
+
+func TestResolveActingFormat(t *testing.T) {
+	tests := []struct {
+		name, flag, cfg, want string
+	}{
+		{"config machine format falls back", "", "json", "table"},
+		{"config human format is kept", "", "summary", "summary"},
+		{"flag wins and is kept for the caller to refuse", "ndjson", "table", "ndjson"},
+		{"default", "", "", "table"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveActingFormat(tt.flag, tt.cfg)
+			if err != nil || got != tt.want {
+				t.Errorf("got %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+	if _, err := resolveActingFormat("", "bogus"); err == nil {
+		t.Error("an unknown config format was accepted")
 	}
 }
 
@@ -458,7 +537,7 @@ func TestScanFooterUsesApplyHint(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	code, out, _ := brooom(t, "", "scan", "--detector", "merged-branch")
-	if code != ExitOK || !strings.Contains(out, "nothing was changed; run `brooom sweep --apply`") {
+	if code != ExitOK || !strings.Contains(out, "nothing was changed; run `brooom branches --detector merged-branch --apply`") {
 		t.Errorf("table footer: code %d\n%s", code, out)
 	}
 	_, out, _ = brooom(t, "", "scan", "--detector", "merged-branch", "--format", "json")

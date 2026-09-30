@@ -229,8 +229,8 @@ which action to run; risk flags, sizes and ages in the file are never trusted,
 and each finding is checked again against the live state before it is applied.
 
 A finding without a suggested action stays untouched, even with --force: scan
-again with --force (or export with 'brooom scan --force --format json') to
-get an action for findings blocked by an overridable risk flag.
+again with --force (export with 'brooom scan --force --format json') to get
+an action for findings blocked by an overridable risk flag.
 
 Use '--from -' to read the file from stdin. Without --apply this is a dry run.
 ```
@@ -849,6 +849,10 @@ Scan the current repository (or, with --workspaces, every repository and
 project below the configured roots) and report findings. Scanning never
 modifies anything; use 'brooom sweep', a specific command with --apply, or
 'brooom clean --from <file>' to act on findings.
+
+--force only changes what is reported: findings blocked by an overridable risk
+flag then suggest their action, so the file can be given to 'brooom clean
+--from'. Nothing is modified either way.
 ```
 
 **Examples**
@@ -857,7 +861,14 @@ modifies anything; use 'brooom sweep', a specific command with --apply, or
 brooom scan
 brooom scan --workspaces --format json > findings.json
 brooom scan --detector merged-branch,worktrees --format plain
+brooom scan --force --format json > findings.json
 ```
+
+**Flags**
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--force` | - | report the actions --force would allow for findings with overridable risk flags (read-only) |
 
 
 ## `brooom sessions`

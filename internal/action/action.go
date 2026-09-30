@@ -49,6 +49,11 @@ type Env struct {
 	// only takes a detector name. Unlike Trasher it is bound to the session
 	// that is being undone where a strategy needs one.
 	TrasherFor func(strategy config.TrashStrategy) (trash.Trasher, error)
+	// BeforeDelete, when set, is called by the trash action right before an
+	// item is removed with the delete strategy. It is the place for the
+	// one-time permanence warning: Plan must stay free of side effects because
+	// dry runs claim that nothing was changed.
+	BeforeDelete func()
 	// Force allows acting on findings with blocking risk flags and makes
 	// delete-branch use -D.
 	Force bool

@@ -72,21 +72,29 @@ func (o scanOptions) filter(in []findings.Finding) []findings.Finding {
 }
 
 func newScanCmd(a *app) *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	cmd := &cobra.Command{
 		Use:   "scan",
 		Short: "Scan for clutter and report findings (never modifies anything)",
 		Example: `  brooom scan
   brooom scan --workspaces --format json > findings.json
-  brooom scan --detector merged-branch,worktrees --format plain`,
+  brooom scan --detector merged-branch,worktrees --format plain
+  brooom scan --force --format json > findings.json`,
 		Long: `Scan the current repository (or, with --workspaces, every repository and
 project below the configured roots) and report findings. Scanning never
 modifies anything; use 'brooom sweep', a specific command with --apply, or
-'brooom clean --from <file>' to act on findings.`,
+'brooom clean --from <file>' to act on findings.
+
+--force only changes what is reported: findings blocked by an overridable risk
+flag then suggest their action, so the file can be given to 'brooom clean
+--from'. Nothing is modified either way.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runScan(cmd, scanOptions{})
+			return a.runScan(cmd, scanOptions{force: force})
 		},
 	}
+	cmd.Flags().BoolVar(&force, "force", false, "report the actions --force would allow for findings with overridable risk flags (read-only)")
+	return cmd
 }
 
 // runScan validates the request (so a typo fails before a long scan), runs
@@ -120,7 +128,7 @@ func (a *app) runScan(cmd *cobra.Command, opts scanOptions) error {
 		return werr
 	}
 	if !machineFormats[req.format] && !a.flags.quiet && res.Report.Totals.Actionable > 0 {
-		fmt.Fprintln(a.io.Out, applyHint(cmd))
+		fmt.Fprintln(a.io.Out, a.applyHint(cmd))
 	}
 	return err
 }

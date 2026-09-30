@@ -59,7 +59,7 @@ func (a *app) runPurge(cmd *cobra.Command, apply, yes bool) error {
 		return nil
 	}
 	if !apply {
-		fmt.Fprintf(a.io.Out, "dry run: nothing was deleted; re-run '%s' to delete them permanently\n", applyCommand(cmd))
+		fmt.Fprintf(a.io.Out, "dry run: nothing was deleted; re-run '%s' to delete them permanently\n", a.applyCommand(cmd))
 		return nil
 	}
 	if !yes {

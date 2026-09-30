@@ -48,8 +48,8 @@ which action to run; risk flags, sizes and ages in the file are never trusted,
 and each finding is checked again against the live state before it is applied.
 
 A finding without a suggested action stays untouched, even with --force: scan
-again with --force (or export with 'brooom scan --force --format json') to
-get an action for findings blocked by an overridable risk flag.
+again with --force (export with 'brooom scan --force --format json') to get
+an action for findings blocked by an overridable risk flag.
 
 Use '--from -' to read the file from stdin. Without --apply this is a dry run.`,
 		Args: cobra.NoArgs,

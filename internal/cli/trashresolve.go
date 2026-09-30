@@ -47,6 +47,8 @@ type trasherResolver struct {
 	sessionID string
 	stderr    io.Writer
 
+	warnOnce sync.Once
+
 	mu    sync.Mutex
 	cache map[config.TrashStrategy]trash.Trasher
 }
@@ -80,19 +82,20 @@ func (r *trasherResolver) forDetector(detector string) (trash.Trasher, error) {
 		return nil, errors.New("the delete strategy is selected in the config but not enabled: " +
 			`set "trash.allow_delete": true in the config or pass --trash-strategy delete for this run`)
 	}
-	return r.get(s, true)
+	return r.get(s)
 }
 
 // forStrategy is action.Env.TrasherFor. Undo restores with the strategy of
 // the manifest entry, and restoring never deletes anything, so neither the
 // delete gate nor the warning apply.
 func (r *trasherResolver) forStrategy(s config.TrashStrategy) (trash.Trasher, error) {
-	return r.get(s, false)
+	return r.get(s)
 }
 
-// get returns the cached trasher of a strategy or builds it. warn prints the
-// one-time delete warning when the trasher is first built.
-func (r *trasherResolver) get(s config.TrashStrategy, warn bool) (trash.Trasher, error) {
+// get returns the cached trasher of a strategy or builds it. It never warns:
+// trashers are resolved while planning, which also happens in dry runs that
+// promise nothing was changed. The warning belongs to beforeDelete.
+func (r *trasherResolver) get(s config.TrashStrategy) (trash.Trasher, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if t, ok := r.cache[s]; ok {
@@ -103,15 +106,21 @@ func (r *trasherResolver) get(s config.TrashStrategy, warn bool) (trash.Trasher,
 		return nil, err
 	}
 	r.cache[s] = t
-	if warn && s == config.StrategyDelete {
-		r.warnDelete()
-	}
 	return t, nil
 }
 
+// beforeDelete is action.Env.BeforeDelete: the trash action calls it right
+// before it permanently deletes something, so the warning only appears on
+// apply and never in a dry run, whose output may be discarded (json pipe,
+// `clean --from`). It warns at most once per run.
+func (r *trasherResolver) beforeDelete() {
+	r.warnOnce.Do(r.warnDelete)
+}
+
 // warnDelete prints the warning unless the marker file exists, then creates
-// the marker. A marker that cannot be written only means the warning shows
-// again next time; it never blocks the run.
+// the marker, so the marker only ever exists after the warning was shown. A
+// marker that cannot be written only means the warning shows again next time;
+// it never blocks the run.
 func (r *trasherResolver) warnDelete() {
 	marker := filepath.Join(r.dirs.Home, deleteWarnedMarker)
 	if _, err := os.Stat(marker); err == nil {

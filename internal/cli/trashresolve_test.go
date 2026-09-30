@@ -115,6 +115,12 @@ func TestDeleteGate(t *testing.T) {
 					}
 				}
 			}
+			if err == nil {
+				if stderr.Len() != 0 {
+					t.Errorf("resolving warned before any delete: %q", stderr.String())
+				}
+				r.beforeDelete()
+			}
 			if got := strings.Contains(stderr.String(), deleteWarning); got != tt.wantWarned {
 				t.Errorf("warned = %v, want %v (%q)", got, tt.wantWarned, stderr.String())
 			}
@@ -131,12 +137,15 @@ func TestDeleteWarningShownOnce(t *testing.T) {
 	if _, err := r.forDetector("d"); err != nil {
 		t.Fatal(err)
 	}
+	r.beforeDelete()
+	r.beforeDelete() // still once within one run
 	// A second run (fresh resolver, same home) must not warn again.
 	var second bytes.Buffer
 	r2 := newTrasherResolver(config.Default(), config.StrategyDelete, dirs, "id", &second)
 	if _, err := r2.forDetector("d"); err != nil {
 		t.Fatal(err)
 	}
+	r2.beforeDelete()
 	if strings.Count(stderr.String(), deleteWarning) != 1 || second.Len() != 0 {
 		t.Errorf("first %q second %q", stderr.String(), second.String())
 	}
@@ -154,6 +163,7 @@ func TestDeleteMarkerFailureNeverBlocks(t *testing.T) {
 	if _, err := r.forDetector("d"); err != nil {
 		t.Fatalf("marker failure blocked the run: %v", err)
 	}
+	r.beforeDelete()
 	if !strings.Contains(stderr.String(), deleteWarning) {
 		t.Errorf("no warning: %q", stderr.String())
 	}
@@ -206,13 +216,76 @@ func TestApplyHint(t *testing.T) {
 	branches.Flags().Bool("apply", false, "")
 	scan := &cobra.Command{Use: "scan"}
 	root.AddCommand(branches, scan)
-	if got, want := applyHint(branches), "nothing was changed; run `brooom branches --apply` or `brooom sweep`"; got != want {
+	a := &app{}
+	if got, want := a.applyHint(branches), "nothing was changed; run `brooom branches --apply` or `brooom sweep`"; got != want {
 		t.Errorf("got %q", got)
 	}
-	if got := applyHint(scan); !strings.Contains(got, "nothing was changed") || !strings.Contains(got, "brooom sweep --apply") {
+	if got := a.applyHint(scan); !strings.Contains(got, "nothing was changed") || !strings.Contains(got, "brooom sweep --apply") {
 		t.Errorf("got %q", got)
 	}
-	if got := rerunHint(branches); got != "re-run 'brooom branches --apply'" {
+	if got := a.rerunHint(branches); got != "re-run 'brooom branches --apply'" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// TestDryRunResolvingDeleteWritesNothing pins #109: planning resolves the
+// delete trasher in a dry run, which must neither warn nor touch the home.
+func TestDryRunResolvingDeleteWritesNothing(t *testing.T) {
+	r, stderr, dirs := resolverFixture(t, config.Default(), config.StrategyDelete)
+	if _, err := r.forDetector("d"); err != nil {
+		t.Fatal(err)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("warned while only planning: %q", stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(dirs.Home, deleteWarnedMarker)); err == nil {
+		t.Error("marker written while only planning")
+	}
+}
+
+// TestDeleteWarningIsShownOnApplyNotInDryRun reproduces #109 through the real
+// command: a dry run with the delete strategy used to consume the one-time
+// warning (and write the marker), so the following --apply --yes deleted
+// permanently without saying anything.
+func TestDeleteWarningIsShownOnApplyNotInDryRun(t *testing.T) {
+	f := newCleanupFixture(t, nil)
+	// The delete strategy only removes what git proves regenerable, so the
+	// junk directories must be ignored, like real build output.
+	testutil.WriteFile(t, f.repo.Dir, ".gitignore", "target*/\n")
+	dir, _ := junkDir(t, f.repo.Dir, "target")
+	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
+	del := []string{"clean", "--from", report, "--trash-strategy", "delete"}
+
+	code, out, errOut := brooom(t, "", del...)
+	if code != ExitOK || !strings.Contains(out, "dry run") {
+		t.Fatalf("dry run: code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	if strings.Contains(errOut, deleteWarning) {
+		t.Errorf("dry run showed the delete warning: %q", errOut)
+	}
+	if exists(filepath.Join(f.home, deleteWarnedMarker)) {
+		t.Fatal("dry run wrote the marker")
+	}
+
+	code, _, errOut = brooom(t, "", append(del, "--apply", "--yes")...)
+	if code != ExitOK {
+		t.Fatalf("apply: code %d, stderr %q", code, errOut)
+	}
+	if !strings.Contains(errOut, deleteWarning) {
+		t.Errorf("apply did not show the delete warning: %q", errOut)
+	}
+	if exists(dir) {
+		t.Error("directory was not deleted")
+	}
+	if !exists(filepath.Join(f.home, deleteWarnedMarker)) {
+		t.Error("marker missing after the warning was shown")
+	}
+
+	// The marker suppresses the warning on later applies.
+	dir2, _ := junkDir(t, f.repo.Dir, "target2")
+	report = writeReportFile(t, trashFinding(f.repo.Dir, dir2))
+	_, _, errOut = brooom(t, "", "clean", "--from", report, "--trash-strategy", "delete", "--apply", "--yes")
+	if strings.Contains(errOut, deleteWarning) {
+		t.Errorf("warned again: %q", errOut)
 	}
 }

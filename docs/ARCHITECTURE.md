@@ -225,6 +225,11 @@ treats reparse-point directories that are not name surrogates (OneDrive,
 ProjFS) as directories (`walk` decides by the reparse tag); a junction or other
 directory the walker cannot inspect is refused.
 
+Resolving the trasher in `Plan` has no side effects. The one-time delete
+warning (and its `.delete-warned` marker in the Brooom home) is emitted by
+`Env.BeforeDelete`, which `Apply` calls right before the first removal with the
+delete strategy, so dry runs never consume it.
+
 Not overridable by `--force`: steps 1, 2, 3, 4 (open files, also via the
 `file_open_by_process` flag) and 7. `--force` only lifts blocking risk flags
 and the tracked-files check. `Apply` re-resolves and re-checks the static

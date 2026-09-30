@@ -149,7 +149,7 @@ func TestGitPurgePruneDryRunThenApply(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	for _, want := range []string{"NOT restorable", "git prune in", "permanently", "1 unreachable object", "brooom git purge --apply"} {
+	for _, want := range []string{"NOT restorable", "git prune in", "permanently", "1 unreachable object", "brooom git purge --prune now --apply"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dry run lacks %q:\n%s", want, out)
 		}

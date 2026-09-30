@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -57,7 +58,11 @@ func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags
 	if err != nil {
 		return err
 	}
-	format, err := resolveFormat(a.flags.format, cfg.Output.Format)
+	resolve := resolveFormat
+	if af.apply {
+		resolve = resolveActingFormat
+	}
+	format, err := resolve(a.flags.format, cfg.Output.Format)
 	if err != nil {
 		return err
 	}
@@ -260,7 +265,7 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 		Env:       buildActionEnv(in, af, resolver),
 		Command:   a.commandLine(),
 		SessionID: id,
-		RerunHint: rerunHint(cmd),
+		RerunHint: a.rerunHint(cmd),
 	})
 	return exec.Run(ctx, in.findings)
 }
@@ -276,12 +281,13 @@ func buildActionEnv(in execInput, af applyFlags, r *trasherResolver) *action.Env
 // resolved scope).
 func newActionEnv(cfg *config.Config, git gitx.Runner, guard *scope.Guard, af applyFlags, r *trasherResolver) *action.Env {
 	return &action.Env{
-		Config:     cfg,
-		Git:        git,
-		Guard:      guard,
-		Trasher:    r.forDetector,
-		TrasherFor: r.forStrategy,
-		Force:      af.force,
+		Config:       cfg,
+		Git:          git,
+		Guard:        guard,
+		Trasher:      r.forDetector,
+		BeforeDelete: r.beforeDelete,
+		TrasherFor:   r.forStrategy,
+		Force:        af.force,
 	}
 }
 
@@ -312,30 +318,19 @@ func (a *app) commandLine() string {
 }
 
 // quoteArg quotes an argument that contains whitespace, quotes or is empty.
+// On Windows the backslash is the path separator, not an escape character, so
+// it neither triggers quoting nor gets doubled: a pasted `C:\tmp\f.json` must
+// stay a valid path in cmd and PowerShell.
 func quoteArg(s string) string {
-	if s != "" && !strings.ContainsAny(s, " \t\n\"'\\") {
+	special := " \t\n\"'\\"
+	if runtime.GOOS == "windows" {
+		special = " \t\n\"'"
+	}
+	if s != "" && !strings.ContainsAny(s, special) {
 		return s
 	}
-	return strconv.Quote(s)
-}
-
-// applyCommand is the command that executes what a dry run of cmd showed.
-func applyCommand(cmd *cobra.Command) string {
-	return cmd.CommandPath() + " --apply"
-}
-
-// rerunHint completes the executor's "dry run: nothing was changed; ... to
-// execute" line.
-func rerunHint(cmd *cobra.Command) string {
-	return "re-run '" + applyCommand(cmd) + "'"
-}
-
-// applyHint is the single wording of "nothing was changed, here is how to act
-// on it". Commands that cannot apply themselves (scan and the bare command)
-// point at the sweep and the specific commands instead.
-func applyHint(cmd *cobra.Command) string {
-	if cmd.Flags().Lookup("apply") == nil {
-		return "nothing was changed; run `brooom sweep --apply` or a specific command such as `brooom branches --apply`"
+	if runtime.GOOS == "windows" {
+		return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
 	}
-	return "nothing was changed; run `" + applyCommand(cmd) + "` or `brooom sweep`"
+	return strconv.Quote(s)
 }
