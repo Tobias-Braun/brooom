@@ -3,11 +3,11 @@ package largeuntracked
 import (
 	"fmt"
 	"path"
-	"runtime"
 	"strings"
 
 	"github.com/Tobias-Braun/brooom/internal/catalog"
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/detectors/buildartifacts"
 )
 
 // claimSet answers whether another catalog-driven detector owns a path. A
@@ -22,46 +22,31 @@ type claimSet interface {
 	Covers(rel string, isDir bool) bool
 }
 
-// defaultBuildDirs is the fallback list of build-artifact directory names,
-// used until the build-artifacts detector (#32) exposes its matcher. It is
-// intentionally the same kind of list (names, no marker rules): claiming a
-// little too much only means this detector stays silent about a directory
-// that another detector reports, while claiming too little would duplicate
-// findings.
-var defaultBuildDirs = []string{
-	"node_modules", "bower_components", "dist", "build", "out", "target",
-	".venv", "venv", "__pycache__", ".next", ".nuxt", ".turbo", ".gradle",
-	".parcel-cache", ".svelte-kit", ".angular", ".tox",
-}
-
 // claims is the claimSet built from the configuration of the other detectors.
 // A detector that is disabled claims nothing, since it will not report the
 // path either.
+//
+// Build artifacts are claimed through the build-artifacts detector's own
+// matcher (buildartifacts.ClaimsWith), markers included, so the two detectors
+// can never double-report a directory and a common name like dist without a
+// project marker stays reportable here.
 type claims struct {
-	fold      bool
-	buildDirs map[string]bool
+	buildDirs func(rel string, isDir bool) bool
 	matchers  []*catalog.ProjectMatcher
 }
 
-// foldsCase reports whether paths compare case-insensitively on this OS
-// (default Windows and macOS filesystems).
-func foldsCase() bool { return runtime.GOOS == "windows" || runtime.GOOS == "darwin" }
-
-// newClaims builds the claims for the effective configuration cfg: build
-// artifact directory names plus the project-level patterns of the
+// newClaims builds the claims for the effective configuration cfg of the
+// repository at dir: the build-artifacts matcher plus the project-level patterns of the
 // ai-artifacts and log-and-runtime-files catalogs.
-func newClaims(cfg *config.Config) (*claims, error) {
-	c := &claims{fold: foldsCase()}
+func newClaims(dir string, cfg *config.Config) (*claims, error) {
+	c := &claims{}
 	d := cfg.Detectors
 	if d.BuildArtifacts.Enabled {
-		c.buildDirs = map[string]bool{}
-		names := d.BuildArtifacts.Dirs
-		if len(names) == 0 {
-			names = defaultBuildDirs
+		fn, err := buildartifacts.ClaimsWith(dir, d.BuildArtifacts)
+		if err != nil {
+			return nil, fmt.Errorf("largeuntracked: %w", err)
 		}
-		for _, n := range append(append([]string{}, names...), d.BuildArtifacts.ExtraDirs...) {
-			c.buildDirs[c.key(n)] = true
-		}
+		c.buildDirs = fn
 	}
 	if d.AIArtifacts.Enabled {
 		cat, err := catalog.Load(catalog.Options{Extra: d.AIArtifacts.Extra, Tools: d.AIArtifacts.Tools, DefaultCategory: catalog.CategoryAI})
@@ -80,13 +65,6 @@ func newClaims(cfg *config.Config) (*claims, error) {
 	return c, nil
 }
 
-func (c *claims) key(name string) string {
-	if c.fold {
-		return strings.ToLower(name)
-	}
-	return name
-}
-
 // Covers implements claimSet. It is component-wise: every prefix of rel is
 // checked, and only the last component may be a file.
 func (c *claims) Covers(rel string, isDir bool) bool {
@@ -94,15 +72,15 @@ func (c *claims) Covers(rel string, isDir bool) bool {
 	for i := range segs {
 		prefix := strings.Join(segs[:i+1], "/")
 		prefixIsDir := i < len(segs)-1 || isDir
-		if c.claimed(prefix, segs[i], prefixIsDir) {
+		if c.claimed(prefix, prefixIsDir) {
 			return true
 		}
 	}
 	return false
 }
 
-func (c *claims) claimed(prefix, name string, isDir bool) bool {
-	if isDir && c.buildDirs[c.key(name)] {
+func (c *claims) claimed(prefix string, isDir bool) bool {
+	if isDir && c.buildDirs != nil && c.buildDirs(prefix, true) {
 		return true
 	}
 	for _, m := range c.matchers {

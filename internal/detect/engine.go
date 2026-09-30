@@ -2,6 +2,7 @@ package detect
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"sync"
 
@@ -23,20 +24,32 @@ type RunOptions struct {
 	OnFinding func(findings.Finding)
 }
 
+// pair is one unit of work: a detector applied to a target.
+type pair struct {
+	t scope.Target
+	d Detector
+}
+
 // Run executes detectors over targets in parallel and returns the unique
 // findings (deduplicated by ID, first one wins) and non-fatal errors.
+//
+// A fixed pool of workers pulls (target, detector) pairs from a channel, so
+// the goroutine count is bounded by Concurrency however many targets there
+// are. The producer stops as soon as ctx is done and every worker re-checks
+// ctx before starting a pair, so a cancelled scan does not keep running
+// detectors. A panic inside a detector is recovered and recorded as a
+// ScanError, so one faulty detector never loses the partial report.
 func Run(ctx context.Context, env *Env, targets []scope.Target, detectors []Detector, opts RunOptions) ([]findings.Finding, []findings.ScanError) {
 	n := opts.Concurrency
 	if n <= 0 {
 		n = runtime.NumCPU()
 	}
 	var (
-		mu     sync.Mutex
-		seen   = map[string]bool{}
-		found  []findings.Finding
-		errs   []findings.ScanError
-		wg     sync.WaitGroup
-		tokens = make(chan struct{}, n)
+		mu    sync.Mutex
+		seen  = map[string]bool{}
+		found []findings.Finding
+		errs  []findings.ScanError
+		wg    sync.WaitGroup
 	)
 	emit := func(f findings.Finding) {
 		mu.Lock()
@@ -50,31 +63,54 @@ func Run(ctx context.Context, env *Env, targets []scope.Target, detectors []Dete
 			opts.OnFinding(f)
 		}
 	}
+	addErr := func(e findings.ScanError) {
+		mu.Lock()
+		errs = append(errs, e)
+		mu.Unlock()
+	}
+	work := make(chan pair)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for p := range work {
+				if ctx.Err() != nil {
+					continue // drain so the producer can finish
+				}
+				if err := safeDetect(ctx, env, p, emit); err != nil {
+					addErr(findings.ScanError{Detector: p.d.Name(), Path: p.t.Path, Message: err.Error()})
+				}
+			}
+		}()
+	}
+produce:
 	for _, t := range targets {
 		for _, d := range detectors {
 			if opts.Applies != nil && !opts.Applies(d, t) {
 				continue
 			}
-			wg.Add(1)
-			go func(t scope.Target, d Detector) {
-				defer wg.Done()
-				select {
-				case tokens <- struct{}{}:
-				case <-ctx.Done():
-					return
-				}
-				defer func() { <-tokens }()
-				if err := d.Detect(ctx, env, t, emit); err != nil {
-					mu.Lock()
-					errs = append(errs, findings.ScanError{Detector: d.Name(), Path: t.Path, Message: err.Error()})
-					mu.Unlock()
-				}
-			}(t, d)
+			select {
+			case work <- pair{t, d}:
+			case <-ctx.Done():
+				break produce
+			}
 		}
 	}
+	close(work)
 	wg.Wait()
 	if ctx.Err() != nil {
 		errs = append(errs, findings.ScanError{Message: "scan interrupted: " + ctx.Err().Error()})
 	}
 	return found, errs
+}
+
+// safeDetect runs one detector and converts a panic into an error so the
+// remaining pairs and the partial report survive.
+func safeDetect(ctx context.Context, env *Env, p pair, emit func(findings.Finding)) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return p.d.Detect(ctx, env, p.t, emit)
 }

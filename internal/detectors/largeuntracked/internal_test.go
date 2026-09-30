@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/testutil"
 )
 
 func TestParseEntries(t *testing.T) {
@@ -27,9 +28,13 @@ func TestParseEntries(t *testing.T) {
 }
 
 func TestClaimsCovers(t *testing.T) {
+	dir := testutil.ResolvedTempDir(t)
+	for _, rel := range []string{"package.json", "generated/a.bin", "app/package.json", "loose/dist/x"} {
+		testutil.WriteFile(t, dir, rel, "x")
+	}
 	cfg := config.Default()
 	cfg.Detectors.BuildArtifacts.ExtraDirs = []string{"generated"}
-	c, err := newClaims(cfg)
+	c, err := newClaims(dir, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +46,10 @@ func TestClaimsCovers(t *testing.T) {
 		{"node_modules", true, true},
 		{"pkg/node_modules/x/y.bin", false, true},
 		{"generated/a.bin", false, true},
-		{"src/dist", true, true},
+		{"app/dist", true, true},
+		{"app/dist/out.js", false, true},
+		// Marker-gated: no project marker next to it, so not a build artifact.
+		{"loose/dist", true, false},
 		// A file that merely carries a build directory name is not a build dir.
 		{"dist", false, false},
 		{"src/main.go", false, false},
@@ -53,17 +61,6 @@ func TestClaimsCovers(t *testing.T) {
 		if got := c.Covers(tc.rel, tc.isDir); got != tc.want {
 			t.Errorf("Covers(%q, %v) = %v, want %v", tc.rel, tc.isDir, got, tc.want)
 		}
-	}
-}
-
-func TestClaimsCaseFolding(t *testing.T) {
-	c, err := newClaims(config.Default())
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := foldsCase()
-	if got := c.Covers("Node_Modules/x.bin", false); got != want {
-		t.Errorf("case-insensitive claim = %v, want %v on this OS", got, want)
 	}
 }
 

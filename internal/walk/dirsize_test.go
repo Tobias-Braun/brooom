@@ -158,3 +158,58 @@ func TestDirSizeCancelled(t *testing.T) {
 	}
 	assertNoGoroutineLeak(t, before)
 }
+
+// TestDirSizeIncomplete proves that a directory the sizer cannot list marks
+// the summary Incomplete (its bytes are missing from SizeBytes), with and
+// without the cache, and that the flag disappears once the tree is readable.
+// The failure is injected through the listDir seam so the test also runs as
+// root and on Windows, where chmod cannot deny access.
+func TestDirSizeIncomplete(t *testing.T) {
+	root, cache := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(root, "ok", "f"), 4096)
+	writeFile(t, filepath.Join(root, "locked", "big"), 8192)
+	ageTree(t, root)
+	locked := filepath.Join(root, "locked")
+
+	orig := listDir
+	deny := true
+	listDir = func(dir string) ([]os.DirEntry, error) {
+		if deny && dir == locked {
+			return nil, &os.PathError{Op: "open", Path: dir, Err: os.ErrPermission}
+		}
+		return orig(dir)
+	}
+	t.Cleanup(func() { listDir = orig })
+
+	for _, name := range []string{"cold", "warm"} {
+		sum, err := DirSize(context.Background(), root, Options{CacheDir: cache})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !sum.Incomplete {
+			t.Errorf("%s: Incomplete = false for a tree with an unreadable directory", name)
+		}
+	}
+	deny = false
+	sum, err := DirSize(context.Background(), root, Options{CacheDir: cache})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Incomplete {
+		t.Error("Incomplete stayed set after the directory became readable")
+	}
+}
+
+// TestDirSizeIncompleteSurvivesCache pins that the flag is part of the cache
+// record layout, so a warm read cannot silently turn a partial size complete.
+func TestDirSizeIncompleteSurvivesCache(t *testing.T) {
+	rec := &dirRecord{Incomplete: true, Subdirs: []string{}}
+	file := filepath.Join(t.TempDir(), "c.json")
+	if err := storeCache(file, "/x", map[string]*dirRecord{"": rec}); err != nil {
+		t.Fatal(err)
+	}
+	got := loadCache(file, "/x")
+	if got == nil || !got[""].Incomplete {
+		t.Fatalf("Incomplete lost in the cache round trip: %+v", got)
+	}
+}

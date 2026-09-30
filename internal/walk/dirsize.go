@@ -117,8 +117,11 @@ func (s *sizer) scan(path string, mtime int64, id string) *dirRecord {
 		Racy:          mtime >= s.start.Add(-racyWindow).UnixNano(),
 		Subdirs:       []string{},
 	}
-	entries, err := readDir(path, func(string, error) {})
+	entries, err := readDir(path, func(string, error) { rec.Incomplete = true })
 	if err != nil {
+		rec.Incomplete = true
+	}
+	if rec.Incomplete {
 		rec.Racy = true // partial listing: never trust it next time
 	}
 	for _, e := range entries {
@@ -160,6 +163,7 @@ func (s *sizer) aggregate() DirSummary {
 		sum.SizeBytes += rec.DirectBytes
 		sum.Files += rec.DirectFiles
 		sum.HasGit = sum.HasGit || rec.HasGit
+		sum.Incomplete = sum.Incomplete || rec.Incomplete
 		newest = max(newest, rec.DirectNewest)
 		if rel != "" {
 			// A directory's own mtime counts, except the queried root's.

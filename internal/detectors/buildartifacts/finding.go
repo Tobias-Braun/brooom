@@ -148,6 +148,9 @@ func (s *scan) evidence(f facts, st projectState) []findings.Evidence {
 	ev = append(ev, markerEvidence(f)...)
 	ev = append(ev, s.projectEvidence(f, st)...)
 	ev = append(ev, gitEvidence(f)...)
+	if f.sum.Incomplete {
+		ev = append(ev, findings.Evidence{Code: "unreadable", Message: "part of the directory could not be read, so the size is a lower bound", Value: true})
+	}
 	return ev
 }
 
@@ -199,7 +202,15 @@ func gitEvidence(f facts) []findings.Evidence {
 // action suggests trash unless a blocking flag applies. Tracked directories
 // are only suggested for trash under Force; the trash action re-checks and
 // enforces the same rule on its own.
+//
+// A directory that could not be read completely is never suggested: the size
+// is only a lower bound and the trash action refuses such directories at
+// apply time anyway ("cannot inspect the whole directory"), so suggesting it
+// would only end in "nothing to clean".
 func (s *scan) action(f facts, flags []findings.RiskFlag) findings.SuggestedAction {
+	if f.sum.Incomplete {
+		return findings.SuggestedAction{Type: findings.ActionNone, Reason: "cannot read part of the directory"}
+	}
 	cmd := "trash " + f.path
 	if f.git.tracked && s.env.Force && findings.Actionable(flags, true) {
 		return findings.SuggestedAction{Type: findings.ActionTrash, Command: cmd, Reason: "forced: contains files tracked by git"}

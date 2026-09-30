@@ -16,7 +16,7 @@ import (
 // ResolvedPath, Clean and best-effort EvalSymlinks) that root is used;
 // otherwise, including root == "", the longest configured root containing
 // target component-wise is selected. If none contains target the root layer
-// is skipped. A non-matching hint is never an error, so repo mode (hint = the
+// is skipped. A relative target is an error. A non-matching hint is never an error, so repo mode (hint = the
 // repo root) and workspace mode get the same overlay for the same directory.
 //
 // The selected root's thresholds replace the global values (root overrides
@@ -24,6 +24,11 @@ import (
 // Enabled. RootPath, RootExclude and RepoExclude on the result carry the
 // exclude globs for detectors (see Config).
 func (c *Config) ForTarget(root, target string) (*Config, error) {
+	// A relative target cannot be compared with the (absolute) roots, so the
+	// root overlay would be skipped silently and looser global values applied.
+	if !filepath.IsAbs(target) {
+		return nil, fmt.Errorf("config: target %q is not an absolute path", target)
+	}
 	eff := c.clone()
 	eff.RootPath, eff.RootExclude = "", nil
 	sel, err := c.selectRoot(root, target)

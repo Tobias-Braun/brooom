@@ -12,7 +12,7 @@ Implementation: `internal/config` (`Load`, `Save`, `SaveFull`, `Marshal`,
 
 - A missing file yields the defaults. Any other read error (permissions, path
   is a directory) is an error naming the path.
-- The file is decoded strictly: unknown keys, wrong types, trailing data after
+- The file is decoded strictly: duplicate keys (at any depth), unknown keys, wrong types, trailing data after
   the JSON value and files over 1 MiB are errors. An empty file is an error
   (likely a truncated write); `{}` is valid. A UTF-8 BOM is tolerated.
 - Errors name the full key path, for example

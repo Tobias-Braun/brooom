@@ -31,8 +31,9 @@
 //
 // Directories that the build-artifacts, ai-artifacts or
 // log-and-runtime-files detectors report (and everything below them) are
-// skipped, see claimSet. The build-artifacts matcher of #32 is not available
-// yet, so a name based default is used behind the claimSet interface.
+// skipped, see claimSet. Build artifacts use the build-artifacts detector's own
+// matcher (buildartifacts.ClaimsWith, markers included), so the two detectors
+// never double-report a directory.
 package largeuntracked
 
 import (
@@ -104,7 +105,7 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	if !cfg.Detectors.LargeUntracked.Enabled {
 		return nil
 	}
-	cl, err := newClaims(cfg)
+	cl, err := newClaims(target.Path, cfg)
 	if err != nil {
 		return err
 	}
