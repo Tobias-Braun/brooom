@@ -43,8 +43,13 @@ echo "== quarantine and undo"
 
 echo "== move to the macOS Trash"
 if [ "$(uname -s)" = Darwin ]; then
+  # The Trash may hold its own entries, so compare the entry count.
+  trash_count() { ls -A "$HOME/.Trash" 2>/dev/null | wc -l | tr -d ' '; }
+  before=$(trash_count)
   "$bin" logs --workspaces --apply -y --trash-strategy trash >/dev/null || fail "trash run failed"
   [ ! -e "$junk" ] || fail "file still present after trash"
+  after=$(trash_count)
+  [ "$after" -gt "$before" ] || fail "no new entry in ~/.Trash (had $before, now $after)"
 else
   echo "skipped: the Trash strategy is only checked on macOS"
 fi

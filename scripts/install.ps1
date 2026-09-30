@@ -1,13 +1,16 @@
 <#
 .SYNOPSIS
-Installs the latest (or a chosen) Brooom release from GitHub releases.
+Installs the latest or a chosen Brooom release.
 
 .DESCRIPTION
   irm https://raw.githubusercontent.com/Tobias-Braun/brooom/main/scripts/install.ps1 | iex
 
 Environment: BROOOM_VERSION, BROOOM_INSTALL_DIR, BROOOM_DOWNLOAD_BASE,
 BROOOM_LATEST_URL (see scripts/install.sh; here it is a URL answering with the
-GitHub releases/latest JSON, of which only tag_name is read). The zip name must match
+GitHub releases/latest JSON, of which only tag_name is read). Resolving the
+latest release calls the GitHub API, which allows 60 unauthenticated requests
+per hour and IP; set GITHUB_TOKEN to authenticate (sent only to the default
+GitHub API URL) or pin BROOOM_VERSION. The zip name must match
 archives.name_template in .goreleaser.yaml. The checksum is verified before
 anything is extracted. The user PATH is only changed with -AddToPath.
 #>
@@ -42,10 +45,13 @@ function Get-LatestTag {
     # Windows PowerShell 5 may default to protocols GitHub no longer accepts.
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
   } catch {}
+  $headers = @{ Accept = 'application/vnd.github+json' }
+  # The token must not leak to an overridden URL.
+  if ($env:GITHUB_TOKEN -and -not $env:BROOOM_LATEST_URL) { $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
   try {
-    $release = Invoke-RestMethod -Uri $latestUrl -Headers @{ Accept = 'application/vnd.github+json' }
+    $release = Invoke-RestMethod -Uri $latestUrl -Headers $headers
   } catch {
-    throw "Cannot resolve the latest release from $latestUrl ($($_.Exception.Message)); set BROOOM_VERSION"
+    throw "Cannot resolve the latest release from $latestUrl ($($_.Exception.Message)); the GitHub API allows 60 unauthenticated requests per hour, so set GITHUB_TOKEN or BROOOM_VERSION"
   }
   $tag = [string]$release.tag_name
   if (-not $tag) { throw "Cannot resolve the latest release from $latestUrl (no tag_name); set BROOOM_VERSION" }

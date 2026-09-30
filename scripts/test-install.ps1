@@ -3,7 +3,7 @@
 Tests scripts/install.ps1 against a local release layout.
 
 .DESCRIPTION
-Serves a release directory over a local HTTP server (python3, through
+Serves a release directory over a local HTTP server (python3 or python, through
 BROOOM_DOWNLOAD_BASE and BROOOM_LATEST_URL) and checks a successful install
 that resolves the latest tag, a 32-bit PowerShell on 64-bit Windows, a tampered
 checksum and an unknown version. CI runs it under Windows PowerShell 5 and
@@ -73,8 +73,17 @@ function Invoke-Installer([hashtable]$environment) {
         [Environment]::SetEnvironmentVariable($n, $environment[$n], 'Process')
       }
     }
-    $output = & $exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installer 2>&1 | Out-String
-    return @{ Code = $LASTEXITCODE; Output = $output }
+    # Start-Process with redirected files instead of "2>&1": Windows PowerShell 5.1
+    # turns the first native stderr line into a terminating NativeCommandError
+    # under $ErrorActionPreference = 'Stop', which would abort the negative cases
+    # before they can report their exit code.
+    $outFile = Join-Path $work 'installer.out'
+    $errFile = Join-Path $work 'installer.err'
+    $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $installer + '"'))
+    $process = Start-Process -FilePath $exe -ArgumentList $arguments -Wait -PassThru -NoNewWindow `
+      -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+    $output = (Get-Content -Raw -Path $outFile -ErrorAction SilentlyContinue) + (Get-Content -Raw -Path $errFile -ErrorAction SilentlyContinue)
+    return @{ Code = $process.ExitCode; Output = [string]$output }
   } finally {
     foreach ($n in $names) { [Environment]::SetEnvironmentVariable($n, $saved[$n], 'Process') }
   }
@@ -95,12 +104,16 @@ try {
   $site = Join-Path $work 'site'
   New-Site $site $version $arch
   $port = Get-FreePort
-  $server = Start-Process -FilePath 'python' -ArgumentList @('-m', 'http.server', $port, '--bind', '127.0.0.1', '--directory', $site) -PassThru -WindowStyle Hidden
+  $python = Get-Command python3, python -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $python) { Fail 'python3 or python is required on PATH to serve the fake release' }
+  $server = Start-Process -FilePath $python.Source -ArgumentList @('-m', 'http.server', $port, '--bind', '127.0.0.1', '--directory', $site) -PassThru -WindowStyle Hidden
   $base = "http://127.0.0.1:$port"
   # Wait until the server answers.
-  for ($i = 0; $i -lt 50; $i++) {
-    try { Invoke-WebRequest -Uri "$base/latest.json" -UseBasicParsing | Out-Null; break } catch { Start-Sleep -Milliseconds 200 }
+  $ready = $false
+  for ($i = 0; $i -lt 50 -and -not $ready; $i++) {
+    try { Invoke-WebRequest -Uri "$base/latest.json" -UseBasicParsing | Out-Null; $ready = $true } catch { Start-Sleep -Milliseconds 200 }
   }
+  if (-not $ready) { Fail "the local release server did not answer at $base within 10 seconds" }
 
   $baseEnv = @{ BROOOM_DOWNLOAD_BASE = $base; BROOOM_LATEST_URL = "$base/latest.json" }
 

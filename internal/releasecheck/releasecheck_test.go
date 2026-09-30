@@ -2,6 +2,11 @@
 // does not build: the CI workflows, the GoReleaser config and the Windows
 // install script. Those can only be executed on their own platforms in CI, so
 // these tests make sure a change cannot silently drop the guards again.
+//
+// They are deliberately coarse tripwires on substrings, not proof of behavior:
+// the behavior itself is exercised by the release-check workflow (install.ps1
+// under both PowerShell editions, the macOS smoke test). Renaming a guarded
+// token means updating the matching case here.
 package releasecheck
 
 import (
