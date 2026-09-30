@@ -133,6 +133,9 @@ func (a *app) runScan(cmd *cobra.Command, opts scanOptions) error {
 	if err == nil {
 		err = scanFailure(res.Report)
 	}
+	if err == nil {
+		err = detectorFailure(res.Report)
+	}
 	return err
 }
 
@@ -149,6 +152,9 @@ func (a *app) scanStreaming(ctx context.Context, req *scanRequest, sf streamingF
 		a.logScanErrors(res.Report.Errors, true)
 		if err == nil {
 			err = scanFailure(res.Report)
+		}
+		if err == nil {
+			err = detectorFailure(res.Report)
 		}
 	}
 	return err

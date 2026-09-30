@@ -143,7 +143,7 @@ func TestSweepPresetSelection(t *testing.T) {
 			}
 			got := scannedDetectors(errOut)
 			for _, d := range tt.want {
-				if registered(d) && !slices.Contains(got, d) {
+				if !slices.Contains(got, d) {
 					t.Errorf("%s was not scanned: %v", d, got)
 				}
 			}
@@ -212,31 +212,28 @@ func TestSweepDetectorOutsidePresetIsUsageError(t *testing.T) {
 	}
 }
 
-// TestSweepUnregisteredDetectors covers the difference between a preset that
-// names a detector this build lacks (skipped with a note) and a user who asks
-// for one explicitly (an error).
-func TestSweepUnregisteredDetectors(t *testing.T) {
-	newCleanupFixture(t, nil)
-	missing := ""
+// TestSweepPresetDetectorsAreAllRegistered pins the assumption behind #238:
+// every detector a preset names is linked into the binary, so sweep needs no
+// "not available in this build" path. A preset naming a detector that does not
+// exist fails here instead of being skipped quietly at run time.
+func TestSweepPresetDetectorsAreAllRegistered(t *testing.T) {
 	for _, n := range presets.Names() {
 		p, _ := presets.Get(n)
 		for _, d := range p.Detectors {
 			if !registered(d) {
-				missing = d
+				t.Errorf("preset %s names %q, which is not registered", n, d)
 			}
 		}
 	}
-	if missing == "" {
-		t.Skip("every preset detector is registered in this build")
-	}
-	code, _, errOut := brooom(t, "", "sweep", "--preset", "aggressive", "--verbose")
-	if code != ExitOK || !strings.Contains(errOut, "skipping detector "+missing+": not available in this build") {
-		t.Errorf("preset detector: code %d, stderr %q", code, errOut)
-	}
-	code, _, errOut = brooom(t, "", "sweep", "--preset", "aggressive", "--detector", missing)
-	want := `detector "` + missing + `" is not available in this build`
-	if code != ExitError || !strings.Contains(errOut, want) {
-		t.Errorf("explicit detector: code %d, stderr %q", code, errOut)
+}
+
+// TestSweepUnknownDetectorIsUsageError covers what replaced the unavailable
+// branch: a --detector that no detector carries is a typo and exits 2.
+func TestSweepUnknownDetectorIsUsageError(t *testing.T) {
+	newCleanupFixture(t, nil)
+	code, _, errOut := brooom(t, "", "sweep", "--preset", "aggressive", "--detector", "no-such-detector")
+	if code != ExitUsage || !strings.Contains(errOut, `unknown detector "no-such-detector"`) {
+		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 

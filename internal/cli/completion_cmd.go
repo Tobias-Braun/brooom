@@ -54,6 +54,32 @@ PowerShell:
 
 Start a new shell after installing a script.`
 
+// completionBashLong replaces cobra's generic help of `completion bash`, whose
+// system-wide install line redirects into /etc without root and therefore
+// fails for a normal user. It matches the instructions of the parent command.
+const completionBashLong = `Generate the autocompletion script for the bash shell.
+
+This script depends on the 'bash-completion' package. If it is not installed
+already, install it with your OS's package manager.
+
+Load it in the current session:
+
+  source <(brooom completion bash)
+
+Install it permanently:
+
+  Linux (per user, no root needed):
+    mkdir -p ~/.local/share/bash-completion/completions
+    brooom completion bash > ~/.local/share/bash-completion/completions/brooom
+
+  Linux (system-wide, needs root):
+    brooom completion bash | sudo tee /etc/bash_completion.d/brooom >/dev/null
+
+  macOS (Homebrew):
+    brooom completion bash > "$(brew --prefix)/etc/bash_completion.d/brooom"
+
+Start a new shell after installing the script.`
+
 // completionExamples are the per-shell example blocks of the completion
 // command and its subcommands.
 var completionExamples = map[string]string{
@@ -61,7 +87,8 @@ var completionExamples = map[string]string{
   brooom completion fish > ~/.config/fish/completions/brooom.fish
   brooom completion powershell | Out-String | Invoke-Expression`,
 	"bash": `  source <(brooom completion bash)
-  brooom completion bash > ~/.local/share/bash-completion/completions/brooom`,
+  brooom completion bash > ~/.local/share/bash-completion/completions/brooom
+  brooom completion bash | sudo tee /etc/bash_completion.d/brooom >/dev/null`,
 	"zsh": `  brooom completion zsh > "${fpath[1]}/_brooom"
   brooom completion zsh --no-descriptions`,
 	"fish": `  brooom completion fish | source
@@ -88,6 +115,9 @@ func customizeCompletionCmd(root *cobra.Command) {
 		c.RunE = groupRunE
 		c.Example = completionExamples[""]
 		for _, sub := range c.Commands() {
+			if sub.Name() == "bash" {
+				sub.Long = completionBashLong
+			}
 			sub.Example = completionExamples[sub.Name()]
 			sub.RunE = completionScriptRunE(root, sub.Name())
 		}

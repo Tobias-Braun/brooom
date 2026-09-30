@@ -42,7 +42,10 @@ Every command is a dry run unless `--apply` is given. Every command also accepts
 
 ## Global flags
 
-These flags are accepted by every command.
+These flags are accepted where they are meaningful. A command that would ignore a
+flag rejects it with exit code 2 instead of silently doing nothing (for example
+`--format` on `undo`, or `--workspaces` on `version`). `completion` and `help`
+accept every global flag, because the shell passes them on while completing.
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -358,24 +361,26 @@ brooom completion bash
 ```text
 Generate the autocompletion script for the bash shell.
 
-This script depends on the 'bash-completion' package.
-If it is not installed already, you can install it via your OS's package manager.
+This script depends on the 'bash-completion' package. If it is not installed
+already, install it with your OS's package manager.
 
-To load completions in your current shell session:
+Load it in the current session:
 
-	source <(brooom completion bash)
+  source <(brooom completion bash)
 
-To load completions for every new session, execute once:
+Install it permanently:
 
-#### Linux:
+  Linux (per user, no root needed):
+    mkdir -p ~/.local/share/bash-completion/completions
+    brooom completion bash > ~/.local/share/bash-completion/completions/brooom
 
-	brooom completion bash > /etc/bash_completion.d/brooom
+  Linux (system-wide, needs root):
+    brooom completion bash | sudo tee /etc/bash_completion.d/brooom >/dev/null
 
-#### macOS:
+  macOS (Homebrew):
+    brooom completion bash > "$(brew --prefix)/etc/bash_completion.d/brooom"
 
-	brooom completion bash > $(brew --prefix)/etc/bash_completion.d/brooom
-
-You will need to start a new shell for this setup to take effect.
+Start a new shell after installing the script.
 ```
 
 **Examples**
@@ -383,6 +388,7 @@ You will need to start a new shell for this setup to take effect.
 ```sh
 source <(brooom completion bash)
 brooom completion bash > ~/.local/share/bash-completion/completions/brooom
+brooom completion bash | sudo tee /etc/bash_completion.d/brooom >/dev/null
 ```
 
 **Flags**

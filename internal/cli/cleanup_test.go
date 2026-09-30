@@ -599,19 +599,13 @@ func TestDetectorIntersection(t *testing.T) {
 	}
 }
 
-func TestUnregisteredDetector(t *testing.T) {
-	f := newCleanupFixture(t, nil)
-	_ = f
-	for cmd, name := range map[string]string{
-		"logs": config.DetectorLogs, "artifacts": config.DetectorBuildArtifacts, "ai": config.DetectorAIArtifacts,
-	} {
-		if _, ok := detect.Get(name); ok {
-			continue // the detector landed; its own tests cover the command
-		}
-		code, _, errOut := brooom(t, "", cmd)
-		want := `detector "` + name + `" is not available in this build`
-		if code != ExitError || !strings.Contains(errOut, want) {
-			t.Errorf("%s: code %d, stderr %q", cmd, code, errOut)
+// TestShortcutDetectorsAreRegistered pins the assumption behind #238: the
+// detectors of every shortcut command are linked in, so the commands have no
+// "not available in this build" error path.
+func TestShortcutDetectorsAreRegistered(t *testing.T) {
+	for _, name := range config.DetectorNames() {
+		if _, ok := detect.Get(name); !ok {
+			t.Errorf("detector %q is known to the config but not registered", name)
 		}
 	}
 }

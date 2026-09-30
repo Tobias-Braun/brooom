@@ -764,7 +764,9 @@ func TestEnvFields(t *testing.T) {
 	}
 }
 
-func TestDetectorErrorIsReportedWithExitZero(t *testing.T) {
+// TestDetectorErrorIsReportedWithDistinctExit pins #191: a detector that
+// failed is reported in the report and no longer looks like a clean scan.
+func TestDetectorErrorIsReportedWithDistinctExit(t *testing.T) {
 	needGit(t)
 	isolate(t)
 	repo := testutil.NewRepo(t)
@@ -773,8 +775,8 @@ func TestDetectorErrorIsReportedWithExitZero(t *testing.T) {
 		return errors.New("kaboom while scanning")
 	})
 	code, out, _ := runScanCmd(t, "scan", "-d", d.name)
-	if code != ExitOK {
-		t.Fatalf("code = %d, scan errors must not change the exit code", code)
+	if code != ExitDetectorFailed {
+		t.Fatalf("code = %d, want %d for a failed detector", code, ExitDetectorFailed)
 	}
 	if !strings.Contains(out, "kaboom while scanning") {
 		t.Errorf("error not rendered:\n%s", out)
@@ -851,7 +853,8 @@ func TestQuietAndVerbose(t *testing.T) {
 	t.Chdir(repo.Dir)
 	d, _ := recordingFake(t, detect.CategoryFiles)
 	failing := registerFake(t, detect.CategoryFiles, func(context.Context, *detect.Env, scope.Target, func(findings.Finding)) error {
-		return errors.New("verbose-visible failure")
+		// A note keeps the exit code at 0 so the test isolates verbosity.
+		return detect.Note(errors.New("verbose-visible failure"))
 	})
 	both := d.name + "," + failing.name
 

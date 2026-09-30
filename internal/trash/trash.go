@@ -86,21 +86,6 @@ type Trasher interface {
 	Restore(ctx context.Context, r Record) error
 }
 
-// BatchTrasher is an optional extension of Trasher for strategies where one
-// call can dispose of many items with less overhead than one call per item
-// (the macOS trasher shares one loop and stops early when a native call
-// hangs). Callers use it when a Trasher implements it and fall back to
-// per-item Remove otherwise; Remove stays fully functional on every
-// implementation.
-type BatchTrasher interface {
-	Trasher
-	// RemoveMany removes every path like Remove would. Both returned slices
-	// have len(paths) entries: recs[i] and errs[i] belong to paths[i]. One
-	// failing item does not stop the others. A record may accompany a
-	// non-nil error when the item was moved but cleanup of the source failed.
-	RemoveMany(ctx context.Context, paths []string) ([]Record, []error)
-}
-
 // Options configures trasher construction.
 type Options struct {
 	// SessionID names the quarantine subdirectory.
@@ -108,10 +93,6 @@ type Options struct {
 	// QuarantineDir is ~/.brooom/quarantine.
 	QuarantineDir string
 }
-
-// errNotImplemented marks skeleton functions that are implemented by the
-// milestone issues. It is never returned by a released binary.
-var errNotImplemented = errors.New("trash: not implemented yet") //nolint:unused // still used by the darwin and windows stubs
 
 // New returns the trasher for a strategy. The OS trash is implemented per
 // platform in ostrash_<os>.go (newOSTrasher), quarantine in quarantine.go and

@@ -53,8 +53,10 @@ type Detector interface {
 	// Detect scans the target and calls emit for every finding. It must be
 	// safe to call concurrently for different targets, must honour ctx
 	// cancellation, and must not modify anything on disk. Returning an error
-	// records a non-fatal ScanError for this target; other targets and
-	// detectors continue.
+	// records a ScanError for this target; other targets and detectors
+	// continue. A plain error is fatal for the target (the detector could not
+	// run, so the scan exits with a distinct code); wrap it with Note when the
+	// emitted findings are still trustworthy and the error is only a warning.
 	Detect(ctx context.Context, env *Env, target scope.Target, emit func(findings.Finding)) error
 }
 

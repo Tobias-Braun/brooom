@@ -16,8 +16,6 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/config"
 )
 
-var _ BatchTrasher = (*macTrash)(nil)
-
 // fakeNative stands in for the NSFileManager call: it moves items into
 // <home>/.Trash exactly like the system would (unique names, resulting path)
 // and reports failures for paths in fail or, for every path, err.

@@ -14,7 +14,6 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/action"
 	"github.com/Tobias-Braun/brooom/internal/buildinfo"
 	"github.com/Tobias-Braun/brooom/internal/config"
-	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/output"
@@ -37,10 +36,6 @@ type cleanupSelection struct {
 	configOverlay func(*config.Config)
 	// minConfidence drops findings below it before planning.
 	minConfidence findings.Confidence
-	// skipUnavailable skips selected detectors that are not linked into this
-	// build (with a verbose note) instead of failing. Detectors named
-	// explicitly with --detector still fail: the user asked for them.
-	skipUnavailable bool
 }
 
 // machineFormats print parseable output only. They show findings in a dry
@@ -117,19 +112,13 @@ func (a *app) nothingSelected(cfg *config.Config, format string) error {
 
 // resolveSelection turns the command's detectors and the --detector flag into
 // the names to scan. The flag is intersected with the selection (a shortcut
-// cannot widen itself); an empty intersection is a usage error. Selected
-// detectors that are not linked into this binary are an error, never a silent
-// success, and detectors disabled in the config are dropped with a verbose
-// note.
+// cannot widen itself); an empty intersection is a usage error. Detectors
+// disabled in the config are dropped with a verbose note. Every detector is
+// linked into the binary (internal/detectors/all), so a name that is not
+// registered is a typo and a usage error.
 func (a *app) resolveSelection(cfg *config.Config, sel cleanupSelection) ([]string, error) {
 	names := slices.Sorted(slices.Values(sel.detectors))
-	validate := validateDetectorNames
-	if sel.skipUnavailable {
-		// Known-but-unregistered names must survive to availableDetectors,
-		// which reports them as "not available in this build" (exit 1).
-		validate = validateKnownDetectorNames
-	}
-	flagged, err := validate(a.flags.detectors)
+	flagged, err := validateDetectorNames(a.flags.detectors)
 	if err != nil {
 		return nil, err
 	}
@@ -140,55 +129,7 @@ func (a *app) resolveSelection(cfg *config.Config, sel cleanupSelection) ([]stri
 				strings.Join(flagged, ","), sel.label, strings.Join(sel.detectors, ","))}
 		}
 	}
-	names, err = a.availableDetectors(names, flagged, sel.skipUnavailable)
-	if err != nil {
-		return nil, err
-	}
 	return a.enabledDetectors(cfg, names), nil
-}
-
-// availableDetectors checks that the selected detectors are linked into this
-// build. Without skip that is required for all of them. With skip, only the
-// explicitly requested (flagged) ones are required and the rest is dropped
-// with a verbose note.
-func (a *app) availableDetectors(names, flagged []string, skip bool) ([]string, error) {
-	if !skip {
-		return names, requireRegistered(names)
-	}
-	var out []string
-	for _, n := range names {
-		if _, ok := detect.Get(n); ok {
-			out = append(out, n)
-			continue
-		}
-		if slices.Contains(flagged, n) {
-			return nil, requireRegistered([]string{n})
-		}
-		a.progressf("skipping detector %s: not available in this build", n)
-	}
-	return out, nil
-}
-
-// validateKnownDetectorNames is validateDetectorNames against the names Brooom
-// knows (config.DetectorNames) instead of the registry, so a detector whose
-// milestone has not landed is a different error than a typo.
-func validateKnownDetectorNames(names []string) ([]string, error) {
-	known := config.DetectorNames()
-	seen := map[string]bool{}
-	var out []string
-	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" || seen[n] {
-			continue
-		}
-		if !slices.Contains(known, n) {
-			return nil, usageError{fmt.Errorf("unknown detector %q (available: %s)", n, strings.Join(known, ", "))}
-		}
-		seen[n] = true
-		out = append(out, n)
-	}
-	slices.Sort(out)
-	return out, nil
 }
 
 // enabledDetectors drops the detectors switched off in the global config and
@@ -204,17 +145,6 @@ func (a *app) enabledDetectors(cfg *config.Config, names []string) []string {
 		out = append(out, n)
 	}
 	return out
-}
-
-// requireRegistered fails for selected detectors that this build does not
-// contain (their milestone has not landed).
-func requireRegistered(names []string) error {
-	for _, n := range names {
-		if _, ok := detect.Get(n); !ok {
-			return fmt.Errorf("detector %q is not available in this build", n)
-		}
-	}
-	return nil
 }
 
 // planAndRun scans, then hands the findings to the executor: a dry run

@@ -37,7 +37,8 @@ type pair struct {
 }
 
 // Run executes detectors over targets in parallel and returns the unique
-// findings (deduplicated by ID, first one wins) and non-fatal errors.
+// findings (deduplicated by ID, first one wins) and scan errors: fatal ones
+// for detectors that failed, non-fatal ones for notes (see Note).
 //
 // A fixed pool of workers pulls (target, detector) pairs from a channel, so
 // the goroutine count is bounded by Concurrency however many targets there
@@ -154,11 +155,36 @@ func safeDetect(ctx context.Context, env *Env, p pair, emit func(findings.Findin
 func appendScanError(errs []findings.ScanError, unsafeSeen map[string]bool, p pair, err error) []findings.ScanError {
 	var unsafe *gitx.UnsafeRepoError
 	if !errors.As(err, &unsafe) {
-		return append(errs, findings.ScanError{Detector: p.d.Name(), Path: p.t.Path, Message: err.Error()})
+		return append(errs, findings.ScanError{Detector: p.d.Name(), Path: p.t.Path, Message: err.Error(), Fatal: !IsNote(err)})
 	}
 	if unsafeSeen[p.t.Path] {
 		return errs
 	}
 	unsafeSeen[p.t.Path] = true
 	return append(errs, findings.ScanError{Path: p.t.Path, Message: findings.SkipPrefix + unsafe.Error()})
+}
+
+// noteError marks an error a detector returns to tell the user something
+// (a check that could only run partially, a path it had to skip) while its
+// result for the target is still usable.
+type noteError struct{ err error }
+
+func (e noteError) Error() string { return e.err.Error() }
+func (e noteError) Unwrap() error { return e.err }
+
+// Note wraps err as a non-fatal note. A detector returns Note(err) when it
+// could not look at everything but the findings it did emit are trustworthy;
+// any other returned error means the detector failed on the target and makes
+// the scan report a fatal error (findings.ScanError.Fatal). Note(nil) is nil.
+func Note(err error) error {
+	if err == nil {
+		return nil
+	}
+	return noteError{err}
+}
+
+// IsNote reports whether err was marked with Note anywhere in its chain.
+func IsNote(err error) bool {
+	var n noteError
+	return errors.As(err, &n)
 }

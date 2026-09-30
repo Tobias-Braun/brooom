@@ -100,7 +100,8 @@
       "properties": {
         "detector": { "type": "string" },
         "path": { "type": "string" },
-        "message": { "type": "string" }
+        "message": { "type": "string" },
+        "fatal": { "type": "boolean" }
       }
     },
     "Totals": {

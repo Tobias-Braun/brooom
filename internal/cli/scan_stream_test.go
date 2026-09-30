@@ -74,7 +74,7 @@ func TestStreamingFormatterReceivesFindingsInOrder(t *testing.T) {
 	})
 
 	code, out, errOut := runScanCmd(t, "scan", "-d", d.name, "-f", sf.name)
-	if code != ExitOK {
+	if code != ExitDetectorFailed {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 	if !slices.Equal(sf.got, []string{"one", "two", "three"}) {

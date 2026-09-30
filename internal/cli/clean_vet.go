@@ -51,10 +51,6 @@ func (sc *cleanScope) vet(fs []findings.Finding) verdict {
 			v.refused = append(v.refused, verdictEntry{f, reason})
 			continue
 		}
-		if reason := unavailableAction(f); reason != "" {
-			v.skipped = append(v.skipped, verdictEntry{f, reason})
-			continue
-		}
 		v.accepted = append(v.accepted, stripUntrusted(f))
 	}
 	return v
@@ -71,15 +67,6 @@ func stripUntrusted(f findings.Finding) findings.Finding {
 		f.SuggestedAction.Args = nil
 	}
 	return f
-}
-
-// unavailableAction skips findings whose action is a known type that this
-// build does not implement yet.
-func unavailableAction(f findings.Finding) string {
-	if _, ok := action.Get(f.SuggestedAction.Type); !ok {
-		return fmt.Sprintf("action %q is not available in this build", f.SuggestedAction.Type)
-	}
-	return ""
 }
 
 // knownActions are the action types of the findings schema. A type outside

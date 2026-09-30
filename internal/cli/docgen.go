@@ -27,7 +27,10 @@ func ReferenceMarkdown(root *cobra.Command) string {
 		b.WriteString("- [`" + c.CommandPath() + "`](#" + anchor(c.CommandPath()) + ")\n")
 	})
 	b.WriteString("\n## Global flags\n\n")
-	b.WriteString("These flags are accepted by every command.\n\n")
+	b.WriteString("These flags are accepted where they are meaningful. A command that would ignore a\n")
+	b.WriteString("flag rejects it with exit code 2 instead of silently doing nothing (for example\n")
+	b.WriteString("`--format` on `undo`, or `--workspaces` on `version`). `completion` and `help`\n")
+	b.WriteString("accept every global flag, because the shell passes them on while completing.\n\n")
 	writeFlagTable(&b, root.PersistentFlags())
 	walkCommands(root, func(c *cobra.Command) { writeCommand(&b, c) })
 	return strings.TrimRight(b.String(), "\n") + "\n"
