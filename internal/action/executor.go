@@ -10,6 +10,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/output"
+	"github.com/Tobias-Braun/brooom/internal/progress"
 	"github.com/Tobias-Braun/brooom/internal/session"
 )
 
@@ -67,6 +68,10 @@ type Options struct {
 	// StdinIsTTY reports whether prompting is possible (default: IO.In is a
 	// terminal *os.File).
 	StdinIsTTY func() bool
+	// Progress receives the plan and apply phases (default: none). The
+	// executor pauses it before any output of its own, so plans and prompts
+	// never share the terminal with a live display.
+	Progress progress.Reporter
 }
 
 // Plan is the validated set of steps for a run.
@@ -212,6 +217,7 @@ func NewExecutor(o Options) *Executor {
 		in := o.IO.In
 		o.StdinIsTTY = func() bool { return isTerminal(in) }
 	}
+	o.Progress = progress.OrNop(o.Progress)
 	// Copy the Env so folding Options.Force in never mutates the caller's.
 	env := Env{}
 	if o.Env != nil {
@@ -237,6 +243,9 @@ func (e *Executor) Run(ctx context.Context, fs []findings.Finding) (*Result, err
 	if ctx.Err() != nil {
 		return res, ErrInterrupted
 	}
+	// The plan and the prompts are ordinary stdout text: the live display
+	// steps aside until the apply phase starts again.
+	e.opts.Progress.Pause()
 	out := e.opts.IO.Out
 	if !e.opts.Quiet {
 		renderPlan(out, plan)
@@ -332,6 +341,7 @@ func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planS
 	res.UndoFlags = e.opts.UndoFlags
 	e.env.plannedDeletes = plannedBranchDeletes(items)
 	rs := &runState{e: e, m: m, res: res}
+	e.opts.Progress.Phase(progress.PhaseApply, len(items))
 	// The live tracked-files check of the re-plan and of Apply is answered
 	// once per repository for the whole run (taken now, after confirmation)
 	// instead of once per item; a failure leaves every item unknown.
@@ -345,6 +355,7 @@ func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planS
 	}
 	res.ReclaimedBytes = m.ReclaimedBytes
 	res.Skipped = len(res.Skips)
+	e.opts.Progress.Pause()
 	renderSummary(e.opts.IO.Out, res, res.Skips[planSkips:], e.opts.Quiet)
 	return res, runErr
 }
@@ -358,7 +369,9 @@ func (rs *runState) loop(ctx context.Context, items []Item) error {
 			rs.skipRest(items[i:], "interrupted")
 			return ErrInterrupted
 		}
-		if err := rs.runItem(ctx, it.Step); err != nil {
+		err := rs.runItem(ctx, it.Step)
+		rs.e.opts.Progress.Step(entryLabel(it.Step.Finding.Path, it.Step.Finding.Ref))
+		if err != nil {
 			rs.skipRest(items[i+1:], "not run: session manifest could not be saved")
 			return err
 		}
@@ -452,6 +465,9 @@ func (rs *runState) record(en session.Entry) error {
 		rs.res.Failures = append(rs.res.Failures, en)
 	default:
 		rs.res.Applied++
+		if en.Status == session.StatusApplied {
+			rs.e.opts.Progress.Reclaimed(en.SizeBytes)
+		}
 	}
 	// Only the new entry is appended (fsynced) to the session journal; the
 	// full manifest is rewritten once at Finish. Rewriting it here made large

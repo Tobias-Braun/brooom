@@ -173,6 +173,9 @@ func (a *app) purgeSetup(pf purgeFlags, af applyFlags) (config.TrashStrategy, er
 	if !isTableFormat(a.flags.format) {
 		return "", usageError{fmt.Errorf("--format %s cannot be combined with --gc, --reflog-expire or --prune; drop the flags to list findings", a.flags.format)}
 	}
+	// The plan is text, so the live display is allowed even when the config
+	// names a machine format.
+	a.useProgress(defaultFormat)
 	return parseTrashStrategy(af.trashStrategy)
 }
 

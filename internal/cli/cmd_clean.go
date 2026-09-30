@@ -89,6 +89,8 @@ func (a *app) runClean(cmd *cobra.Command, opts cleanOptions, af applyFlags) err
 	if err != nil {
 		return err
 	}
+	// The verdict and the plan are text whatever output.format says.
+	a.useProgress(defaultFormat)
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()

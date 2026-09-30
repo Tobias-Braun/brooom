@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Tobias-Braun/brooom/internal/findings"
+	"github.com/Tobias-Braun/brooom/internal/progress"
 )
 
 // actionPriority is the fixed execution order of action types that depend on
@@ -156,6 +157,7 @@ func (e *Executor) planSteps(ctx context.Context, fs []findings.Finding, p *Plan
 	ctx = withPlanSnapshot(ctx, e.env)
 	// Likewise one tracked-files check per repository.
 	ctx = e.batchTrackedForFindings(ctx, fs)
+	e.opts.Progress.Phase(progress.PhasePlan, len(fs))
 	for i, f := range fs {
 		// After Ctrl-C the remaining findings are reported as interrupted;
 		// asking their actions would only produce "context canceled" failures.
@@ -172,6 +174,7 @@ func (e *Executor) planSteps(ctx context.Context, fs []findings.Finding, p *Plan
 			continue
 		}
 		step, err := act.Plan(ctx, e.env, f)
+		e.opts.Progress.Step(entryLabel(f.Path, f.Ref))
 		switch {
 		case err == nil:
 			out = append(out, planned{t, step})

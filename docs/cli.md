@@ -50,6 +50,7 @@ These flags are accepted by every command.
 | `-d`, `--detector` | - | run only these detectors (repeatable) |
 | `-f`, `--format` | - | output format: table, tree, json, ndjson, plain, summary |
 | `--no-color` | - | disable colors (also honours NO_COLOR) |
+| `--progress` | `auto` | live progress display on stderr: auto (terminals only), always, never |
 | `-q`, `--quiet` | - | print only essential output |
 | `--root` | - | limit --workspaces to these roots (repeatable) |
 | `-v`, `--verbose` | - | print progress and diagnostics to stderr |
