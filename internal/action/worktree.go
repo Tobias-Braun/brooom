@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
@@ -13,6 +14,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 // Keys shared between the worktrees detector (finding Meta) and the manifest
@@ -133,6 +135,9 @@ func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeE
 	if err := checkRemovable(wt, f); err != nil {
 		return nil, err
 	}
+	if err := checkUnmodified(ctx, path, f); err != nil {
+		return nil, err
+	}
 	ev := &removeEval{repo: repo, wt: wt, path: path}
 	if ev.dirty, err = repo.IsDirty(ctx, path); err != nil {
 		return nil, fmt.Errorf("worktree: check %s for uncommitted changes: %w", path, err)
@@ -144,6 +149,28 @@ func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeE
 		return nil, skipf("%s", blockedReason(f.RiskFlags, env.Force))
 	}
 	return ev, nil
+}
+
+// checkUnmodified refuses when any file below the worktree is newer than the
+// LastModified the scan recorded. git status ignores gitignored files, so an
+// edit of build output or an env file after the scan (or one a stale cache hid
+// during it) is visible only through mtimes, read here with a Fresh walk. A
+// finding without LastModified has no baseline and is not checked; a walk that
+// fails is refused, because unknown must never read as unchanged. Not
+// overridable by --force: a rescan is the way forward.
+func checkUnmodified(ctx context.Context, path string, f findings.Finding) error {
+	if f.LastModified == nil {
+		return nil
+	}
+	sum, err := walk.DirSize(ctx, path, walk.Options{Fresh: true})
+	if err != nil {
+		return skipf("cannot verify that %s is unmodified since the scan: %v", path, err)
+	}
+	if sum.NewestModTime.After(*f.LastModified) {
+		return skipf("files in the worktree were modified since the scan (newest %s); rescan first",
+			sum.NewestModTime.UTC().Format(time.RFC3339))
+	}
+	return nil
 }
 
 // checkRemovable covers the refusals that depend on git's list entry only.

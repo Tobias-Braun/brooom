@@ -46,13 +46,16 @@ func (s *scan) assess(ctx context.Context, c candidate) *findings.Finding {
 	return &out
 }
 
-// size measures the candidate. A symlink is reported with size 0 and the
-// link's own mtime: it is never followed, only the link would be removed.
+// size measures the candidate with a Fresh walk: the newest mtime feeds
+// LastModified, AgeDays and recently_modified, and artifacts such as
+// node_modules or target grow and change in place, which a cached directory
+// record cannot notice. A symlink is reported with size 0 and the link's own
+// mtime: it is never followed, only the link would be removed.
 func (s *scan) size(ctx context.Context, c candidate, p string) (walk.DirSummary, bool) {
 	if c.link {
 		return walk.DirSummary{NewestModTime: c.linkModTime}, true
 	}
-	sum, err := walk.DirSize(ctx, p, walk.Options{CacheDir: s.env.CacheDir})
+	sum, err := walk.DirSize(ctx, p, walk.Options{CacheDir: s.env.CacheDir, Fresh: true})
 	return sum, err == nil
 }
 

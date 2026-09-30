@@ -153,6 +153,9 @@ func TestRegistered(t *testing.T) {
 func TestMergedBranchWorktree(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	wt := repo.AddWorktree("merged", "feat-merged")
+	// Files created now are "in the future" of the fixed scan time and would
+	// carry recently_modified; this test is about the untouched shape.
+	ageTree(t, wt, testutil.BaseTime)
 	h := wtHarness(t, repo, wt)
 
 	f := one(t, h.detect())

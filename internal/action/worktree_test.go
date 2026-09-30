@@ -523,6 +523,8 @@ func TestRemoveWorktreeRefusals(t *testing.T) {
 			f.Ref = "other"
 			return f
 		}, false, "worktree changed since the scan"},
+		{"ignored file edited since the scan", editedSinceScan, false, "modified since the scan"},
+		{"ignored file edited since the scan, even with force", editedSinceScan, true, "modified since the scan"},
 		{"missing head in finding", func(fx *wtFixture) findings.Finding {
 			f := fx.removeFinding(fx.add("wt", "feat"))
 			delete(f.Meta, "head")
@@ -616,6 +618,23 @@ func TestRemoveWorktreeIgnoredFilesDoNotBlock(t *testing.T) {
 	if exists(path) {
 		t.Error("worktree with only ignored files should be removed")
 	}
+}
+
+// editedSinceScan returns a finding recorded while the worktree was old and
+// then rewrites an ignored file in place. git status never lists ignored
+// files, so only the newest mtime can reveal the edit.
+func editedSinceScan(fx *wtFixture) findings.Finding {
+	fx.repo.WriteFile(".gitignore", "cache.bin\n")
+	fx.repo.CommitAll("ignore cache", testutil.BaseTime)
+	p := fx.add("wt", "feat")
+	ignored := testutil.WriteFile(fx.t, p, "cache.bin", "old")
+	testutil.SetMTime(fx.t, ignored, testutil.BaseTime)
+	scanned := testutil.BaseTime
+	f := fx.removeFinding(p)
+	f.LastModified = &scanned
+	testutil.WriteFile(fx.t, p, "cache.bin", "new")
+	testutil.SetMTime(fx.t, ignored, testutil.BaseTime.AddDate(0, 0, 50))
+	return f
 }
 
 func TestRemoveWorktreeUndoTrashedRefusals(t *testing.T) {
