@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -208,6 +209,54 @@ func TestMoveTreeCopyFailureLeavesSourceAndNoPartialDestination(t *testing.T) {
 	}
 	if exists(dst) {
 		t.Error("partial destination left behind")
+	}
+}
+
+// failSourceRemoval replaces the source removal primitive with one that
+// deletes part of the tree and then fails, like RemoveAll hitting a locked
+// file. Unlike permission tricks this also works when tests run as root.
+func failSourceRemoval(t *testing.T, victim string) {
+	t.Helper()
+	orig := removeSourceFunc
+	removeSourceFunc = func(path string) error {
+		if err := os.Remove(filepath.Join(path, victim)); err != nil {
+			return err
+		}
+		return errors.New("injected: file is locked")
+	}
+	t.Cleanup(func() { removeSourceFunc = orig })
+}
+
+func TestMoveTreeSourceRemovalFailureKeepsCopy(t *testing.T) {
+	failCrossDevice(t)
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	writeFile(t, filepath.Join(src, "a"), "a", 0o644)
+	writeFile(t, filepath.Join(src, "b"), "b", 0o644)
+	dst := filepath.Join(root, "dst")
+	failSourceRemoval(t, "a")
+
+	err := moveTree(context.Background(), src, dst)
+	var partial *SourceNotRemovedError
+	if !errors.As(err, &partial) {
+		t.Fatalf("err = %v, want *SourceNotRemovedError", err)
+	}
+	failSourceRemovalCheck(t, err, src, dst)
+}
+
+// failSourceRemovalCheck asserts the complete data survives at dst and that
+// the error names both locations.
+func failSourceRemovalCheck(t *testing.T, err error, src, dst string) {
+	t.Helper()
+	for _, name := range []string{"a", "b"} {
+		if b, rerr := os.ReadFile(filepath.Join(dst, name)); rerr != nil || string(b) != name {
+			t.Errorf("copy lost %q: %v", name, rerr)
+		}
+	}
+	for _, want := range []string{src, dst} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %q", err, want)
+		}
 	}
 }
 

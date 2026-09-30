@@ -311,6 +311,87 @@ func TestQuarantineCrossDeviceFailureLeavesSource(t *testing.T) {
 	}
 }
 
+func TestQuarantinePartialSourceRemovalKeepsRecordAndManifestConsistent(t *testing.T) {
+	failCrossDevice(t)
+	q, root := newTestQuarantine(t, "sess")
+	p := filepath.Join(root, "tree")
+	writeFile(t, filepath.Join(p, "a"), "a", 0o644)
+	writeFile(t, filepath.Join(p, "b"), "b", 0o644)
+	failSourceRemoval(t, "a")
+
+	rec, err := q.Remove(context.Background(), p)
+	var partial *SourceNotRemovedError
+	if !errors.As(err, &partial) {
+		t.Fatalf("err = %v, want *SourceNotRemovedError", err)
+	}
+	// The complete copy is in quarantine and recorded, so it can be restored.
+	if rec.StoredPath == "" || !rec.Restorable {
+		t.Fatalf("record = %+v", rec)
+	}
+	for _, name := range []string{"a", "b"} {
+		if b, _ := os.ReadFile(filepath.Join(rec.StoredPath, name)); string(b) != name {
+			t.Errorf("quarantined copy lost %q", name)
+		}
+	}
+	if m := loadManifest(t, q); len(m.Items) != 1 {
+		t.Errorf("manifest items = %d, want 1", len(m.Items))
+	}
+}
+
+func TestQuarantinePartialSourceRemovalOnRestoreDropsManifestEntry(t *testing.T) {
+	q, root := newTestQuarantine(t, "sess")
+	p := filepath.Join(root, "tree")
+	writeFile(t, filepath.Join(p, "a"), "a", 0o644)
+	writeFile(t, filepath.Join(p, "b"), "b", 0o644)
+	rec, err := q.Remove(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	failCrossDevice(t)
+	failSourceRemoval(t, "a")
+	err = q.Restore(context.Background(), rec)
+	var partial *SourceNotRemovedError
+	if !errors.As(err, &partial) {
+		t.Fatalf("err = %v, want *SourceNotRemovedError", err)
+	}
+	for _, name := range []string{"a", "b"} {
+		if b, _ := os.ReadFile(filepath.Join(p, name)); string(b) != name {
+			t.Errorf("restored tree lost %q", name)
+		}
+	}
+	if m := loadManifest(t, q); len(m.Items) != 0 {
+		t.Errorf("manifest still lists %d items", len(m.Items))
+	}
+}
+
+func TestQuarantineRefusesAncestorOfQuarantineDir(t *testing.T) {
+	q, root := newTestQuarantine(t, "sess")
+	if _, err := q.Remove(context.Background(), root); err == nil {
+		t.Fatal("ancestor of the quarantine directory was not refused")
+	}
+	if !exists(root) {
+		t.Error("ancestor vanished")
+	}
+}
+
+func TestQuarantineManifestUnknownVersionRefused(t *testing.T) {
+	q, root := newTestQuarantine(t, "sess")
+	sessionDir := filepath.Join(q.dir, "sess")
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(sessionDir, ManifestName), `{"version":99,"session_id":"sess","items":[]}`, 0o600)
+	p := filepath.Join(root, "f")
+	writeFile(t, p, "x", 0o644)
+	if _, err := q.Remove(context.Background(), p); err == nil {
+		t.Fatal("unknown manifest version accepted")
+	}
+	if !exists(p) {
+		t.Error("item moved despite refused manifest")
+	}
+}
+
 func TestRestoreConflictAndMissing(t *testing.T) {
 	q, root := newTestQuarantine(t, "sess")
 	p := filepath.Join(root, "f")

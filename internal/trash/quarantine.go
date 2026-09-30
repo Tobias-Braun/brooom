@@ -59,16 +59,9 @@ func (q *quarantine) Remove(ctx context.Context, path string) (Record, error) {
 	if err := ctx.Err(); err != nil {
 		return Record{}, err
 	}
-	fi, err := checkRemovable(path)
+	fi, size, err := q.checkRemoveTarget(path)
 	if err != nil {
 		return Record{}, err
-	}
-	if q.insideQuarantine(path) {
-		return Record{}, fmt.Errorf("refusing to quarantine %q: it is inside the quarantine directory", path)
-	}
-	size, err := treeSize(path)
-	if err != nil {
-		return Record{}, fmt.Errorf("cannot measure %q: %w", path, err)
 	}
 
 	q.mu.Lock()
@@ -82,7 +75,10 @@ func (q *quarantine) Remove(ctx context.Context, path string) (Record, error) {
 		return Record{}, err
 	}
 	n, stored, err := q.moveIn(ctx, sessionDir, m.nextN(), path)
-	if err != nil {
+	// A partial source removal still put a complete copy into quarantine: it
+	// is recorded like a normal move and the error is returned alongside.
+	var partial *SourceNotRemovedError
+	if err != nil && !errors.As(err, &partial) {
 		return Record{}, err
 	}
 	rec := Record{
@@ -99,14 +95,48 @@ func (q *quarantine) Remove(ctx context.Context, path string) (Record, error) {
 		RemovedAt: rec.RemovedAt, SizeBytes: size, IsDir: rec.IsDir, IsSymlink: isSymlink(fi),
 	})
 	if err := writeManifest(sessionDir, m); err != nil {
-		// Without a manifest entry the item would be orphaned, so put it back.
-		if rerr := moveTree(ctx, stored, path); rerr != nil {
-			return Record{}, fmt.Errorf("%w (and moving %q back failed: %w)", err, path, rerr)
-		}
-		_ = os.Remove(filepath.Dir(stored))
-		return Record{}, err
+		return Record{}, q.undoMove(ctx, path, stored, partial, err)
+	}
+	if partial != nil {
+		return rec, fmt.Errorf("quarantined %q, but: %w", path, partial)
 	}
 	return rec, nil
+}
+
+// checkRemoveTarget validates path for Remove and returns its Lstat info and
+// size. It refuses paths inside the quarantine directory and ancestors of it
+// (the home directory, ~/.brooom), which would be moved into themselves.
+func (q *quarantine) checkRemoveTarget(path string) (fs.FileInfo, int64, error) {
+	fi, err := checkRemovable(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	if q.insideQuarantine(path) {
+		return nil, 0, fmt.Errorf("refusing to quarantine %q: it is inside the quarantine directory", path)
+	}
+	if q.containsQuarantine(path) {
+		return nil, 0, fmt.Errorf("refusing to quarantine %q: it contains the quarantine directory", path)
+	}
+	size, err := treeSize(path)
+	if err != nil {
+		return nil, 0, fmt.Errorf("cannot measure %q: %w", path, err)
+	}
+	return fi, size, nil
+}
+
+// undoMove handles a failed manifest write after path was moved to stored.
+// Without a manifest entry the item would be orphaned, so it is put back,
+// unless the move was partial: then the complete copy is only in quarantine
+// and moving it back is not attempted.
+func (q *quarantine) undoMove(ctx context.Context, path, stored string, partial *SourceNotRemovedError, werr error) error {
+	if partial != nil {
+		return fmt.Errorf("%w (and the quarantine manifest could not be updated: %w)", partial, werr)
+	}
+	if rerr := moveTree(ctx, stored, path); rerr != nil {
+		return fmt.Errorf("%w (and moving %q back failed: %w)", werr, path, rerr)
+	}
+	_ = os.Remove(filepath.Dir(stored))
+	return werr
 }
 
 // moveIn moves path into a fresh <n> directory, skipping counters whose
@@ -124,6 +154,11 @@ func (q *quarantine) moveIn(ctx context.Context, sessionDir string, n int, path 
 		}
 		stored := filepath.Join(nDir, filepath.Base(path))
 		if err := moveTree(ctx, path, stored); err != nil {
+			var partial *SourceNotRemovedError
+			if errors.As(err, &partial) {
+				// The <n> directory holds the complete copy; keep it.
+				return n, stored, err
+			}
 			_ = os.Remove(nDir)
 			return 0, "", fmt.Errorf("cannot quarantine %q: %w", path, err)
 		}
@@ -146,6 +181,28 @@ func (q *quarantine) insideQuarantine(path string) bool {
 	for _, r := range roots {
 		for _, c := range candidates {
 			if c == r || isWithin(r, c) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// containsQuarantine reports whether the quarantine directory lies inside
+// path, that is whether path is an ancestor such as the home directory.
+// Quarantining it would try to move the quarantine into itself.
+func (q *quarantine) containsQuarantine(path string) bool {
+	roots := []string{filepath.Clean(q.dir)}
+	if r, err := filepath.EvalSymlinks(q.dir); err == nil {
+		roots = append(roots, r)
+	}
+	candidates := []string{filepath.Clean(path)}
+	if p, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
+		candidates = append(candidates, filepath.Join(p, filepath.Base(path)))
+	}
+	for _, r := range roots {
+		for _, c := range candidates {
+			if isWithin(c, r) {
 				return true
 			}
 		}
@@ -214,21 +271,9 @@ func splitStored(stored string, roots []string) []string {
 // Restore implements Trasher. It never overwrites and does not consult the
 // manifest to authorise the move: the containment check is the boundary.
 func (q *quarantine) Restore(ctx context.Context, r Record) error {
-	if !r.Restorable || r.Strategy != config.StrategyQuarantine {
-		return fmt.Errorf("%q was not quarantined: %w", r.OriginalPath, ErrNotRestorable)
-	}
-	if r.OriginalPath == "" || !filepath.IsAbs(r.OriginalPath) {
-		return fmt.Errorf("cannot restore to %q: not an absolute path", r.OriginalPath)
-	}
-	loc, err := q.checkStoredPath(r.StoredPath)
+	loc, err := q.checkRestoreTarget(r)
 	if err != nil {
 		return err
-	}
-	if _, err := os.Lstat(loc.path); err != nil {
-		return fmt.Errorf("quarantined copy %q is gone: %w", r.StoredPath, ErrNotRestorable)
-	}
-	if _, err := os.Lstat(r.OriginalPath); err == nil {
-		return fmt.Errorf("cannot restore %q: %w", r.OriginalPath, ErrRestoreConflict)
 	}
 
 	q.mu.Lock()
@@ -236,12 +281,47 @@ func (q *quarantine) Restore(ctx context.Context, r Record) error {
 	if err := os.MkdirAll(filepath.Dir(r.OriginalPath), 0o755); err != nil {
 		return fmt.Errorf("cannot recreate parent of %q: %w", r.OriginalPath, err)
 	}
-	if err := moveTree(ctx, loc.path, r.OriginalPath); err != nil {
+	err = moveTree(ctx, loc.path, r.OriginalPath)
+	var partial *SourceNotRemovedError
+	if err != nil && !errors.As(err, &partial) {
 		return fmt.Errorf("cannot restore %q: %w", r.OriginalPath, err)
 	}
-	// The dir is empty after the move; a failure to remove it is harmless.
+	// The dir is empty after a clean move; a failure to remove it is harmless
+	// (and expected after a partial one, which leaves leftovers in it).
 	_ = os.Remove(filepath.Dir(loc.path))
-	return dropFromManifest(loc, r.OriginalPath)
+	// After a partial removal the item is complete at its original path, so
+	// the manifest must stop listing it either way.
+	derr := dropFromManifest(loc, r.OriginalPath)
+	switch {
+	case partial != nil && derr != nil:
+		return fmt.Errorf("restored %q, but: %w (and %w)", r.OriginalPath, partial, derr)
+	case partial != nil:
+		return fmt.Errorf("restored %q, but: %w", r.OriginalPath, partial)
+	}
+	return derr
+}
+
+// checkRestoreTarget validates a record for Restore and returns the checked
+// location of the quarantined copy. It refuses to overwrite: an existing
+// original path is a conflict.
+func (q *quarantine) checkRestoreTarget(r Record) (storedLocation, error) {
+	if !r.Restorable || r.Strategy != config.StrategyQuarantine {
+		return storedLocation{}, fmt.Errorf("%q was not quarantined: %w", r.OriginalPath, ErrNotRestorable)
+	}
+	if r.OriginalPath == "" || !filepath.IsAbs(r.OriginalPath) {
+		return storedLocation{}, fmt.Errorf("cannot restore to %q: not an absolute path", r.OriginalPath)
+	}
+	loc, err := q.checkStoredPath(r.StoredPath)
+	if err != nil {
+		return storedLocation{}, err
+	}
+	if _, err := os.Lstat(loc.path); err != nil {
+		return storedLocation{}, fmt.Errorf("quarantined copy %q is gone: %w", r.StoredPath, ErrNotRestorable)
+	}
+	if _, err := os.Lstat(r.OriginalPath); err == nil {
+		return storedLocation{}, fmt.Errorf("cannot restore %q: %w", r.OriginalPath, ErrRestoreConflict)
+	}
+	return loc, nil
 }
 
 // dropFromManifest removes a restored item from its session manifest. A

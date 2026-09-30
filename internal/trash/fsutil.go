@@ -29,6 +29,28 @@ import (
 // simulate a cross-device failure without needing two filesystems.
 var renameFunc = os.Rename
 
+// removeSourceFunc removes the source after a verified cross-device copy.
+// Tests replace it to simulate a removal that fails part-way, which cannot be
+// provoked reliably with permissions (root ignores them).
+var removeSourceFunc = removeTree
+
+// SourceNotRemovedError reports a cross-device move whose copy at Dst was
+// completed and verified, but whose source cleanup failed. RemoveAll may have
+// deleted part of Src before failing, so Src can no longer be trusted as a
+// complete item while Dst is. Dst is therefore never deleted: the item's data
+// is complete at Dst and Src holds at most leftovers.
+type SourceNotRemovedError struct {
+	Src, Dst string
+	Err      error
+}
+
+func (e *SourceNotRemovedError) Error() string {
+	return fmt.Sprintf("moved %q to %q, but removing the source failed: %v; the complete item is at %q and %q may hold leftovers that need manual cleanup",
+		e.Src, e.Dst, e.Err, e.Dst, e.Src)
+}
+
+func (e *SourceNotRemovedError) Unwrap() error { return e.Err }
+
 // checkRemovable rejects paths Remove must never touch and returns the Lstat
 // info of the item. A missing path yields an error wrapping fs.ErrNotExist so
 // callers can treat it as already gone.
@@ -84,8 +106,13 @@ func treeSize(path string) (int64, error) {
 // moveTree moves src to dst without following symlinks. dst must not exist.
 // It tries a rename first; only when that fails because src and dst are on
 // different devices does it copy, verify and then remove the source. Any
-// failure on the fallback path removes the partial destination and leaves
-// src untouched.
+// failure before the source removal deletes the partial destination and leaves
+// src untouched. If the source removal itself fails, the verified copy is kept
+// and a *SourceNotRemovedError is returned (see there).
+//
+// The dst-exists check and the rename are not atomic: on unix rename replaces
+// an existing file, so "never overwrites" holds unless another process creates
+// dst inside that small window.
 func moveTree(ctx context.Context, src, dst string) error {
 	if _, err := os.Lstat(dst); err == nil {
 		return fmt.Errorf("cannot move %q: destination %q already exists", src, dst)
@@ -105,11 +132,10 @@ func moveTree(ctx context.Context, src, dst string) error {
 		_ = removeTree(dst)
 		return fmt.Errorf("cannot move %q: copy verification failed: %w", src, err)
 	}
-	if err := removeTree(src); err != nil {
-		// Dropping the copy keeps the source authoritative and avoids a
-		// duplicated item.
-		_ = removeTree(dst)
-		return fmt.Errorf("cannot remove %q after copying: %w", src, err)
+	if err := removeSourceFunc(src); err != nil {
+		// The source may already be partly deleted, so the verified copy is
+		// the only complete one and must survive.
+		return &SourceNotRemovedError{Src: src, Dst: dst, Err: err}
 	}
 	return nil
 }

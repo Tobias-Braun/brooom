@@ -58,8 +58,16 @@ func readManifest(sessionDir, sessionID string, now time.Time) (*QuarantineManif
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("corrupt quarantine manifest %q: %w", path, err)
 	}
+	if m.Version != ManifestVersion {
+		return nil, fmt.Errorf("quarantine manifest %q has unsupported version %d (this brooom understands %d)", path, m.Version, ManifestVersion)
+	}
 	return &m, nil
 }
+
+// The read-modify-write cycle of a manifest is serialised only by the
+// quarantine's in-process mutex. Two brooom processes writing to the same
+// session at once could lose an entry; sessions are per process, so this is
+// not expected in practice.
 
 // writeManifest replaces the manifest in sessionDir atomically (temp file in
 // the same directory, then rename) with mode 0600, so a crash never leaves a
