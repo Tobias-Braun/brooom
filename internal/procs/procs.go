@@ -54,6 +54,24 @@ var ErrIncomplete = errors.New("open-file detection incomplete")
 // deadline. It covers all paths of the call and every subprocess or syscall.
 const DefaultTimeout = 3 * time.Second
 
+// PerPathBudget is added to DefaultTimeout for every path beyond the first
+// when the caller sets no deadline, so a batch over many directories (one
+// lsof +D each on macOS) does not share the budget of a single one.
+const PerPathBudget = 50 * time.Millisecond
+
+// MaxBudget caps Budget so that a huge batch cannot block a scan for long.
+const MaxBudget = 30 * time.Second
+
+// Budget returns the time OpenFiles allows for n paths when the context has
+// no deadline: DefaultTimeout for one path, growing by PerPathBudget per
+// additional path up to MaxBudget.
+func Budget(n int) time.Duration {
+	if n < 2 {
+		return DefaultTimeout
+	}
+	return min(DefaultTimeout+time.Duration(n-1)*PerPathBudget, MaxBudget)
+}
+
 // OpenFiles reports, for each given path, whether any process has it open.
 // For a directory it reports whether any file below it is open.
 //
@@ -65,7 +83,7 @@ const DefaultTimeout = 3 * time.Second
 // when its target is. The result has a key for every valid input path: false means "not known to
 // be open", and paths that do not exist are false.
 //
-// If ctx has no deadline, DefaultTimeout applies. On ErrIncomplete the
+// If ctx has no deadline, Budget(len(paths)) applies. On ErrIncomplete the
 // partial result is returned as well. Callers must treat any non-nil error as
 // "unknown" for entries that are false.
 func OpenFiles(ctx context.Context, paths []string) (map[string]bool, error) {
@@ -73,7 +91,7 @@ func OpenFiles(ctx context.Context, paths []string) (map[string]bool, error) {
 	// applied first.
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, DefaultTimeout)
+		ctx, cancel = context.WithTimeout(ctx, Budget(len(paths)))
 		defer cancel()
 	}
 	files, dirs, res, unchecked, err := classify(ctx, paths)

@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +26,12 @@ const (
 	// queried path; huge trees are recomputed instead of cached.
 	maxCacheDirs = 250_000
 )
+
+// maxCacheBytes caps the size of a cache file. A larger file is treated as
+// corrupt when read, so a broken cache can never exhaust memory, and is never
+// written, because a file that cannot be read back only costs a marshal and a
+// write on every scan. It is a variable so tests can use small documents.
+var maxCacheBytes int64 = 32 << 20
 
 // linkRecord is a multiply-linked file of a directory. Hard links are kept
 // out of the per-directory totals so they can be deduplicated across the
@@ -126,6 +134,14 @@ func storeCache(file, absPath string, dirs map[string]*dirRecord) error {
 	data, err := json.Marshal(cacheFile{Version: cacheVersion, Root: absPath, Dirs: dirs})
 	if err != nil {
 		return fmt.Errorf("walk: encode cache: %w", err)
+	}
+	if int64(len(data)) > maxCacheBytes {
+		// loadCache would refuse this file, so drop the stale one as well:
+		// its records describe a tree that no longer fits.
+		if err := os.Remove(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("walk: remove oversized cache %s: %w", file, err)
+		}
+		return nil
 	}
 	dir := filepath.Dir(file)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

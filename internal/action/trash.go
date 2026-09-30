@@ -106,7 +106,7 @@ func isGone(err error) bool { return errors.Is(err, fs.ErrNotExist) }
 // are returned as a note so the plan says so. A true entry is reliable even
 // next to an error, hence the map is consulted first.
 func checkOpen(ctx context.Context, path string) (string, error) {
-	res, err := openFilesFn(ctx, []string{path})
+	res, err := openFilesFor(ctx, path)
 	if res[path] {
 		return "", skipf("file is open by a process")
 	}
@@ -120,6 +120,18 @@ func checkOpen(ctx context.Context, path string) (string, error) {
 	default:
 		return "open-file check failed", nil
 	}
+}
+
+// openFilesFor answers from the plan-wide batch when the path is part of it
+// and otherwise checks the single path (tests and callers that plan one
+// finding at a time, or paths the batch could not vouch for).
+func openFilesFor(ctx context.Context, path string) (map[string]bool, error) {
+	if b := openBatchFrom(ctx); b != nil {
+		if res, ok, err := b.lookup(path); ok {
+			return res, err
+		}
+	}
+	return openFilesFn(ctx, []string{path})
 }
 
 // checkTracked reports whether the target holds files tracked by git. It

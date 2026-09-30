@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 )
@@ -45,22 +47,85 @@ type Options struct {
 	DefaultCategory Category
 }
 
+// maxCachedCatalogs bounds the per-process Load memo. Real runs see a handful
+// of distinct effective option sets (one per root override); the bound only
+// protects a long-lived process from unbounded growth.
+const maxCachedCatalogs = 64
+
+// embeddedDecodes counts how often the embedded files were decoded; tests
+// assert it stays at one per process.
+var embeddedDecodes atomic.Int64
+
+// embeddedTools decodes and validates the embedded tool files once per
+// process. The tools slice is shared and must be cloned before any change;
+// the problems are the validation errors of the embedded data itself.
+var embeddedTools = sync.OnceValues(func() ([]Tool, []string) {
+	embeddedDecodes.Add(1)
+	sub, err := fs.Sub(dataFS, "data")
+	if err != nil {
+		return nil, []string{fmt.Sprintf("catalog: embedded data: %v", err)}
+	}
+	pr := &problemList{}
+	tools := decodeToolFiles(pr, sub, toolFiles)
+	return tools, pr.list
+})
+
+var loadMemo = struct {
+	sync.Mutex
+	m map[string]*Catalog
+}{m: map[string]*Catalog{}}
+
 // Load builds the catalog from the embedded data and the given options.
 // Validation problems of the embedded data or of the extras are all reported
 // at once as a *ValidationError.
+//
+// The embedded files are decoded and validated once per process, and the
+// result for a given option set is memoized: a workspace scan calls Load once
+// per target and detector, which used to dominate its CPU time. A Catalog is
+// immutable (its accessors return copies), so sharing it is safe. Failed
+// loads are not memoized.
 func Load(opts Options) (*Catalog, error) {
-	sub, err := fs.Sub(dataFS, "data")
-	if err != nil {
-		return nil, fmt.Errorf("catalog: embedded data: %w", err)
+	key, keyed := optionsKey(opts)
+	if keyed {
+		loadMemo.Lock()
+		c, ok := loadMemo.m[key]
+		loadMemo.Unlock()
+		if ok {
+			return c, nil
+		}
 	}
-	return loadFrom(sub, toolFiles, opts)
+	tools, problems := embeddedTools()
+	c, err := buildCatalog(slices.Clone(tools), slices.Clone(problems), opts)
+	if err != nil || !keyed {
+		return c, err
+	}
+	loadMemo.Lock()
+	defer loadMemo.Unlock()
+	if len(loadMemo.m) < maxCachedCatalogs {
+		loadMemo.m[key] = c
+	}
+	return c, nil
+}
+
+// optionsKey serializes opts (JSON sorts map keys) for the memo. It reports
+// false when the options cannot be serialized, which just disables caching.
+func optionsKey(opts Options) (string, bool) {
+	data, err := json.Marshal(opts)
+	return string(data), err == nil
 }
 
 // loadFrom is Load with an injectable file system and file list so that tests
-// can prove that unrelated files are ignored.
+// can prove that unrelated files are ignored. It never uses the memo.
 func loadFrom(fsys fs.FS, files []string, opts Options) (*Catalog, error) {
 	pr := &problemList{}
 	tools := decodeToolFiles(pr, fsys, files)
+	return buildCatalog(tools, pr.list, opts)
+}
+
+// buildCatalog merges the extras into decoded tools, validates the result and
+// applies the toggles. tools is modified and must be owned by the caller.
+func buildCatalog(tools []Tool, problems []string, opts Options) (*Catalog, error) {
+	pr := &problemList{list: problems}
 	tools = mergeExtras(pr, tools, opts)
 	for _, t := range tools {
 		checkProtectConsistency(pr, fmt.Sprintf("tool %q", t.ID), t)

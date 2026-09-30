@@ -150,6 +150,8 @@ func dedupe(fs []findings.Finding) []findings.Finding {
 // planSteps asks each finding's action to re-validate it.
 func (e *Executor) planSteps(ctx context.Context, fs []findings.Finding, p *Plan) []planned {
 	var out []planned
+	// One open-file check for the whole plan instead of one per finding.
+	ctx = e.batchOpenCheck(ctx, fs)
 	for _, f := range fs {
 		t := f.SuggestedAction.Type
 		act, ok := e.opts.Lookup(t)

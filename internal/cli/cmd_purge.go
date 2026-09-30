@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -11,19 +13,25 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 func newPurgeCmd(a *app) *cobra.Command {
 	var apply, yes bool
 	cmd := &cobra.Command{
 		Use:   "purge",
-		Short: "Permanently delete quarantined sessions past their retention",
+		Short: "Permanently delete quarantined sessions past their retention and stale scan caches",
 		Long: `List the quarantined sessions (~/.brooom/quarantine/<session-id>) that are
 older than trash.quarantine_retention_days and, with --apply, delete them
 permanently. A retention of 0 means quarantined files never expire, so
 nothing is listed. Only session directories are touched, never anything else
 in the quarantine directory, the OS trash or the session manifests; the
-manifests of purged sessions are marked as not restorable.`,
+manifests of purged sessions are marked as not restorable.
+
+The same run also lists and removes stale directory size caches
+(~/.brooom/cache/dirsize-v1-*.json): files unused for 30 days, files of
+folders that no longer exist and leftovers of interrupted writes. The caches
+are rebuilt by the next scan, so this frees disk space only.`,
 		Example: `  brooom purge
   brooom purge --apply`,
 		Args: cobra.NoArgs,
@@ -55,7 +63,8 @@ func (a *app) runPurge(cmd *cobra.Command, apply, yes bool) error {
 		return err
 	}
 	a.printPurgeListing(listing, days, now)
-	if len(listing.Expired) == 0 {
+	staleCache := a.listStaleCache(dirs, now)
+	if len(listing.Expired) == 0 && len(staleCache) == 0 {
 		return nil
 	}
 	if !apply {
@@ -66,13 +75,53 @@ func (a *app) runPurge(cmd *cobra.Command, apply, yes bool) error {
 		if !a.canPrompt() {
 			return usageError{action.ErrConfirmationRequired}
 		}
-		prompt := fmt.Sprintf("Permanently delete %d quarantined session(s)? [y/N] ", len(listing.Expired))
+		prompt := fmt.Sprintf("Permanently delete %d quarantined session(s) and %d stale cache file(s)? [y/N] ",
+			len(listing.Expired), len(staleCache))
 		if !action.Confirm(a.io.In, a.io.Out, prompt) {
 			fmt.Fprintln(a.io.Out, "aborted: nothing was deleted")
 			return nil
 		}
 	}
-	return a.applyPurge(dirs, listing, now)
+	return errors.Join(a.applyPurge(dirs, listing, now), a.applyCachePrune(staleCache))
+}
+
+// listStaleCache prints the stale directory size caches and returns them. A
+// cache that cannot be listed is a note, never an error: it is only a
+// performance artefact.
+func (a *app) listStaleCache(dirs config.Dirs, now time.Time) []walk.StaleCacheFile {
+	stale, err := walk.ListStaleCache(dirs.Cache, walk.PruneOptions{Now: now, CheckRoots: true})
+	if err != nil {
+		fmt.Fprintf(a.io.Err, "brooom: cannot list the scan cache: %v\n", err)
+		return nil
+	}
+	if len(stale) == 0 {
+		return nil
+	}
+	var total int64
+	fmt.Fprintln(a.io.Out, "stale scan cache files:")
+	for _, f := range stale {
+		total += f.SizeBytes
+		fmt.Fprintf(a.io.Out, "  %s  %s  (%s)\n", filepath.Base(f.Path), output.FormatSize(f.SizeBytes), f.Reason)
+	}
+	fmt.Fprintf(a.io.Out, "total: %d cache file(s), %s\n", len(stale), output.FormatSize(total))
+	return stale
+}
+
+// applyCachePrune deletes the listed cache files and reports the result.
+func (a *app) applyCachePrune(stale []walk.StaleCacheFile) error {
+	if len(stale) == 0 {
+		return nil
+	}
+	removed, err := walk.RemoveStaleCache(stale)
+	var freed int64
+	for _, f := range removed {
+		freed += f.SizeBytes
+	}
+	fmt.Fprintf(a.io.Out, "removed %d cache file(s), freed %s\n", len(removed), output.FormatSize(freed))
+	if err != nil {
+		return fmt.Errorf("some cache files could not be deleted: %w", err)
+	}
+	return nil
 }
 
 // printPurgeListing prints the expired sessions with age and size and the
