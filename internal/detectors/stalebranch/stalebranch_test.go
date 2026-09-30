@@ -190,7 +190,7 @@ func (f *fixture) checkAction(got findings.Finding, w want) {
 	}
 }
 
-const unpushedReason = "1 commit exists only on this branch; deleting would lose them (re-run with --force to override)"
+const unpushedReason = "1 commit exists only on this branch; deleting would lose them (decide with `brooom review`)"
 
 func TestUpstreamGoneContainedIsHigh(t *testing.T) {
 	f := newFixture(t, true)
@@ -297,7 +297,7 @@ func TestRepoWithoutRemote(t *testing.T) {
 		ref: "feat/local", confidence: findings.ConfidenceLow, age: 100,
 		flags:    []findings.RiskFlag{findings.RiskUnpushedCommits, findings.RiskNeverPushed},
 		evidence: []string{"last_commit_age", "never_pushed", "unpushed_commits", "unique_commits"},
-		action:   findings.ActionNone, reason: "1 commit exists only on this branch; deleting would lose them (re-run with --force to override)",
+		action:   findings.ActionNone, reason: "1 commit exists only on this branch; deleting would lose them (decide with `brooom review`)",
 		prCheck: prCheckDisabled,
 	})
 	if got.Meta["base"] != "main" {
@@ -382,7 +382,7 @@ func TestOpenPullRequest(t *testing.T) {
 			confidence: findings.ConfidenceLow,
 			flags:      []findings.RiskFlag{findings.RiskHasOpenPR},
 			action:     findings.ActionNone, prCheck: prCheckOK,
-			reason: "an open pull request uses this branch (re-run with --force to override)",
+			reason: "an open pull request uses this branch (decide with `brooom review`)",
 		}},
 		{"unknown does not block", ghFail, want{
 			confidence: findings.ConfidenceMedium, flags: []findings.RiskFlag{},

@@ -25,6 +25,7 @@ Every command that changes something shows its plan and asks once before it acts
 - [`brooom git`](#brooom-git)
 - [`brooom git purge`](#brooom-git-purge)
 - [`brooom purge`](#brooom-purge)
+- [`brooom review`](#brooom-review)
 - [`brooom scan`](#brooom-scan)
 - [`brooom sessions`](#brooom-sessions)
 - [`brooom sweep`](#brooom-sweep)
@@ -93,6 +94,7 @@ brooom undo
 - [`brooom config`](#brooom-config): Create, show, edit and validate the configuration
 - [`brooom git`](#brooom-git): Git history maintenance
 - [`brooom purge`](#brooom-purge): Permanently delete quarantined sessions past their retention and stale scan caches
+- [`brooom review`](#brooom-review): Decide one by one on dirty worktrees and unmerged branches
 - [`brooom scan`](#brooom-scan): Scan for clutter and report findings (never modifies anything)
 - [`brooom sessions`](#brooom-sessions): List applied sessions, or show one session's manifest
 - [`brooom sweep`](#brooom-sweep): Scan, show what to clean, ask once, then clean
@@ -647,6 +649,47 @@ brooom purge --dry-run
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--dry-run` | - | only list the sessions and cache files and delete nothing |
+| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
+
+
+## `brooom review`
+
+Decide one by one on dirty worktrees and unmerged branches
+
+```text
+brooom review [path] [flags]
+```
+
+```text
+Walk through the work sweep leaves alone: worktrees with uncommitted changes
+and local branches that are not merged, one at a time. For each it shows what
+would be lost (changed and untracked files, commits that exist on no remote,
+the last activity) and asks: d deletes it, k (or enter) keeps it, q stops and
+deletes nothing at all.
+
+Deleted worktrees go to the trash and are then deregistered; deleted branches
+are removed with 'git branch -D' after their tip was recorded. Everything is
+one session, so 'brooom undo' restores it. Items that can never be deleted
+(the worktree or branch in use, a locked worktree, a protected branch) are
+shown with the reason and skipped.
+
+Without a terminal, or with --dry-run, review only lists the items.
+```
+
+**Examples**
+
+```sh
+brooom review
+brooom review ~/code
+brooom review --dry-run
+```
+
+**Flags**
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--dry-run` | - | only show what would be done and change nothing |
+| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 

@@ -225,6 +225,7 @@ brooom                          # scan current repo, table output, suggests a sw
 brooom [PATH]                   # the same for the repo or folder PATH
 brooom scan [PATH] [--detector X] [--format F]
 brooom sweep [PRESET] [PATH] [--dry-run] [-y]   # plan, ask once, clean
+brooom review [PATH] [--dry-run]                # decide on dirty and unmerged work
 brooom git purge [PATH] [--gc] [--reflog-expire D] [--prune D] [--dry-run] [-y]
 brooom clean --from findings.json [--path P] [--dry-run] [-y]
 brooom undo [session-id] [--path P] [--dry-run] [-y] # default: latest session

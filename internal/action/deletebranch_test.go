@@ -247,7 +247,7 @@ func TestDeleteBranchSquashClaimNoLongerHolds(t *testing.T) {
 	// The finding claims a squash merge that never happened.
 	f := fx.finding("feat/unsq", "merged-branch", "squash")
 	_, err := fx.plan(f)
-	wantBranchSkip(t, err, "not fully merged; re-run with --force to delete with -D")
+	wantBranchSkip(t, err, "not fully merged; decide with `brooom review` to delete with -D")
 }
 
 func TestDeleteBranchInRemote(t *testing.T) {
@@ -315,7 +315,7 @@ func TestDeleteBranchUnmergedNeedsForce(t *testing.T) {
 	f := fx.finding("feat/wip", "merged-branch", "")
 
 	_, err := fx.plan(f)
-	wantBranchSkip(t, err, "not fully merged; re-run with --force to delete with -D")
+	wantBranchSkip(t, err, "not fully merged; decide with `brooom review` to delete with -D")
 
 	fx.env.Force = true
 	step, en := fx.mustApply(f)
@@ -634,7 +634,7 @@ func TestDeleteBranchRunEscalation(t *testing.T) {
 				t.Fatalf("branch exists = %v, run err = %v", !tc.wantGone, err)
 			}
 			if !tc.wantGone {
-				wantBranchSkip(t, err, "--force")
+				wantBranchSkip(t, err, "brooom review")
 			}
 		})
 	}

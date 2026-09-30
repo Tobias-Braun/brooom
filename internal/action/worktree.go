@@ -302,7 +302,7 @@ func (ev *removeEval) inspect(ctx context.Context, env *Env) error {
 // ignored files, since either may be the only copy of the user's work.
 func (ev *removeEval) checkDirty(env *Env, f findings.Finding) error {
 	if ev.dirty && !env.Force {
-		return skipf("worktree has uncommitted changes; re-run with --force to trash it")
+		return skipf("worktree has uncommitted changes; decide with `brooom review` to trash it")
 	}
 	tr, err := trasherFor(env, f.Detector)
 	if err != nil {

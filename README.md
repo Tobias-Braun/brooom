@@ -131,7 +131,7 @@ br sweep tidy           # logs, OS junk, test caches, coverage output
 br sweep tidy ~/code    # every repository below ~/code
 br sweep --dry-run      # only show what it would do
 br sweep --yes          # no question (scripts)
-br scan -d stale-branch # findings no preset acts on, for your review
+br review               # decide one by one on dirty worktrees and unmerged branches
 br undo                 # show what the last session removed, ask, restore
                         # (a sweep of a folder prints `br undo <id> --path <folder>`)
 br purge                # delete quarantined sessions past their retention
@@ -175,8 +175,12 @@ config decides, else `everything`.
 
 Sweep never removes unmerged or uncommitted work: dirty worktrees, branches
 that are not merged and other findings with blocking risk flags are listed as
-skipped, and sweep has no `--force`. Stale branches and large untracked files
-are in no preset; `brooom scan -d stale-branch` lists them. `.brooom.json` can
+skipped, and sweep has no `--force`. `brooom review` walks through exactly
+that work, one item at a time: it shows the changed and untracked files, the
+commits that exist on no remote and the last activity, and asks `[d]elete /
+[k]eep / [q]uit`; deletions are one session for `brooom undo`, and q discards
+every choice. Large untracked files are in no preset; `brooom scan -d
+large-untracked` lists them. `.brooom.json` can
 still tighten what a preset selects, and `--detector` narrows it. The
 definitions live in `internal/presets`; `brooom sweep --help` prints them.
 
