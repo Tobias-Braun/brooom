@@ -12,6 +12,11 @@
 # The archive name must match archives.name_template in .goreleaser.yaml:
 # brooom_<version>_<os>_<arch>.tar.gz. The script never uses sudo, verifies the
 # sha256 checksum before extracting anything and aborts on any mismatch.
+#
+# Next to brooom it installs the short command br, a symlink to brooom in the
+# same directory, but only when br is free. A br that already exists (a file,
+# another command on PATH, broot's shell function or a user alias) is never
+# touched: the installer says why br was skipped and brooom works as usual.
 set -eu
 
 REPO_URL="https://github.com/Tobias-Braun/brooom/releases"
@@ -77,6 +82,64 @@ sha256_of() {
   fi
 }
 
+# is_our_br DIR succeeds when DIR/br is the symlink an earlier run created.
+is_our_br() {
+  [ -L "$1/br" ] || return 1
+  case "$(readlink "$1/br")" in
+    brooom | "$1/brooom") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# br_taken_reason DIR prints why br cannot be installed into DIR and succeeds,
+# or fails silently when br is free. The installer runs in a non-interactive
+# sh that has not read the user's shell startup files, so shell functions and
+# aliases (broot installs br as a function) are invisible to command -v; they
+# are found through broot's launcher directory and a look into the usual rc
+# files instead.
+br_taken_reason() {
+  dir=$1
+  if [ -e "$dir/br" ] || [ -L "$dir/br" ]; then
+    is_our_br "$dir" || { echo "$dir/br already exists"; return 0; }
+  fi
+  other=$(command -v br 2>/dev/null || true)
+  if [ -n "$other" ] && [ "$other" != "$dir/br" ]; then
+    echo "$other is already on your PATH"
+    return 0
+  fi
+  if have broot || [ -d "$HOME/.config/broot/launcher" ] || [ -d "$HOME/Library/Application Support/org.dystroy.broot/launcher" ]; then
+    echo "it is used by broot (its br shell function)"
+    return 0
+  fi
+  for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile" "$HOME/.zshrc" "$HOME/.config/fish/config.fish"; do
+    [ -f "$rc" ] || continue
+    if grep -Eq '(^|[^[:alnum:]_-])br[[:space:]]*\(\)|function[[:space:]]+br([[:space:]]|$|\()|alias[[:space:]]+br[[:space:]=]' "$rc"; then
+      echo "br is defined as an alias or function in $rc"
+      return 0
+    fi
+  done
+  if [ -f "$HOME/.config/fish/functions/br.fish" ]; then
+    echo "br is defined as a fish function in $HOME/.config/fish/functions/br.fish"
+    return 0
+  fi
+  return 1
+}
+
+# install_br DIR links DIR/br to brooom when br is free and otherwise says why
+# it was skipped. It never fails the install.
+install_br() {
+  if reason=$(br_taken_reason "$1"); then
+    say "Skipped the br shortcut: $reason. Use brooom instead."
+    return 0
+  fi
+  # A relative target keeps the link valid when the directory is moved.
+  if ln -sf brooom "$1/br" 2>/dev/null; then
+    say "Installed $1/br (short for brooom)"
+  else
+    say "Skipped the br shortcut: cannot create $1/br. Use brooom instead."
+  fi
+}
+
 main() {
   os=$(detect_os)
   arch=$(detect_arch)
@@ -112,6 +175,7 @@ main() {
   mv -f "$install_dir/.brooom.new" "$install_dir/brooom"
 
   say "Installed $install_dir/brooom"
+  install_br "$install_dir"
   case ":$PATH:" in
     *":$install_dir:"*) ;;
     *) say "Warning: $install_dir is not in your PATH. Add it, e.g.: export PATH=\"$install_dir:\$PATH\"" ;;

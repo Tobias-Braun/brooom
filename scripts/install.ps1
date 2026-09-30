@@ -17,6 +17,11 @@ user PATH is only changed with -AddToPath or BROOOM_ADD_TO_PATH=1. With iex
 there is no way to pass a switch, so use:
   & ([scriptblock]::Create((irm <url>))) -AddToPath
 
+Next to brooom.exe it installs the short command br.exe, a hardlink to
+brooom.exe, but only when br is free. A br that already exists (a file,
+another command on PATH, a PowerShell function or alias such as broot's) is
+never touched: the installer says why br was skipped and brooom works as usual.
+
 The whole script runs in a child scope so that neither its preferences nor its
 variables and functions leak into the session that ran it through iex.
 #>
@@ -102,6 +107,60 @@ variables and functions leak into the session that ran it through iex.
     if ($hadOld) { Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue }
   }
 
+  function Get-Sha256([string]$path) {
+    try { return (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash } catch { return $null }
+  }
+
+  # Returns why br.exe cannot be installed into $dir, or $null when br is free.
+  # A br.exe whose hash is in $ownHashes is a hardlink an earlier run created.
+  # Get-Command sees PowerShell functions and aliases when the installer runs
+  # in the user's session (iex), which is where broot defines its br.
+  function Get-BrTakenReason([string]$dir, [string[]]$ownHashes) {
+    $br = Join-Path $dir 'br.exe'
+    if ((Test-Path -LiteralPath $br) -and ($ownHashes -notcontains (Get-Sha256 $br))) {
+      return "$br already exists"
+    }
+    $other = Get-Command br -ErrorAction SilentlyContinue |
+      Where-Object { -not ($_.CommandType -eq 'Application' -and $_.Source -eq $br) } |
+      Select-Object -First 1
+    if ($other) {
+      if ($other.CommandType -eq 'Application') { return "$($other.Source) is already on your PATH" }
+      return "br is already a PowerShell $($other.CommandType.ToString().ToLowerInvariant())"
+    }
+    if (Get-Command broot -ErrorAction SilentlyContinue) { return 'it is used by broot (its br shell function)' }
+    return $null
+  }
+
+  # Hardlinks br.exe to brooom.exe when br is free and otherwise says why it was
+  # skipped. It never fails the install. A hardlink keeps pointing at the binary
+  # it was made from, so our br.exe is replaced on every run.
+  function Install-Br([string]$dir, [string]$target, [string[]]$ownHashes) {
+    $reason = Get-BrTakenReason $dir $ownHashes
+    if ($reason) {
+      Write-Host "Skipped the br shortcut: $reason. Use brooom instead."
+      return
+    }
+    $br = Join-Path $dir 'br.exe'
+    $old = "$br.old"
+    try {
+      if (Test-Path -LiteralPath $br) {
+        # A running br.exe cannot be deleted, but it can be renamed away.
+        Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+        Move-Item -LiteralPath $br -Destination $old -Force
+        Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+      }
+      try {
+        New-Item -ItemType HardLink -Path $br -Value $target | Out-Null
+      } catch {
+        # Some filesystems (FAT, a few network shares) have no hardlinks.
+        Copy-Item -LiteralPath $target -Destination $br -Force
+      }
+      Write-Host "Installed $br (short for brooom)"
+    } catch {
+      Write-Host "Skipped the br shortcut: cannot create $br ($($_.Exception.Message)). Use brooom instead."
+    }
+  }
+
   $arch = Get-Arch
   if ($env:BROOOM_VERSION) { $tag = 'v' + $env:BROOOM_VERSION.TrimStart('v') } else { $tag = Get-LatestTag }
   $version = $tag.TrimStart('v')
@@ -127,8 +186,11 @@ variables and functions leak into the session that ran it through iex.
     Expand-Archive -Path (Join-Path $tmp $archive) -DestinationPath $tmp -Force
     New-Item -ItemType Directory -Path $installDir -Force | Out-Null
     $target = Join-Path $installDir 'brooom.exe'
+    # A br.exe hardlinked to the brooom.exe being replaced is still ours.
+    $ownHashes = @(if (Test-Path -LiteralPath $target) { Get-Sha256 $target })
     Install-Binary (Join-Path $tmp 'brooom.exe') $target
     Write-Host "Installed $target"
+    Install-Br $installDir $target (@($ownHashes) + @(Get-Sha256 $target) | Where-Object { $_ })
   } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
   }

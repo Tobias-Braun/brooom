@@ -54,7 +54,7 @@ export const installTabs: InstallTab[] = [
     blocks: [
       {
         type: 'text',
-        text: 'Downloads the latest release for your platform, verifies its sha256 checksum and installs it without sudo. It needs a published release, and v0.1.0 is not out yet.',
+        text: 'Downloads the latest release for your platform, verifies its sha256 checksum and installs it without sudo, together with the short command br (unless something else already uses br, in which case it tells you). It needs a published release, and v0.1.0 is not out yet.',
       },
       { type: 'command', os: 'macOS / Linux', command: `curl -fsSL ${RAW}/install.sh | sh`, copyLabel: 'Copy macOS and Linux install command' },
       { type: 'command', os: 'Windows (PowerShell)', command: `irm ${RAW}/install.ps1 | iex`, copyLabel: 'Copy Windows install command' },
@@ -85,7 +85,7 @@ export const installTabs: InstallTab[] = [
     label: 'go install',
     status: 'available',
     blocks: [
-      { type: 'text', text: 'With Go installed, build and install the latest version from source:' },
+      { type: 'text', text: 'With Go installed, build and install the latest version from source. This installs brooom only, without the br short command:' },
       {
         type: 'command',
         command: 'go install github.com/Tobias-Braun/brooom/cmd/brooom@latest',

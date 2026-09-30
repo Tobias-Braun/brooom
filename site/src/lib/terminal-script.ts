@@ -53,8 +53,13 @@ const dim = (text: string): Line => ({ text, tone: 'dim' });
 const bold = (text: string): Line => ({ text, tone: 'bold' });
 const ok = (text: string): Line => ({ text, tone: 'ok' });
 
-export const DRY_RUN_COMMAND = 'brooom sweep --dry-run';
-export const APPLY_COMMAND = 'brooom sweep';
+/**
+ * The typed commands use br, the short name the install scripts add next to
+ * brooom. The output below keeps saying brooom because the binary prints its
+ * full name.
+ */
+export const DRY_RUN_COMMAND = 'br sweep --dry-run';
+export const APPLY_COMMAND = 'br sweep';
 
 /**
  * The plan `brooom sweep` prints (renderPlan): a header per detector and
