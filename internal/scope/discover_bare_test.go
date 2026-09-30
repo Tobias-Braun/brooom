@@ -34,7 +34,7 @@ func linkedWorktree(t *testing.T, proj, name string) {
 // looking below it and reports the linked worktrees instead.
 func TestDiscoverBareAnchor(t *testing.T) {
 	isolateHome(t)
-	root := t.TempDir()
+	root := testutil.ResolvedTempDir(t)
 	proj := bareAnchor(t, root, "proj", bareConfig)
 	linkedWorktree(t, proj, "main")
 	linkedWorktree(t, proj, "feat")
@@ -49,7 +49,7 @@ func TestDiscoverBareAnchor(t *testing.T) {
 // layout) whose git directory is not bare stays an ordinary repository.
 func TestDiscoverGitFileToNonBare(t *testing.T) {
 	isolateHome(t)
-	root := t.TempDir()
+	root := testutil.ResolvedTempDir(t)
 	proj := bareAnchor(t, root, "proj", "[core]\n\tbare = false\n")
 	testutil.WriteFile(t, proj, "inner/.git", "gitdir: ../.bare\n")
 
@@ -61,7 +61,7 @@ func TestDiscoverGitFileToNonBare(t *testing.T) {
 // repository as before.
 func TestDiscoverBareAnchorUnreadable(t *testing.T) {
 	isolateHome(t)
-	root := t.TempDir()
+	root := testutil.ResolvedTempDir(t)
 	proj := mkRel(t, root, "dangling")
 	testutil.WriteFile(t, proj, ".git", "gitdir: ./missing\n")
 
