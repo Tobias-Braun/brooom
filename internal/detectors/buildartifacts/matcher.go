@@ -14,6 +14,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/catalog"
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 // foldCase makes directory and marker names compare case-insensitively, as
@@ -303,9 +304,10 @@ func (m *matcher) list(rel string) []string {
 		return names
 	}
 	var names []string
-	if entries, err := os.ReadDir(filepath.Join(m.root, filepath.FromSlash(rel))); err == nil {
+	dir := filepath.Join(m.root, filepath.FromSlash(rel))
+	if entries, err := os.ReadDir(dir); err == nil {
 		for _, e := range entries {
-			if !e.IsDir() {
+			if !walk.IsDirEntry(dir, e) {
 				names = append(names, e.Name())
 			}
 		}

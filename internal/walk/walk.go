@@ -138,12 +138,16 @@ func (o Options) workers() int {
 func foldNames() bool { return runtime.GOOS == "windows" || runtime.GOOS == "darwin" }
 
 // nameMatcher returns a predicate for names that must not be descended into:
-// the built-in .git plus the given names.
+// every VCS metadata directory (IsVCSName: .git, .hg, .jj, .svn) plus the
+// given names. Only skipping all of them keeps detectors from sizing or
+// claiming files inside somebody's Mercurial, Jujutsu or Subversion metadata.
 func nameMatcher(names []string) func(string) bool {
-	all := append([]string{".git"}, names...)
 	fold := foldNames()
 	return func(name string) bool {
-		for _, n := range all {
+		if IsVCSName(name) {
+			return true
+		}
+		for _, n := range names {
 			if n == name || (fold && strings.EqualFold(n, name)) {
 				return true
 			}
@@ -254,6 +258,33 @@ func Stat(path string) (Entry, error) {
 		return Entry{}, err
 	}
 	return entryFromInfo(abs, fi), nil
+}
+
+// IsDirNoFollow reports whether path is a real directory, decided by Lstat
+// and the reparse-aware rule of entryFromInfo: a symlink, and on Windows a
+// junction or other name-surrogate reparse point, is not a directory, while
+// cloud placeholders are. Detectors use it instead of os.Lstat(...).IsDir() so
+// every layer classifies an entry the way walk and trash do. A missing or
+// unreadable path is not a directory.
+func IsDirNoFollow(path string) bool {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+	return entryFromInfo(path, fi).IsDir()
+}
+
+// IsDirEntry is IsDirNoFollow for an entry returned by os.ReadDir of dir, so a
+// listing needs no extra Lstat per entry.
+func IsDirEntry(dir string, de fs.DirEntry) bool {
+	typ := de.Type()
+	switch {
+	case typ&fs.ModeSymlink != 0:
+		return false
+	case typ&fs.ModeIrregular != 0 && typ&fs.ModeDir != 0 && nameSurrogate(filepath.Join(dir, de.Name())):
+		return false
+	}
+	return typ.IsDir()
 }
 
 // entryFromInfo builds an Entry from lstat-style file info.

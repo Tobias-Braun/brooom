@@ -26,6 +26,12 @@ clutter modern AI-assisted development leaves behind:
   (the shell API rejects `\\?\` paths) or items larger than the bin limit;
   Brooom refuses those instead of letting Windows delete them permanently and
   points to `--trash-strategy quarantine`.
+- The `delete` strategy (permanent removal) is refused outside a git
+  repository and whenever git cannot show right now that the path holds no
+  untracked, non-ignored file. Trashing a Windows junction is refused too
+  (a junction is a name-surrogate link, and its target is never followed).
+  Directories holding version control metadata (`.git`, `.hg`, `.jj`, `.svn`)
+  are never removed.
 - Every applied session is recorded and can be reverted with `brooom undo`.
 - Without flags Brooom only touches the repository you are in; paths outside
   the allowed scope are refused, symlinks are never followed out of it.
