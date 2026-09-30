@@ -24,6 +24,11 @@ $installer = Join-Path $PSScriptRoot 'install.ps1'
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("brooom-install-test-" + [System.Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
 $server = $null
+# The real processor architecture variables of this host, restored for every installer run.
+$hostEnv = @{
+  PROCESSOR_ARCHITECTURE = $env:PROCESSOR_ARCHITECTURE
+  PROCESSOR_ARCHITEW6432 = $env:PROCESSOR_ARCHITEW6432
+}
 
 function Fail([string]$message) { throw "FAIL: $message" }
 
@@ -67,23 +72,27 @@ function Invoke-Installer([hashtable]$environment) {
   foreach ($n in $names) { $saved[$n] = [Environment]::GetEnvironmentVariable($n, 'Process') }
   try {
     foreach ($n in $names) {
-      # The installer variables are cleared unless given; the processor ones
-      # keep the real host values unless a case overrides them.
-      if ($environment.ContainsKey($n) -or $n -like 'BROOOM_*') {
-        [Environment]::SetEnvironmentVariable($n, $environment[$n], 'Process')
-      }
+      # The installer variables are cleared unless given. The processor ones
+      # are set explicitly on every run, to the case's value or else the real
+      # host value captured at startup, so a case that fakes an architecture
+      # can never leak into the next one.
+      $value = $null
+      if ($environment.ContainsKey($n)) { $value = $environment[$n] }
+      elseif ($n -like 'PROCESSOR_*') { $value = $hostEnv[$n] }
+      [Environment]::SetEnvironmentVariable($n, $value, 'Process')
     }
     # Start-Process with redirected files instead of "2>&1": Windows PowerShell 5.1
     # turns the first native stderr line into a terminating NativeCommandError
     # under $ErrorActionPreference = 'Stop', which would abort the negative cases
     # before they can report their exit code.
+    $launchedArch = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE', 'Process')
     $outFile = Join-Path $work 'installer.out'
     $errFile = Join-Path $work 'installer.err'
     $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $installer + '"'))
     $process = Start-Process -FilePath $exe -ArgumentList $arguments -Wait -PassThru -NoNewWindow `
       -RedirectStandardOutput $outFile -RedirectStandardError $errFile
     $output = (Get-Content -Raw -Path $outFile -ErrorAction SilentlyContinue) + (Get-Content -Raw -Path $errFile -ErrorAction SilentlyContinue)
-    return @{ Code = $process.ExitCode; Output = [string]$output }
+    return @{ Code = $process.ExitCode; Output = [string]$output + " [launched with PROCESSOR_ARCHITECTURE='$launchedArch']" }
   } finally {
     foreach ($n in $names) { [Environment]::SetEnvironmentVariable($n, $saved[$n], 'Process') }
   }
