@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"syscall"
 )
@@ -92,47 +91,120 @@ func topdirTrashRoots(topdir string, uid int) []string {
 	}
 }
 
+// statOwner returns the uid owning fi. ok is false where the platform
+// reports no owner, in which case the ownership check cannot be applied.
+func statOwner(fi fs.FileInfo) (uid int, ok bool) {
+	st, isStat := fi.Sys().(*syscall.Stat_t)
+	if !isStat {
+		return 0, false
+	}
+	return int(st.Uid), true
+}
+
 // ensureTrashDir creates dir with its files/ and info/ subdirectories (mode
-// 0700). With strict set, dir must end up a real directory and not a symlink,
-// which is required for topdir trashes: another user could have planted a
-// link there.
-func ensureTrashDir(dir string, strict bool) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("cannot create trash directory %q: %w", dir, err)
+// 0700). Every level is made with Mkdir and EEXIST is tolerated, never with
+// MkdirAll: MkdirAll follows an existing symlink, so a planted files/ link
+// would silently redirect the trash. The home trash (strict unset) is the
+// user's own tree and only needs its parents created. A strict (topdir) trash
+// lives on a mount other users may write to, so each level is verified with
+// checkTrashLevel right after it is made and before anything is created
+// below it (Mkdir below a planted symlink would write through it); a failure
+// makes the caller fall through to the next candidate.
+func (f *freedesktop) ensureTrashDir(dir string, strict bool) error {
+	if !strict {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("cannot create trash directory %q: %w", dir, err)
+		}
 	}
-	if strict {
-		fi, err := os.Lstat(dir)
-		if err != nil {
+	for _, d := range []string{dir, filepath.Join(dir, "files"), filepath.Join(dir, "info")} {
+		if err := os.Mkdir(d, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("cannot create trash directory %q: %w", d, err)
+		}
+		if !strict {
+			continue
+		}
+		if err := f.checkTrashLevel(d); err != nil {
 			return err
-		}
-		if !fi.IsDir() {
-			return fmt.Errorf("trash directory %q is not a real directory", dir)
-		}
-	}
-	for _, sub := range []string{"files", "info"} {
-		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
-			return fmt.Errorf("cannot create trash directory %q: %w", filepath.Join(dir, sub), err)
 		}
 	}
 	return nil
 }
 
-var (
-	topdirRootRe = regexp.MustCompile(`^\.Trash-[0-9]+$`)
-	uidDirRe     = regexp.MustCompile(`^[0-9]+$`)
-)
+// checkTrashLevel requires d to be a real directory (not a link) that belongs
+// to the current user and is closed to group and others (mode&0o077 == 0), as
+// GLib demands, so another user can neither have pre-created it nor read what
+// is trashed into it. On filesystems that report a single owner (vfat, exfat)
+// the owner comparison is a no-op.
+func (f *freedesktop) checkTrashLevel(d string) error {
+	fi, err := f.lstat(d)
+	if err != nil {
+		return fmt.Errorf("trash directory %q: %w", d, err)
+	}
+	if !fi.IsDir() || fi.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("trash directory %q is not a real directory", d)
+	}
+	if uid, ok := f.ownerOf(fi); ok && uid != f.uid {
+		return fmt.Errorf("trash directory %q is owned by uid %d, not %d", d, uid, f.uid)
+	}
+	if fi.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("trash directory %q is accessible to other users (mode %v)", d, fi.Mode().Perm())
+	}
+	return nil
+}
+
+// checkTrashDir applies checkTrashLevel to dir, dir/files and dir/info.
+func (f *freedesktop) checkTrashDir(dir string) error {
+	for _, d := range []string{dir, filepath.Join(dir, "files"), filepath.Join(dir, "info")} {
+		if err := f.checkTrashLevel(d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // isTrashRoot reports whether root has the shape of a trash directory brooom
 // may have written to: the home trash, $topdir/.Trash-$uid or
-// $topdir/.Trash/$uid. Restore uses it so a hand-edited manifest cannot make
-// brooom move files out of arbitrary directories.
+// $topdir/.Trash/$uid, with the uid being the current user's. Restore uses it
+// so a hand-edited manifest cannot make brooom move files out of arbitrary
+// directories. Whether a topdir root really sits at a mount point and is
+// trustworthy is checked separately by checkTopdirRoot.
 func (f *freedesktop) isTrashRoot(root string) bool {
-	if root == f.homeTrash {
-		return true
+	return root == f.homeTrash || f.topdirOf(root) != ""
+}
+
+// topdirOf returns the topdir a topdir-shaped trash root belongs to, or "" if
+// root is neither $topdir/.Trash-$uid nor $topdir/.Trash/$uid for the current
+// uid.
+func (f *freedesktop) topdirOf(root string) string {
+	uid := strconv.Itoa(f.uid)
+	base, parent := filepath.Base(root), filepath.Dir(root)
+	switch {
+	case base == ".Trash-"+uid:
+		return parent
+	case base == uid && filepath.Base(parent) == ".Trash":
+		return filepath.Dir(parent)
 	}
-	base := filepath.Base(root)
-	if topdirRootRe.MatchString(base) {
-		return true
+	return ""
+}
+
+// checkTopdirRoot verifies that a topdir trash root recorded in a manifest is
+// one Remove could have created: its topdir is a mount point (the same
+// device-walk Remove uses), no component of the path is a symlink, a shared
+// .Trash is a sticky real directory, and the root itself passes
+// checkTrashDir. Without it any directory named .Trash-<uid> planted anywhere
+// would count as a trash.
+func (f *freedesktop) checkTopdirRoot(root, topdir string) error {
+	if top, err := findTopdir(topdir, f.deviceOf); err != nil || top != topdir {
+		return fmt.Errorf("%q is not the top directory of a mounted filesystem", topdir)
 	}
-	return uidDirRe.MatchString(base) && filepath.Base(filepath.Dir(root)) == ".Trash"
+	if real, err := filepath.EvalSymlinks(root); err != nil || real != root {
+		return fmt.Errorf("trash directory %q is or passes through a symlink", root)
+	}
+	if shared := filepath.Dir(root); filepath.Base(shared) == ".Trash" {
+		fi, err := f.lstat(shared)
+		if err != nil || !fi.IsDir() || fi.Mode()&fs.ModeSticky == 0 {
+			return fmt.Errorf("shared trash %q is not a sticky real directory", shared)
+		}
+	}
+	return f.checkTrashDir(root)
 }

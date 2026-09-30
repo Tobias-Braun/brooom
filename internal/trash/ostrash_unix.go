@@ -21,5 +21,6 @@ func newOSTrasher(opts Options) (Trasher, error) {
 		now:       time.Now,
 		deviceOf:  deviceOf,
 		lstat:     os.Lstat,
+		ownerOf:   statOwner,
 	}, nil
 }

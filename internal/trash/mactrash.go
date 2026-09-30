@@ -54,7 +54,9 @@ type nativeTrashFunc func(path string) (resulting string, err error)
 // when that is not possible.
 type macTrash struct {
 	home string
-	now  func() time.Time
+	// uid is the current user, the name of the per-volume .Trashes directory.
+	uid int
+	now func() time.Time
 	// native, lstat and move are seams for tests: they replace the
 	// NSFileManager call, the Trash inspection (TCC) and the move helper.
 	native nativeTrashFunc
@@ -70,6 +72,7 @@ type macTrash struct {
 func newMacTrash(home string) *macTrash {
 	return &macTrash{
 		home:          home,
+		uid:           os.Getuid(),
 		now:           time.Now,
 		native:        nativeTrashItem,
 		nativeTimeout: defaultNativeTimeout,
@@ -290,7 +293,11 @@ func (m *macTrash) Restore(ctx context.Context, r Record) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := checkRestoreRecord(r); err != nil {
+	root, err := m.checkRestoreRecord(r)
+	if err != nil {
+		return err
+	}
+	if err := m.checkTrashRootNotLink(r, root); err != nil {
 		return err
 	}
 	if _, err := m.lstat(r.StoredPath); err != nil {
@@ -314,16 +321,57 @@ func (m *macTrash) Restore(ctx context.Context, r Record) error {
 }
 
 // checkRestoreRecord refuses records that would move something from outside
-// a Trash directory or to a non-absolute place.
-func checkRestoreRecord(r Record) error {
+// the user's Trash or to a non-absolute place, and returns the Trash
+// directory the stored copy lives in. The manifest is user-editable, so a
+// name somewhere in the path is not enough: the stored path must be a clean
+// direct child of ~/.Trash or of <volume>/.Trashes/<uid> of the current user,
+// the two places the native trash call puts items.
+func (m *macTrash) checkRestoreRecord(r Record) (string, error) {
 	if r.StoredPath == "" || r.OriginalPath == "" {
-		return fmt.Errorf("record for %q has no stored path: %w", r.OriginalPath, ErrNotRestorable)
+		return "", fmt.Errorf("record for %q has no stored path: %w", r.OriginalPath, ErrNotRestorable)
 	}
 	if !filepath.IsAbs(r.OriginalPath) || !filepath.IsAbs(r.StoredPath) {
-		return fmt.Errorf("refusing to restore relative path %q from %q", r.OriginalPath, r.StoredPath)
+		return "", fmt.Errorf("refusing to restore relative path %q from %q", r.OriginalPath, r.StoredPath)
 	}
-	if !isInsideTrash(r.StoredPath) || isTrashDirName(filepath.Base(r.StoredPath)) {
-		return fmt.Errorf("refusing to restore from %q: not inside a .Trash or .Trashes directory", r.StoredPath)
+	root := filepath.Dir(r.StoredPath)
+	if filepath.Clean(r.StoredPath) != r.StoredPath || !m.isTrashRoot(root) {
+		return "", fmt.Errorf("refusing to restore from %q: not directly inside ~/.Trash or a volume's .Trashes/%d", r.StoredPath, m.uid)
+	}
+	return root, nil
+}
+
+// isTrashRoot reports whether root is ~/.Trash or <volume>/.Trashes/<uid>,
+// where volume is "/" or a direct child of /Volumes. The comparison is exact:
+// the names come from the trash call itself, not from a user.
+func (m *macTrash) isTrashRoot(root string) bool {
+	if m.home != "" && root == filepath.Join(m.home, ".Trash") {
+		return true
+	}
+	shared := filepath.Dir(root)
+	if filepath.Base(root) != strconv.Itoa(m.uid) || filepath.Base(shared) != ".Trashes" {
+		return false
+	}
+	volume := filepath.Dir(shared)
+	return volume == "/" || filepath.Dir(volume) == "/Volumes"
+}
+
+// checkTrashRootNotLink refuses a Trash directory (and the volume's .Trashes
+// above a per-user one) that is a symlink or not a directory: a link there
+// would make the "inside the Trash" check name a place brooom never wrote to.
+// Access denials by TCC are reported like for the stored copy.
+func (m *macTrash) checkTrashRootNotLink(r Record, root string) error {
+	dirs := []string{root}
+	if filepath.Base(filepath.Dir(root)) == ".Trashes" {
+		dirs = append(dirs, filepath.Dir(root))
+	}
+	for _, d := range dirs {
+		fi, err := m.lstat(d)
+		if err != nil {
+			return restoreStatErr(r, err)
+		}
+		if !fi.IsDir() || fi.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to restore from %q: %q is not a real directory", r.StoredPath, d)
+		}
 	}
 	return nil
 }
@@ -360,9 +408,9 @@ func isTrashDirName(name string) bool {
 
 // isInsideTrash reports whether p is a Trash directory or below one. Any path
 // component with a Trash name counts, also an unrelated directory that merely
-// carries that name: refusing too much is the safe side. Symlinked parents
-// that lead into a Trash are not resolved here; scope.Guard rejects symlinks
-// that leave the scope before a path ever reaches the trasher.
+// carries that name: refusing too much is the safe side. Symlinks are not
+// resolved here. This is only the Remove-side refusal; Restore does not use
+// it and instead pins the exact Trash locations (isTrashRoot) and Lstats them.
 func isInsideTrash(p string) bool {
 	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(p)), "/") {
 		if isTrashDirName(part) {

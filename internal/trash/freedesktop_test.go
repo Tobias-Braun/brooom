@@ -377,7 +377,7 @@ func TestRestoreConflictAndMissingFD(t *testing.T) {
 
 func TestFreedesktopRemoveRefusals(t *testing.T) {
 	f, trash, work := newTestTrasher(t)
-	if err := ensureTrashDir(trash, false); err != nil {
+	if err := f.ensureTrashDir(trash, false); err != nil {
 		t.Fatal(err)
 	}
 	inside := filepath.Join(trash, "files", "x")
