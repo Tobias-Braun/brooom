@@ -36,6 +36,11 @@ const (
 	// clean bill of health. Partial failures keep exit 0 and report the
 	// errors on the format's error channel.
 	ExitScanFailed = 3
+	// ExitDetectorFailed means the scan ran and its report was written, but
+	// at least one detector failed on a target (findings.ScanError.Fatal), so
+	// the report may be incomplete. Notes (skipped paths, incomplete checks)
+	// keep exit 0.
+	ExitDetectorFailed = 4
 )
 
 // IO bundles the standard streams so commands are testable.
@@ -117,6 +122,13 @@ type scanFailedError struct{ err error }
 func (e scanFailedError) Error() string { return e.err.Error() }
 func (e scanFailedError) Unwrap() error { return e.err }
 
+// detectorFailedError marks a scan during which a detector failed (exit code
+// 4). The report has already been written when it is returned.
+type detectorFailedError struct{ err error }
+
+func (e detectorFailedError) Error() string { return e.err.Error() }
+func (e detectorFailedError) Unwrap() error { return e.err }
+
 // listError is an error whose message is deliberately several lines (a
 // heading followed by one indented line per problem). Its constructor must
 // already have sanitised every untrusted part; renderError only keeps the
@@ -191,11 +203,14 @@ func executeContext(ctx context.Context, a *app, args []string) int {
 	fmt.Fprintln(stdio.Err, "brooom:", renderError(err))
 	var ue usageError
 	var sf scanFailedError
+	var df detectorFailedError
 	switch {
 	case errors.As(err, &ue):
 		return ExitUsage
 	case errors.As(err, &sf):
 		return ExitScanFailed
+	case errors.As(err, &df):
+		return ExitDetectorFailed
 	}
 	return ExitError
 }

@@ -468,19 +468,32 @@ func errorsInBand(format string) bool {
 
 // scanFailure returns the error for a scan that covered no target although
 // errors occurred (every repository skipped, unusable configuration), so
-// scripts can tell it from a clean scan. The rule is deliberately about
-// targets and not about detectors: the engine records every error a detector
-// returns as a ScanError, and a detector also returns non-fatal notes that way
-// (for example the worktrees detector naming a linked worktree that lies
-// outside the scope while it still analysed the others), so "every detector
-// reported an error" cannot tell a total failure from a note. Partial and
-// per-detector failures therefore stay exit 0 and are reported with the
-// report.
+// scripts can tell it from a clean scan. The rule is about targets and not
+// about detectors; a detector that failed on a scanned target is the separate
+// exit code of detectorFailure, which relies on the Fatal class of the error.
 func scanFailure(r *findings.Report) error {
 	if len(r.Errors) == 0 || len(r.Scopes) > 0 {
 		return nil
 	}
 	return scanFailedError{fmt.Errorf("nothing was scanned: %d scan error(s)", len(r.Errors))}
+}
+
+// detectorFailure returns the error for a scan that ran but in which a
+// detector failed on a target (a fatal ScanError), so scripts can tell it from
+// a scan that only carries notes such as a skipped repository. It is only
+// applied to plain scans: an apply run has already acted on the findings it
+// got, and failing it afterwards would misreport the actions taken.
+func detectorFailure(r *findings.Report) error {
+	n := 0
+	for _, e := range r.Errors {
+		if e.Fatal {
+			n++
+		}
+	}
+	if n == 0 {
+		return nil
+	}
+	return detectorFailedError{fmt.Errorf("%d detector failure(s), the report may be incomplete", n)}
 }
 
 func formatScanError(e findings.ScanError) string {

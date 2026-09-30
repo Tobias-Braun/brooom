@@ -125,6 +125,8 @@ func TestSchemaMatchesGoTypes(t *testing.T) {
 // schemaType is the JSON Schema type a Go type must be described with.
 func schemaType(t reflect.Type) string {
 	switch t.Kind() {
+	case reflect.Bool:
+		return "boolean"
 	case reflect.String:
 		return "string"
 	case reflect.Int, reflect.Int64:

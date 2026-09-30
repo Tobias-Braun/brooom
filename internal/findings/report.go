@@ -32,8 +32,9 @@ type Report struct {
 	Scopes   []Scope   `json:"scopes"`
 	Findings []Finding `json:"findings"`
 	Totals   Totals    `json:"totals"`
-	// Errors lists non-fatal problems (a detector failed on one repo, a
-	// directory was unreadable). A scan with errors still returns findings.
+	// Errors lists problems that did not abort the scan: fatal detector
+	// failures (ScanError.Fatal) and non-fatal notes (a skipped repository, an
+	// unreadable directory). A scan with errors still returns findings.
 	Errors []ScanError `json:"errors,omitempty"`
 }
 
@@ -43,11 +44,28 @@ type Report struct {
 // drifting apart.
 const SkipPrefix = "skipped: "
 
-// ScanError is a non-fatal problem encountered during a scan.
+// ScanError is a problem encountered during a scan. It never aborts the scan,
+// but Fatal separates the two classes scripts must tell apart: a detector that
+// could not run on a target (Fatal) from a note about something skipped or
+// incomplete that does not make the result untrustworthy (not Fatal).
 type ScanError struct {
 	Detector string `json:"detector,omitempty"`
 	Path     string `json:"path,omitempty"`
 	Message  string `json:"message"`
+	// Fatal is true when a detector failed on the target, so its findings for
+	// that target are missing. Notes (a skipped repository, an incomplete
+	// but reported check) leave it false; the field is omitted then.
+	Fatal bool `json:"fatal,omitempty"`
+}
+
+// HasFatal reports whether any of errs is a fatal detector failure.
+func HasFatal(errs []ScanError) bool {
+	for _, e := range errs {
+		if e.Fatal {
+			return true
+		}
+	}
+	return false
 }
 
 // Totals summarizes a report overall and per detector.

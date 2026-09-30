@@ -95,7 +95,7 @@ on them without `--force`. `--force` never overrides `file_open_by_process`,
 | `scopes` | Scanned repos/roots/user locations. |
 | `findings` | Sorted by detector, path, ref. Never `null`. |
 | `totals` | `{findings, actionable, reclaimable_bytes, by_detector}`; nested paths are counted once. |
-| `errors` | Non-fatal problems `{detector?, path?, message}`. |
+| `errors` | Problems that did not abort the scan `{detector?, path?, message, fatal?}`. `fatal: true` means a detector failed on the target (the report may be incomplete; `scan` exits 4); without it the entry is a note (something skipped or partly checked). |
 
 ## Example
 

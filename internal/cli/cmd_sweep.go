@@ -30,11 +30,10 @@ func newSweepCmd(a *app) *cobra.Command {
 				return err
 			}
 			return a.runCleanup(cmd, cleanupSelection{
-				detectors:       p.Detectors,
-				label:           "sweep",
-				configOverlay:   func(c *config.Config) { *c = *presets.Apply(c, p) },
-				minConfidence:   p.MinConfidence,
-				skipUnavailable: true,
+				detectors:     p.Detectors,
+				label:         "sweep",
+				configOverlay: func(c *config.Config) { *c = *presets.Apply(c, p) },
+				minConfidence: p.MinConfidence,
 			}, af)
 		},
 	}
@@ -97,11 +96,9 @@ func (a *app) resolvePreset(cmd *cobra.Command, flagValue string) (presets.Prese
 }
 
 // checkPresetDetectors rejects --detector names that the preset does not run
-// and says which preset would. It only checks membership: whether a detector
-// is linked into this build is decided later, where an explicitly named
-// detector that is missing is an error.
+// and says which preset would.
 func (a *app) checkPresetDetectors(p presets.Preset) error {
-	flagged, err := validateKnownDetectorNames(a.flags.detectors)
+	flagged, err := validateDetectorNames(a.flags.detectors)
 	if err != nil {
 		return err
 	}

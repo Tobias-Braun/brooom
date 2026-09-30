@@ -64,7 +64,7 @@ packages and the same findings schema.
 | `internal/catalog` | Embedded JSON data: AI tool locations, dev tool log/cache locations, build artifact dirs + project markers. Extensible via config. |
 | `internal/presets` | Sweep presets as pure data (detector set, minimum confidence, config overlay) plus `Apply` (deep copy, never mutates the loaded config). Presets never touch safety settings. |
 | `internal/action` | `Action` interface, registry, `Executor` (plan → dry run / confirm → apply → manifest → summary). One file per action type. |
-| `internal/trash` | `Trasher` interface; OS trash per OS (`trash_windows.go`, `trash_darwin.go`, `trash_unix.go` freedesktop), quarantine, delete. |
+| `internal/trash` | `Trasher` interface; OS trash per OS (`ostrash_windows.go`, `ostrash_darwin.go` with `mactrash.go`, `ostrash_unix.go` freedesktop, `ostrash_other.go`/`ostrash_native_other.go` for the rest), quarantine, delete. |
 | `internal/session` | Session manifests in `~/.brooom/sessions`, listing, undo bookkeeping. |
 | `internal/output` | Formatters, one file per format, registered by name. Color/TTY handling helpers. |
 | `internal/progress` | The terminal-free `Reporter` interface the engine, executor and undo report progress through, plus the no-op `Nop` and the `progresstest.Recorder` for tests. |
@@ -548,8 +548,8 @@ Overlays never
 touch `RecentDays`, the worktree age threshold (default 0, never raised), protected branches, the trash strategy or `AllowDelete`,
 and never switch `ai-artifacts.user_locations` on. `--detector` is intersected
 with the preset; naming one outside it is a usage error. Preset detectors that
-are not linked into the build are skipped with a verbose note
-(`cleanupSelection.skipUnavailable`), explicitly requested ones are an error.
+cannot be missing from the build (every detector is linked in through
+`internal/detectors/all`), so a name outside the registry is a usage error.
 `config.PresetNames` mirrors `presets.Names()` (pinned by a test) because
 `presets` imports `config`.
 
@@ -729,8 +729,9 @@ the terminal gets `Operation not permitted` when it inspects or moves items
 inside the Trash. Trashing works, but `brooom undo` may not be able to restore
 them: it then reports "macOS denies access to the Trash; restore with Finder
 'Put Back' or grant Full Disk Access to your terminal" and leaves the item
-where it is. The trasher also implements the optional `trash.BatchTrasher`
-(`RemoveMany`, currently a loop over the per-item native call).
+where it is. The macOS trasher keeps a private `RemoveMany` helper
+(currently a loop over the per-item native call) that `Remove` shares; there is
+no exported batch interface, the executor removes item by item.
 
 The native call has no timeout of its own, so `callNative` runs it in a
 goroutine under a deadline (`defaultNativeTimeout`, 2 minutes) and the caller's
@@ -991,13 +992,29 @@ The full key reference, merge semantics, validation rules and the
 argument counts, `brooom help <unknown>`, flags a command ignores such as
 `undo -f` / `undo -d`; every command in the tree rejects extra arguments, pinned
 by a test that walks the tree), `3` no target was scanned because of scan
-errors (for example every repository was skipped). A partial scan failure stays
-`0`, and so does a scan in which a detector fails inside a scanned scope: the
-engine records every error a detector returns as a scan error, including
-non-fatal notes (a linked worktree outside the scope), so "every detector
-reported an error" cannot tell a failure from a note. A detector that fails
-inside a scanned scope is reported but stays `0`; its errors are in the report
-(table, tree, summary, json) or on stderr (plain, ndjson).
+errors (for example every repository was skipped), `4` the scan ran and its
+report was written, but a detector failed on a target.
+
+Scan errors come in two classes (#191), told apart by `findings.ScanError.Fatal`
+(`"fatal": true` in the json report, omitted otherwise):
+
+- Fatal: a detector returned a plain error, or panicked, so its findings for
+  that target are missing and the report may be incomplete. `scan` (and the
+  root command) exits `4` and says `N detector failure(s)` on stderr.
+- Notes: something was skipped or only partly checked and the result is still
+  trustworthy: a repository refused for dubious ownership, a repository or
+  root skipped before scanning (bad per-repo config, path outside the scope),
+  an interrupted scan, or an error a detector wraps with `detect.Note` (for
+  example git-bloat's incomplete large-blob scan). Notes keep exit `0`.
+
+A detector picks the class by what it returns from `Detect`: `detect.Note(err)`
+for a note, any other error for a failure. The engine sets `Fatal` from that
+and nowhere else. Exit `3` still wins when nothing was scanned at all. The
+apply flows (`sweep`, `clean` and the shortcut commands with `--apply`) keep
+their own exit rules and do not return `4`: a run that has already trashed
+items must not report a failure for a detector problem that its plan never saw;
+the errors are still printed (stderr or in-band). Every error is listed in the
+report (table, tree, summary, json) or on stderr (plain, ndjson).
 
 Suggested apply commands (`applyHint`) repeat the invocation without `--apply`,
 `--yes`/`-y` (a pasted hint must not skip the confirmation) and
@@ -1011,5 +1028,4 @@ Decision (#182 item 5): the issue proposed rejecting every explicit `--format`
 together with `--apply`. Brooom instead honours an explicit human format
 (`tree`, `table`, `summary`), because a user who asked for a report expects to
 see it before confirming, and rejects only machine formats, whose consumers
-would receive a plan prompt mixed into their data. Fatal detector errors versus
-non-fatal notes in the exit code are tracked in #191.
+would receive a plan prompt mixed into their data.

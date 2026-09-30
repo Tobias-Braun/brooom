@@ -366,13 +366,10 @@ func TestUndoRejectsFormatAndDetector(t *testing.T) {
 	}
 }
 
-// TestDetectorFailuresStayVisibleAndExitZero pins the rule chosen for #182
-// item 7: exit 3 means no target was scanned. A detector that fails inside a
-// scanned scope is reported in every format but keeps exit 0, because the
-// engine cannot tell a failed detector from one that returned a non-fatal note
-// (a linked worktree outside the scope, for example), and failing every such
-// scan would make notes fatal.
-func TestDetectorFailuresStayVisibleAndExitZero(t *testing.T) {
+// TestDetectorFailuresStayVisibleAndExitFour pins the rules of #182 item 7 and
+// #191: exit 3 means no target was scanned, exit 4 means a detector failed
+// inside a scanned scope. The failure is reported in every format.
+func TestDetectorFailuresStayVisibleAndExitFour(t *testing.T) {
 	failing := func(context.Context, *detect.Env, scope.Target, func(findings.Finding)) error {
 		return errors.New("simulated failure")
 	}
@@ -381,8 +378,8 @@ func TestDetectorFailuresStayVisibleAndExitZero(t *testing.T) {
 			newCleanupFixture(t, nil)
 			d := registerFake(t, detect.CategoryFiles, failing)
 			code, out, errOut := brooom(t, "", "scan", "-d", d.name, "-f", format)
-			if code != ExitOK {
-				t.Errorf("exit %d, want %d (stdout %q stderr %q)", code, ExitOK, out, errOut)
+			if code != ExitDetectorFailed {
+				t.Errorf("exit %d, want %d (stdout %q stderr %q)", code, ExitDetectorFailed, out, errOut)
 			}
 			if !strings.Contains(out+errOut, "simulated failure") {
 				t.Errorf("the failure is not reported anywhere:\nstdout %q\nstderr %q", out, errOut)
@@ -401,7 +398,8 @@ func TestExitCodeRuleIsDocumented(t *testing.T) {
 	doc := strings.Join(strings.Fields(string(data)), " ")
 	for _, want := range []string{
 		"`3` no target was scanned",
-		"A detector that fails inside a scanned scope is reported but stays `0`",
+		"`4` the scan ran and its report was written, but a detector failed",
+		"Notes keep exit `0`",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("docs/ARCHITECTURE.md lacks %q", want)

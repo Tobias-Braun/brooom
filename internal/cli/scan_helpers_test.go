@@ -31,13 +31,18 @@ type fakeDetector struct {
 	name string
 	cat  detect.Category
 	fn   detectFunc
+	// retired makes the detector a no-op once its test ended. The registry is
+	// global and cannot unregister, and a scan without -d runs every
+	// registered detector, so a fake that fails would otherwise turn every
+	// later scan of the test binary into a failed one.
+	retired atomic.Bool
 }
 
 func (d *fakeDetector) Name() string              { return d.name }
 func (d *fakeDetector) Description() string       { return "fake detector " + d.name }
 func (d *fakeDetector) Category() detect.Category { return d.cat }
 func (d *fakeDetector) Detect(ctx context.Context, env *detect.Env, t scope.Target, emit func(findings.Finding)) error {
-	if d.fn == nil {
+	if d.fn == nil || d.retired.Load() {
 		return nil
 	}
 	return d.fn(ctx, env, t, emit)
@@ -65,6 +70,7 @@ func registerFake(t *testing.T, cat detect.Category, fn detectFunc) *fakeDetecto
 	t.Helper()
 	d := newFake(cat, fn)
 	detect.Register(d)
+	t.Cleanup(func() { d.retired.Store(true) })
 	return d
 }
 

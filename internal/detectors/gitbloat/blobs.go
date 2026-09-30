@@ -125,7 +125,8 @@ func (d *Detector) blobFindings(ctx context.Context, env *detect.Env, info *repo
 		if !flag.CompareAndSwap(false, true) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("git-bloat: large blob scan of %s incomplete (%s); large blobs were not checked", info.repo.Dir, scan.failure)
+		// A note: the other checks of the repository are intact.
+		return nil, detect.Note(fmt.Errorf("git-bloat: large blob scan of %s incomplete (%s); large blobs were not checked", info.repo.Dir, scan.failure))
 	}
 	out := make([]findings.Finding, 0, len(scan.blobs))
 	for _, b := range scan.blobs {

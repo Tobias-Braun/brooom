@@ -608,7 +608,21 @@ func TestCleanForceLiftsOverridableFlags(t *testing.T) {
 	}
 }
 
-func TestCleanUnknownActionRefusedUnavailableSkipped(t *testing.T) {
+// TestEveryKnownActionIsRegistered pins the assumption behind #238: every
+// action type of the findings schema has an implementation, so `clean --from`
+// needs no "not available in this build" skip for a known type.
+func TestEveryKnownActionIsRegistered(t *testing.T) {
+	for typ := range knownActions {
+		if typ == findings.ActionNone {
+			continue
+		}
+		if _, ok := action.Get(typ); !ok {
+			t.Errorf("action %q is a known type but not registered", typ)
+		}
+	}
+}
+
+func TestCleanUnknownActionRefused(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	dir, file := junkDir(t, f.repo.Dir, "junk")
 	bogus := trashFinding(f.repo.Dir, dir)
@@ -616,14 +630,5 @@ func TestCleanUnknownActionRefusedUnavailableSkipped(t *testing.T) {
 	code, out, _ := clean(t, "", "--from", writeReportFile(t, bogus), "--apply", "--yes")
 	if code != ExitError || !strings.Contains(out, `unknown action type "rm-rf"`) || !exists(file) {
 		t.Fatalf("bogus action: code %d\n%s", code, out)
-	}
-	gc := branchFinding(f.repo.Dir, "")
-	gc.Kind, gc.SuggestedAction.Type = findings.KindGitObjects, findings.ActionGitGC
-	if _, ok := action.Get(gc.SuggestedAction.Type); ok {
-		t.Skip("git-gc is implemented in this build")
-	}
-	code, out, _ = clean(t, "", "--from", writeReportFile(t, gc))
-	if code != ExitOK || !strings.Contains(out, "not available in this build") {
-		t.Fatalf("unregistered action: code %d\n%s", code, out)
 	}
 }

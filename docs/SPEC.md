@@ -118,7 +118,7 @@ commits remain only as unreachable objects and may be pruned by the next
 
 ## Output formats
 
-Every listing/dry-run command supports `--format`:
+Every listing/dry-run command that reports findings supports `--format`:
 
 - `table` (default, human-readable, grouped by detector, sizes humanized,
   totals per group and overall reclaimable space)
@@ -133,7 +133,14 @@ make sense for their rows: `sessions` and `roots list` take `table` (default),
 `plain`, `json` and `ndjson`; `config show` takes `json` and `table`;
 `version` and `update-check` take `table`, `plain` and `json`. `tree` and
 `summary` describe findings only. `--format`, `--detector`, `--workspaces` and
-`--root` are rejected (usage error) on commands that would ignore them.
+`--root` are rejected (usage error, exit 2) on commands that would ignore them.
+The exceptions to "every dry-run command supports `--format`" are the commands
+whose output is a plan or a confirmation and not a list of findings: `undo`,
+`clean` and `purge` (including `git purge`) print their plan as text, and
+`config init`, `config edit`, `config path`, `config validate` and
+`roots add`/`remove` report a result line instead. Of the scan flags,
+`undo` accepts only `--workspaces` and `--root`. `completion` and `help` accept every global
+flag, because the shell hands them the flags of the words it completes.
 
 Respect `NO_COLOR`, detect TTY vs pipe, and support `--quiet`.
 
