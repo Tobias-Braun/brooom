@@ -26,8 +26,8 @@ func isolateHome(t *testing.T) string {
 	return home
 }
 
-// mkdir creates dir/rel (forward slashes).
-func mkdir(t testing.TB, dir, rel string) string {
+// mkRel creates dir/rel (forward slashes).
+func mkRel(t testing.TB, dir, rel string) string {
 	t.Helper()
 	p := filepath.Join(dir, filepath.FromSlash(rel))
 	if err := os.MkdirAll(p, 0o755); err != nil {
@@ -39,13 +39,13 @@ func mkdir(t testing.TB, dir, rel string) string {
 // fakeRepo creates a minimal repository (an empty .git directory with HEAD).
 func fakeRepo(t testing.TB, dir, rel string) string {
 	t.Helper()
-	p := mkdir(t, dir, rel)
+	p := mkRel(t, dir, rel)
 	testutil.WriteFile(t, p, ".git/HEAD", "ref: refs/heads/main\n")
 	return p
 }
 
-// touch creates an empty file dir/rel.
-func touch(t testing.TB, dir, rel string) {
+// touchRel creates an empty file dir/rel.
+func touchRel(t testing.TB, dir, rel string) {
 	t.Helper()
 	testutil.WriteFile(t, dir, rel, "")
 }
@@ -101,7 +101,7 @@ func TestDiscoverRepoKinds(t *testing.T) {
 	// and a submodule-style .git file.
 	main.Git("clone", "-q", main.Dir, filepath.Join(root, "real"))
 	main.Git("worktree", "add", "-q", "-b", "wt", filepath.Join(root, "linked"))
-	mkdir(t, root, "sub")
+	mkRel(t, root, "sub")
 	testutil.WriteFile(t, root, "sub/.git", "gitdir: ../real/.git/modules/sub\n")
 	// A fake .git file is ignored.
 	testutil.WriteFile(t, root, "fake/.git", "just some text\n")
@@ -122,7 +122,7 @@ func TestDiscoverProjectMarkers(t *testing.T) {
 	for _, m := range markers {
 		t.Run(m, func(t *testing.T) {
 			root := testutil.ResolvedTempDir(t)
-			touch(t, root, "proj/"+m)
+			touchRel(t, root, "proj/"+m)
 			expect(t, discoverOK(t, root, DiscoverOptions{}), project("proj"))
 		})
 	}
@@ -131,10 +131,10 @@ func TestDiscoverProjectMarkers(t *testing.T) {
 func TestDiscoverMakefile(t *testing.T) {
 	isolateHome(t)
 	root := testutil.ResolvedTempDir(t)
-	touch(t, root, "alone/Makefile")
-	touch(t, root, "with/Makefile")
-	touch(t, root, "with/go.mod")
-	touch(t, root, "readme/README.md")
+	touchRel(t, root, "alone/Makefile")
+	touchRel(t, root, "with/Makefile")
+	touchRel(t, root, "with/go.mod")
+	touchRel(t, root, "readme/README.md")
 	expect(t, discoverOK(t, root, DiscoverOptions{}), project("with"))
 }
 
@@ -148,7 +148,7 @@ func TestDiscoverNesting(t *testing.T) {
 	}{
 		{"project inside repo is not a target", func(t *testing.T, r string) {
 			fakeRepo(t, r, "r")
-			touch(t, r, "r/pkg/package.json")
+			touchRel(t, r, "r/pkg/package.json")
 		}, DiscoverOptions{DescendIntoRepos: true}, []got{repo("r")}},
 		{"repo inside repo hidden by default", func(t *testing.T, r string) {
 			fakeRepo(t, r, "r")
@@ -160,29 +160,29 @@ func TestDiscoverNesting(t *testing.T) {
 			fakeRepo(t, r, "r/a/b/deep")
 		}, DiscoverOptions{DescendIntoRepos: true}, []got{repo("r"), repo("r/a/b/deep"), repo("r/inner")}},
 		{"nested project is a leaf", func(t *testing.T, r string) {
-			touch(t, r, "mono/package.json")
-			touch(t, r, "mono/packages/a/package.json")
-			touch(t, r, "mono/packages/b/go.mod")
+			touchRel(t, r, "mono/package.json")
+			touchRel(t, r, "mono/packages/a/package.json")
+			touchRel(t, r, "mono/packages/b/go.mod")
 		}, DiscoverOptions{}, []got{project("mono")}},
 		{"repo inside project hidden by default", func(t *testing.T, r string) {
-			touch(t, r, "mono/go.mod")
+			touchRel(t, r, "mono/go.mod")
 			fakeRepo(t, r, "mono/sub")
 		}, DiscoverOptions{}, []got{project("mono")}},
 		{"repo inside project with descend", func(t *testing.T, r string) {
-			touch(t, r, "mono/go.mod")
+			touchRel(t, r, "mono/go.mod")
 			fakeRepo(t, r, "mono/sub")
-			touch(t, r, "mono/other/package.json")
+			touchRel(t, r, "mono/other/package.json")
 		}, DiscoverOptions{DescendIntoRepos: true}, []got{project("mono"), repo("mono/sub")}},
 		{"repo with marker is a repo only", func(t *testing.T, r string) {
 			fakeRepo(t, r, "r")
-			touch(t, r, "r/go.mod")
+			touchRel(t, r, "r/go.mod")
 		}, DiscoverOptions{}, []got{repo("r")}},
 		{"marker in root is ignored", func(t *testing.T, r string) {
-			touch(t, r, "package.json")
+			touchRel(t, r, "package.json")
 			fakeRepo(t, r, "a")
 		}, DiscoverOptions{}, []got{repo("a")}},
 		{"marker directory is not a marker", func(t *testing.T, r string) {
-			mkdir(t, r, "p/go.mod")
+			mkRel(t, r, "p/go.mod")
 		}, DiscoverOptions{}, nil},
 	}
 	for _, tt := range tests {
@@ -277,12 +277,12 @@ func TestDiscoverMaxDepth(t *testing.T) {
 	}{
 		{"repo at default limit", 6, func(t *testing.T, r, p string) { fakeRepo(t, r, p) }, 0, true},
 		{"repo beyond default limit", 7, func(t *testing.T, r, p string) { fakeRepo(t, r, p) }, 0, false},
-		{"project at default limit", 6, func(t *testing.T, r, p string) { touch(t, r, p+"/go.mod") }, 0, true},
-		{"project beyond default limit", 7, func(t *testing.T, r, p string) { touch(t, r, p+"/go.mod") }, 0, false},
+		{"project at default limit", 6, func(t *testing.T, r, p string) { touchRel(t, r, p+"/go.mod") }, 0, true},
+		{"project beyond default limit", 7, func(t *testing.T, r, p string) { touchRel(t, r, p+"/go.mod") }, 0, false},
 		{"repo at custom limit", 2, func(t *testing.T, r, p string) { fakeRepo(t, r, p) }, 2, true},
 		{"repo beyond custom limit", 3, func(t *testing.T, r, p string) { fakeRepo(t, r, p) }, 2, false},
-		{"project at depth 1", 1, func(t *testing.T, r, p string) { touch(t, r, p+"/go.mod") }, 1, true},
-		{"project beyond depth 1", 2, func(t *testing.T, r, p string) { touch(t, r, p+"/go.mod") }, 1, false},
+		{"project at depth 1", 1, func(t *testing.T, r, p string) { touchRel(t, r, p+"/go.mod") }, 1, true},
+		{"project beyond depth 1", 2, func(t *testing.T, r, p string) { touchRel(t, r, p+"/go.mod") }, 1, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -378,7 +378,7 @@ func TestDiscoverMissingRootPartialResult(t *testing.T) {
 	fakeRepo(t, good, "r")
 	missing := filepath.Join(good, "does-not-exist")
 	file := filepath.Join(good, "file.txt")
-	touch(t, good, "file.txt")
+	touchRel(t, good, "file.txt")
 	ts, err := Discover(context.Background(), []string{missing, good, file}, DiscoverOptions{})
 	if len(ts) != 1 {
 		t.Fatalf("targets = %v, want the valid root's repo", ts)
@@ -394,7 +394,7 @@ func TestDiscoverSortedAndDeterministic(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		fakeRepo(t, root, fmt.Sprintf("g%d/r%02d", i%5, 39-i))
 	}
-	touch(t, root, "zz/go.mod")
+	touchRel(t, root, "zz/go.mod")
 	first, err := Discover(context.Background(), []string{root}, DiscoverOptions{Concurrency: 8})
 	if err != nil {
 		t.Fatal(err)
@@ -422,9 +422,9 @@ func TestDiscoverNestingIsSchedulingIndependent(t *testing.T) {
 	root := testutil.ResolvedTempDir(t)
 	for i := 0; i < 20; i++ {
 		p := fmt.Sprintf("proj%02d", i)
-		touch(t, root, p+"/go.mod")
+		touchRel(t, root, p+"/go.mod")
 		for j := 0; j < 5; j++ {
-			touch(t, root, fmt.Sprintf("%s/sub%d/package.json", p, j))
+			touchRel(t, root, fmt.Sprintf("%s/sub%d/package.json", p, j))
 			fakeRepo(t, root, fmt.Sprintf("%s/sub%d/r", p, j))
 		}
 	}
@@ -460,7 +460,7 @@ func TestDiscoverUnreadableDir(t *testing.T) {
 	}
 	root := testutil.ResolvedTempDir(t)
 	fakeRepo(t, root, "ok")
-	locked := mkdir(t, root, "locked")
+	locked := mkRel(t, root, "locked")
 	if err := os.Chmod(locked, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -493,7 +493,7 @@ func TestDiscoverCancelled(t *testing.T) {
 func TestDiscoverScopeIsResolvedRoot(t *testing.T) {
 	isolateHome(t)
 	root := testutil.ResolvedTempDir(t)
-	touch(t, root, "p/go.mod")
+	touchRel(t, root, "p/go.mod")
 	ts, err := Discover(context.Background(), []string{root}, DiscoverOptions{})
 	if err != nil || len(ts) != 1 {
 		t.Fatalf("got %v, %v", ts, err)
