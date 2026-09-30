@@ -53,7 +53,7 @@ func TestDarwinTrashRoundTrip(t *testing.T) {
 	if exists(orig) {
 		t.Error("original still exists")
 	}
-	if !isInsideTrash(rec.StoredPath) || rec.SizeBytes != 5 || !rec.Restorable {
+	if !isInsideTrash(rec.StoredPath) || rec.SizeBytes != fiveByteFileSize(t) || !rec.Restorable {
 		t.Errorf("record %+v", rec)
 	}
 	skipIfTrashDenied(t, rec.StoredPath)
@@ -120,12 +120,13 @@ func TestDarwinTrashDirectory(t *testing.T) {
 	m, track := newRealMacTrash(t)
 	dir := filepath.Join(root, "some dir")
 	writeFile(t, filepath.Join(dir, "sub", "a"), "123", 0o644)
+	wantSize := refSize(t, dir)
 	rec, err := m.Remove(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	track(rec)
-	if !rec.IsDir || rec.SizeBytes != 3 || !isInsideTrash(rec.StoredPath) || exists(dir) {
+	if !rec.IsDir || rec.SizeBytes != wantSize || !isInsideTrash(rec.StoredPath) || exists(dir) {
 		t.Errorf("record %+v", rec)
 	}
 }

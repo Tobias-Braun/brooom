@@ -136,7 +136,7 @@ func checkFileRecord(t *testing.T, rec Record, p string) {
 	if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("source still exists: %v", err)
 	}
-	if !rec.Restorable || rec.StoredPath == "" || rec.InfoPath == "" || rec.SizeBytes != 5 || rec.IsDir {
+	if !rec.Restorable || rec.StoredPath == "" || rec.InfoPath == "" || rec.SizeBytes != fiveByteFileSize(t) || rec.IsDir {
 		t.Fatalf("bad record: %+v", rec)
 	}
 	if rec.Strategy != config.StrategyTrash {
@@ -155,8 +155,9 @@ func TestRemoveRestoreDir(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	wantSize := refSize(t, dir)
 	rec := remove(t, tr, dir)
-	if !rec.IsDir || rec.SizeBytes != 6 || !rec.Restorable {
+	if !rec.IsDir || rec.SizeBytes != wantSize || !rec.Restorable {
 		t.Fatalf("bad record: %+v", rec)
 	}
 	if err := tr.Restore(context.Background(), rec); err != nil {
