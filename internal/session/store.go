@@ -136,6 +136,12 @@ func (s *Store) Load(idOrPrefix string) (*Manifest, error) {
 // ids lists the ids of all <id>.json files. Temp files (dot-prefixed, .tmp)
 // never match.
 func (s *Store) ids() ([]string, error) {
+	// Windows reports ReadDir on a regular file as "path not found", which
+	// is indistinguishable from a missing directory. Stat first so a file in
+	// place of the sessions dir is a real error on every platform.
+	if info, statErr := os.Stat(s.Dir); statErr == nil && !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", s.Dir)
+	}
 	entries, err := os.ReadDir(s.Dir)
 	if err != nil {
 		return nil, err
