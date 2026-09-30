@@ -227,9 +227,10 @@ func TestZeroMinSizeMeansDefault(t *testing.T) {
 }
 
 func TestUnusualNames(t *testing.T) {
-	names := []string{"with space.bin", "quote\"s.bin", "ünï/cødé — 名前.bin", "it's here.bin"}
+	names := []string{"with space.bin", "ünï/cødé — 名前.bin", "it's here.bin"}
 	if runtime.GOOS != "windows" {
-		names = append(names, "line\nbreak.bin", "trailing\n")
+		// Double quotes and newlines are illegal in Windows file names.
+		names = append(names, "quote\"s.bin", "line\nbreak.bin", "trailing\n")
 	}
 	h := newHarness(t)
 	for _, n := range names {
