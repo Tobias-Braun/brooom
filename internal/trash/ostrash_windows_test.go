@@ -77,7 +77,7 @@ func remove(t *testing.T, tr *winTrash, path string) Record {
 // lookup on CI shows which spelling and time the shell recorded.
 func logBinEntries(t *testing.T, path string) {
 	t.Helper()
-	_, entries, err := listBin(path)
+	_, entries, err := listBin(path, nil)
 	t.Logf("bin entries (err=%v), long path %q:", err, longPath(path))
 	for _, e := range entries {
 		t.Logf("  %s path=%q deleted=%v", e.Name, e.Info.Path, e.Info.DeletedAt)
@@ -430,7 +430,7 @@ func TestNukeSituationKeepsItem(t *testing.T) {
 		t.Logf("observed: the call returned and the item was left intact")
 		return
 	}
-	binDir, entries, err := listBin(p)
+	binDir, entries, err := listBin(p, nil)
 	if err != nil {
 		t.Fatalf("item is gone and the bin cannot be read: %v", err)
 	}

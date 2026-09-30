@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
+
+	"github.com/Tobias-Braun/brooom/internal/output"
 )
 
 // stdoutTTY returns the file behind w when it is an interactive terminal.
@@ -13,7 +15,7 @@ import (
 // captured output is never colored or truncated by accident.
 func stdoutTTY(w io.Writer) (*os.File, bool) {
 	f, ok := w.(*os.File)
-	if !ok || !term.IsTerminal(int(f.Fd())) {
+	if !ok || !output.IsTerminal(f) {
 		return nil, false
 	}
 	return f, true
@@ -82,7 +84,9 @@ func colorEnabled(w io.Writer, noColorFlag bool, configColor string) bool {
 		isTTY:       isTTY,
 		term:        os.Getenv("TERM"),
 	})
-	if on && isTTY && !enableVirtualTerminal(f) {
+	// mintty interprets escapes itself and has no console mode to switch, so
+	// enabling virtual terminal processing would fail and wrongly drop colour.
+	if on && isTTY && !output.IsMSYSPty(f) && !enableVirtualTerminal(f) {
 		return false
 	}
 	return on
@@ -96,7 +100,7 @@ func (a *app) canPrompt() bool {
 		return a.stdinTTY()
 	}
 	f, ok := a.io.In.(*os.File)
-	return ok && term.IsTerminal(int(f.Fd()))
+	return ok && output.IsTerminal(f)
 }
 
 // now is the current time, injectable for tests.

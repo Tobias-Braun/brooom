@@ -263,15 +263,16 @@ func TestStoredAndInfoNames(t *testing.T) {
 }
 
 func TestCheckBinItemPath(t *testing.T) {
-	const orig = `C:\Users\me\f.txt`
+	const bin = `C:\$Recycle.Bin\S-1`
 	tests := []struct {
 		name    string
 		path    string
 		prefix  string
 		wantErr bool
 	}{
-		{"ok stored", `C:\$Recycle.Bin\S-1-5-21-1\$RABC.txt`, "$R", false},
-		{"ok info lowercase bin", `c:\$recycle.bin\S-1-5-21-1\$IABC.txt`, "$I", false},
+		{"ok stored", `C:\$Recycle.Bin\S-1\$RABC.txt`, "$R", false},
+		{"other sid", `C:\$Recycle.Bin\S-2\$RABC.txt`, "$R", true},
+		{"ok info lowercase bin", `c:\$recycle.bin\S-1\$IABC.txt`, "$I", false},
 		{"other volume", `D:\$Recycle.Bin\S-1\$RABC`, "$R", true},
 		{"not in bin", `C:\Users\me\$RABC`, "$R", true},
 		{"nested deeper", `C:\$Recycle.Bin\S-1\$RABC\inner`, "$R", true},
@@ -283,7 +284,7 @@ func TestCheckBinItemPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := checkBinItemPath(tt.path, tt.prefix, orig); (err != nil) != tt.wantErr {
+			if err := checkBinItemPath(tt.path, tt.prefix, bin); (err != nil) != tt.wantErr {
 				t.Errorf("err = %v, wantErr %v", err, tt.wantErr)
 			}
 		})

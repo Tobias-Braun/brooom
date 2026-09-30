@@ -219,7 +219,12 @@ func userBinDir(path string) (string, error) {
 // path and returns them with the bin directory. Only entries whose $R item
 // exists are returned, and unparsable $I files are skipped: they belong to
 // somebody else's or a damaged deletion and must not be guessed at.
-func listBin(path string) (string, []binEntry, error) {
+//
+// cache, when not nil, remembers parsed $I files across calls. Callers that
+// list repeatedly (one listing per removed item of a batch) pass one; Restore
+// passes nil and always reads fresh, because its answer must reflect the bin
+// as it is now.
+func listBin(path string, cache *infoCache) (string, []binEntry, error) {
 	dir, err := userBinDir(path)
 	if err != nil {
 		return "", nil, err
@@ -228,23 +233,32 @@ func listBin(path string) (string, []binEntry, error) {
 	if err != nil {
 		return dir, nil, fmt.Errorf("cannot read the Recycle Bin %s: %w", dir, err)
 	}
-	var entries []binEntry
+	var names []string
 	for _, de := range des {
-		if !strings.HasPrefix(de.Name(), "$I") || de.IsDir() {
-			continue
+		if strings.HasPrefix(de.Name(), "$I") && !de.IsDir() {
+			names = append(names, de.Name())
 		}
-		data, rerr := os.ReadFile(filepath.Join(dir, de.Name()))
-		if rerr != nil {
-			continue
-		}
-		info, perr := parseInfo(data)
-		if perr != nil {
-			continue
-		}
-		if _, serr := os.Lstat(filepath.Join(dir, storedName(de.Name()))); serr != nil {
-			continue
-		}
-		entries = append(entries, binEntry{Name: de.Name(), Info: info})
 	}
-	return dir, entries, nil
+	return dir, collectEntries(dir, names, cache, func(name string) (infoRecord, bool, bool) {
+		return readBinInfo(dir, name)
+	}), nil
+}
+
+// readBinInfo reads and parses one $I file of the bin in dir. Only a usable
+// entry is cacheable: a file that fails to read or parse, or whose $R item is
+// missing, may be caught mid-write (the shell writes the pair in steps) and
+// must be looked at again next time.
+func readBinInfo(dir, name string) (rec infoRecord, ok, cacheable bool) {
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return infoRecord{}, false, false
+	}
+	rec, err = parseInfo(data)
+	if err != nil {
+		return infoRecord{}, false, false
+	}
+	if _, err := os.Lstat(filepath.Join(dir, storedName(name))); err != nil {
+		return infoRecord{}, false, false
+	}
+	return rec, true, true
 }

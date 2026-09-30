@@ -34,6 +34,9 @@ type winTrash struct {
 	now        func() time.Time
 	settings   binSettingsReader
 	volumeGUID func(path string) (string, error)
+	// infos remembers parsed $I files so a batch of removals reads each one
+	// once instead of once per removed item.
+	infos infoCache
 }
 
 // newOSTrasher returns the Windows Recycle Bin implementation.
@@ -62,9 +65,12 @@ func (w *winTrash) Remove(ctx context.Context, path string) (Record, error) {
 	if err != nil {
 		return Record{}, fmt.Errorf("cannot inspect %q: %w", path, err)
 	}
-	size, err := treeSize(path)
+	size, longestRel, err := measureTree(path)
 	if err != nil {
 		return Record{}, fmt.Errorf("cannot measure %q: %w", path, err)
+	}
+	if err := checkDepth(path, longestRel); err != nil {
+		return Record{}, err
 	}
 	if err := w.preflight(path, size); err != nil {
 		return Record{}, err
@@ -74,7 +80,7 @@ func (w *winTrash) Remove(ctx context.Context, path string) (Record, error) {
 	// resolved now: once the item is gone GetLongPathName cannot do it.
 	long := longPath(path)
 	at := w.now()
-	if err := w.shellRemove(path, size); err != nil {
+	if err := w.shellRemove(ctx, path, size); err != nil {
 		return Record{}, err
 	}
 	rec := Record{
@@ -98,19 +104,50 @@ func (w *winTrash) preflight(path string, size int64) error {
 	return decideBinAvailability(path, s, err, size)
 }
 
+// checkDepth is the Windows side of checkTreeDepth: it adds the SID of the
+// current user, whose length is part of every re-rooted path in the bin.
+func checkDepth(path string, longestRel int) error {
+	sid, err := currentSID()
+	if err != nil {
+		return err
+	}
+	return checkTreeDepth(path, sid, longestRel)
+}
+
+// shellTimeout bounds one SHFileOperationW call. Even a large tree is moved
+// within minutes; a call that takes longer is stuck, typically on the
+// permanent-deletion dialog described on winTrash. A variable for tests.
+var shellTimeout = 10 * time.Minute
+
 // shellRemove calls the shell and turns its result into an error. before is
 // the measured size of the item, used to tell an intact item from a partly
-// removed one after a failure.
-func (w *winTrash) shellRemove(path string, before int64) error {
+// removed one after a failure. The call is bounded by ctx and shellTimeout:
+// SHFileOperationW cannot be interrupted, so on Ctrl-C or a hang the wait is
+// abandoned and the state of the item is reported instead of guessed.
+func (w *winTrash) shellRemove(ctx context.Context, path string, before int64) error {
 	from, err := buildFromBuffer([]string{path})
 	if err != nil {
 		return err
 	}
-	code, aborted := shellDelete(from)
+	code, aborted, err := callBounded(ctx, shellTimeout, func() (int, bool) { return shellDelete(from) })
+	if err != nil {
+		return pendingFailure(path, err)
+	}
 	if code == 0 && !aborted {
 		return nil
 	}
 	return withIntegrityNote(shellFailure(path, code, aborted), path, before)
+}
+
+// pendingFailure reports a shell call that was abandoned. The call may still
+// complete in the background, so the item is looked at (Lstat) once and the
+// message says which case applies; the caller never retries on its own, a
+// second call on an item the first one is still moving could act twice.
+func pendingFailure(path string, cause error) error {
+	if _, err := os.Lstat(path); err != nil {
+		return fmt.Errorf("stopped waiting for the Recycle Bin (%w); %s no longer exists at that path and the shell may have moved it, check the Recycle Bin before trying again", cause, path)
+	}
+	return fmt.Errorf("stopped waiting for the Recycle Bin (%w); the operation on %s may still be pending (a confirmation dialog may be open) and the item is still at its path, do not retry until it is settled", cause, path)
 }
 
 // shellFailure builds the error for a non-zero result or an aborted
@@ -151,7 +188,7 @@ func (w *winTrash) recordRemoval(rec Record, long string, at time.Time) (Record,
 	if _, err := os.Lstat(rec.OriginalPath); err == nil {
 		return Record{}, fmt.Errorf("the Recycle Bin reported success for %s but it still exists", rec.OriginalPath)
 	}
-	dir, entries, err := listBin(rec.OriginalPath)
+	dir, entries, err := listBin(rec.OriginalPath, &w.infos)
 	if errors.Is(err, fs.ErrNotExist) {
 		// The source is gone and the user's bin directory does not exist, so
 		// the shell cannot have put it anywhere: a definite loss.
@@ -161,6 +198,12 @@ func (w *winTrash) recordRemoval(rec Record, long string, at time.Time) (Record,
 		return rec, nil //nolint:nilerr // an unreadable bin only means non-restorable, the removal itself succeeded
 	}
 	m, ok := chooseRecycledAny(entries, []string{long, rec.OriginalPath}, at, matchTolerance)
+	// Cached entries were not re-checked for their $R item, so the chosen
+	// one is verified here before it is trusted as the new item.
+	if ok {
+		_, serr := os.Lstat(filepath.Join(dir, storedName(m.Name)))
+		ok = serr == nil
+	}
 	if !ok {
 		return Record{}, fmt.Errorf("%s was deleted permanently: it is gone but no matching item was found in the Recycle Bin", rec.OriginalPath)
 	}
@@ -212,7 +255,14 @@ func (w *winTrash) locate(r Record) (stored, info string, err error) {
 	if r.StoredPath == "" {
 		return w.search(r)
 	}
-	if err := checkBinItemPath(r.StoredPath, "$R", r.OriginalPath); err != nil {
+	// The bin directory is derived from the original path's volume, so a
+	// tampered StoredPath cannot point anywhere else, while volumes mounted
+	// into a folder (C:\mnt\data) are accepted like drive letters.
+	binDir, err := userBinDir(r.OriginalPath)
+	if err != nil {
+		return "", "", err
+	}
+	if err := checkBinItemPath(r.StoredPath, "$R", binDir); err != nil {
 		return "", "", err
 	}
 	if err := checkBinOwner(r.StoredPath); err != nil {
@@ -220,7 +270,7 @@ func (w *winTrash) locate(r Record) (stored, info string, err error) {
 	}
 	info = filepath.Join(filepath.Dir(r.StoredPath), infoNameOf(filepath.Base(r.StoredPath)))
 	if r.InfoPath != "" {
-		if err := checkBinItemPath(r.InfoPath, "$I", r.OriginalPath); err != nil {
+		if err := checkBinItemPath(r.InfoPath, "$I", binDir); err != nil {
 			return "", "", err
 		}
 		if err := checkBinInfoPath(r.InfoPath, r.StoredPath); err != nil {
@@ -246,7 +296,7 @@ func checkBinOwner(p string) error {
 
 // search finds the bin item of a record without StoredPath.
 func (w *winTrash) search(r Record) (stored, info string, err error) {
-	dir, entries, err := listBin(r.OriginalPath)
+	dir, entries, err := listBin(r.OriginalPath, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("cannot look up %q in the Recycle Bin: %w: %w", r.OriginalPath, err, ErrNotRestorable)
 	}

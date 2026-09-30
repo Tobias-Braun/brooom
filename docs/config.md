@@ -76,6 +76,8 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `sweep.preset` | `safe` | Preset of `brooom sweep` when `--preset` is not given: `safe`, `standard` or `aggressive`. |
 | `update_check` | `false` | Opt-in update check. |
 
+**Quarantine and volumes (Windows).** Quarantine lives in `<home>\quarantine`, by default below `%USERPROFILE%`. A project on another volume (say `D:\`) cannot be renamed into it, so it is copied, verified and then removed, which is slow, needs free space on the home volume and is refused for trees holding junctions (pnpm/npm workspaces) or files that a process has open. Set `BROOOM_HOME` to a directory on the same volume as your projects (for example `D:\.brooom`) and quarantine moves become plain renames. Brooom has no per-volume quarantine directory: one home keeps `undo`, `purge` and the retention notice simple.
+
 ### Catalog `extra` entries
 
 Entries in `detectors.ai-artifacts.extra` and
