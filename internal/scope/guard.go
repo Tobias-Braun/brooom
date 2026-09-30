@@ -122,7 +122,9 @@ func (g *Guard) ResolveParent(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("scope: resolve parent of %q: %w", path, err)
 	}
-	return joinName(parent, base), nil
+	// The final element keeps its spelling on purpose (no symlink following),
+	// but its 8.3 alias must not hide what it is: GIT~1 names ".git".
+	return canonicalLast(joinName(parent, base)), nil
 }
 
 // IsAllowedRoot reports whether path resolves to an allowed location itself.

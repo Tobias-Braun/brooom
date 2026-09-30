@@ -43,8 +43,7 @@ func DirSize(ctx context.Context, path string, opts Options) (DirSummary, error)
 	if err != nil {
 		return DirSummary{}, fmt.Errorf("walk: %s: %w", abs, err)
 	}
-	if !fi.IsDir() {
-		e := entryFromInfo(abs, fi)
+	if e := entryFromInfo(abs, fi); !e.IsDir() {
 		size := e.Allocated
 		if e.IsSymlink() {
 			size = e.Size
@@ -91,7 +90,7 @@ func (s *sizer) process(rel string, submit func(string)) {
 	// The Lstat comes before any read: a change during the read then leaves
 	// a recorded mtime older than the directory, forcing a re-read later.
 	fi, err := lstat(path)
-	if err != nil || !fi.IsDir() {
+	if err != nil || !entryFromInfo(path, fi).IsDir() {
 		return // vanished or replaced: its record is dropped
 	}
 	id := fileIDOf(fi).String()
@@ -145,9 +144,9 @@ func (r *dirRecord) add(e Entry) {
 	switch {
 	case e.IsSymlink():
 		r.DirectBytes += e.Size
-	case e.Type.IsRegular() && e.fid.ok && e.fid.nlink > 1:
+	case e.IsSizedFile() && e.fid.ok && e.fid.nlink > 1:
 		r.Links = append(r.Links, linkRecord{ID: e.fid.String(), Bytes: e.Allocated})
-	case e.Type.IsRegular():
+	case e.IsSizedFile():
 		r.DirectBytes += e.Allocated
 		r.DirectFiles++
 	}

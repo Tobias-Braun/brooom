@@ -89,10 +89,27 @@ func (sc *cleanScope) refusal(f findings.Finding) string {
 	if reason := checkSymlinkSwap(f, resolved); reason != "" {
 		return reason
 	}
+	if reason := checkAlias(f, resolved); reason != "" {
+		return reason
+	}
 	if !isGitFinding(f) {
 		return ""
 	}
 	return sc.checkGit(f)
+}
+
+// checkAlias refuses a trash finding whose path is another spelling (an
+// 8.3 short name on Windows) of .git or of Brooom's own state. The trash
+// action repeats the check at apply time; refusing here reports it as a
+// tampered file instead of a quiet skip.
+func checkAlias(f findings.Finding, resolved string) string {
+	if f.SuggestedAction.Type != findings.ActionTrash {
+		return ""
+	}
+	if err := action.RefuseByIdentity(resolved); err != nil {
+		return "protected path: " + strings.TrimPrefix(err.Error(), action.ErrSkipped.Error()+": ")
+	}
+	return ""
 }
 
 // checkPath resolves the finding path through the guard that fits its scope.

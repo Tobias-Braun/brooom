@@ -38,6 +38,12 @@ func fileIDOf(fi fs.FileInfo) fileID {
 	return fileID{dev: u64(st.Dev), ino: u64(st.Ino), nlink: u64(st.Nlink), ok: true}
 }
 
+// nameSurrogate decides whether a directory reported as ModeDir|ModeIrregular
+// redirects elsewhere. Unix never reports that combination; a link-like
+// entry is treated as a redirect so nothing is ever descended by mistake.
+// It is a variable so tests can simulate Windows reparse points.
+var nameSurrogate = func(string) bool { return true }
+
 // String is the dev:ino form stored in cache records.
 func (f fileID) String() string {
 	if !f.ok {

@@ -17,3 +17,6 @@ func normalizeExtended(p string) string { return p }
 func rejectComponent(string) error { return nil }
 
 func normalizeExisting(p string) string { return p }
+
+// canonicalLast has nothing to do here: only Windows has 8.3 aliases.
+func canonicalLast(p string) string { return p }
