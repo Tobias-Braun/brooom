@@ -123,7 +123,10 @@ The OS trash is selected per platform by `newOSTrasher` in
 
 `procs.OpenFiles(ctx, paths)` reports which paths (or directories with an
 open file below them) are open by a process. Best effort with a bounded
-timeout; `ErrUnavailable` means unknown, never "safe".
+timeout (`DefaultTimeout` when the context has no deadline). `ErrUnavailable`
+and `ErrIncomplete` (partial map still returned, `true` entries reliable) mean
+unknown for `false` entries, never "safe". Per OS: `/proc/<pid>/fd` on Linux,
+`lsof` on macOS, Restart Manager on Windows.
 
 ### Output (`internal/output`)
 
