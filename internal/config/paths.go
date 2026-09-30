@@ -110,37 +110,3 @@ func IsFilesystemRoot(path string) bool {
 	}
 	return isRootPath(filepath.Clean(path))
 }
-
-// pathKey normalises a cleaned path for equality comparison: the default
-// filesystems of Windows and macOS are case-insensitive.
-func pathKey(p string) string {
-	p = filepath.Clean(p)
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		return strings.ToLower(p)
-	}
-	return p
-}
-
-// pathWithin reports whether target equals or lies below root, comparing
-// whole components ("/a/b" does not contain "/a/bc").
-//
-// It is only a selector for configuration overrides and approximates
-// containment lexically (plus best-effort symlink resolution by callers); the
-// security boundary for scanned paths remains scope.Guard.
-func pathWithin(root, target string) bool {
-	rel, err := filepath.Rel(pathKey(root), pathKey(target))
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-// canonicalPath cleans p and resolves symlinks on a best-effort basis: if the
-// path does not exist (yet) the cleaned path is used.
-func canonicalPath(p string) string {
-	p = filepath.Clean(p)
-	if r, err := filepath.EvalSymlinks(p); err == nil {
-		return r
-	}
-	return p
-}

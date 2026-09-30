@@ -101,14 +101,20 @@ func TestScanFromLinkedWorktreeCoversTheRepository(t *testing.T) {
 	wt := repo.AddWorktree("agent-wt", "feat/agent")
 	t.Chdir(wt)
 
+	// Both targets run concurrently, so the guard answers are recorded
+	// under a lock; they are the same for either target.
+	var mu sync.Mutex
 	var meta, general error
 	var resolvedMeta string
 	d := registerFake(t, detect.CategoryGit, nil)
 	rec := &recorder{}
 	d.fn = func(_ context.Context, env *detect.Env, tg scope.Target, emit func(findings.Finding)) error {
 		rec.record(env, tg)
-		resolvedMeta, meta = env.Guard.ResolveRepoMeta(repo.Dir)
-		_, general = env.Guard.Resolve(filepath.Join(repo.Dir, "README.md"))
+		rm, merr := env.Guard.ResolveRepoMeta(repo.Dir)
+		_, gerr := env.Guard.Resolve(filepath.Join(repo.Dir, "README.md"))
+		mu.Lock()
+		resolvedMeta, meta, general = rm, merr, gerr
+		mu.Unlock()
 		emitAt(d, tg, emit, "")
 		return nil
 	}

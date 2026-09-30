@@ -168,18 +168,6 @@ func hasControlChars(s string) bool {
 	return strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f })
 }
 
-func validateOverrides(p *problemList, field string, t *ThresholdOverrides) {
-	if t.MinAgeDays != nil {
-		p.nonNeg(field+".min_age_days", int64(*t.MinAgeDays))
-	}
-	if t.MinSizeBytes != nil {
-		p.nonNeg(field+".min_size_bytes", *t.MinSizeBytes)
-	}
-	if t.RecentDays != nil {
-		p.nonNeg(field+".recent_days", int64(*t.RecentDays))
-	}
-}
-
 func validateThresholds(p *problemList, field string, t Thresholds) {
 	p.nonNeg(field+".min_age_days", int64(t.MinAgeDays))
 	p.nonNeg(field+".min_size_bytes", t.MinSizeBytes)

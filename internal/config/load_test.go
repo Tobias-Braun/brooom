@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -18,16 +17,6 @@ func writeTemp(t *testing.T, name, content string) string {
 		t.Fatal(err)
 	}
 	return p
-}
-
-// jsonStr returns s as a JSON string literal (portable for Windows paths).
-func jsonStr(t *testing.T, s string) string {
-	t.Helper()
-	b, err := json.Marshal(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
 }
 
 func TestLoadMissingFileReturnsDefaults(t *testing.T) {

@@ -12,7 +12,6 @@ import (
 )
 
 func isWindows() bool { return runtime.GOOS == "windows" }
-func isDarwin() bool  { return runtime.GOOS == "darwin" }
 
 func intp(v int) *int       { return &v }
 func int64p(v int64) *int64 { return &v }
