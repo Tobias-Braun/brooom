@@ -1,0 +1,89 @@
+---
+/**
+ * Exactly five feature cards. Each claim maps to docs/SPEC.md core
+ * principles or the detector list; icons are decorative inline SVG paths on a
+ * shared 24px stroke grid.
+ */
+const features = [
+  {
+    title: 'Safe by default',
+    body: 'Every command is a dry run unless you pass --apply, and applying asks first (--yes for scripts). Files go to the OS trash or a quarantine folder, and brooom undo restores what is restorable.',
+    icon: 'M12 3 4 6v6c0 5 3.4 8.2 8 9 4.6-.8 8-4 8-9V6l-8-3Zm-3 9 2.2 2.2L15.5 10',
+  },
+  {
+    title: 'Git-aware',
+    body: 'Finds stale and merged branches, including squash merges, orphaned worktrees and git bloat. Branches go with git branch -d, and -D only with --force.',
+    icon: 'M6 3v12M6 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm0-9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm12 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 0c0 4-4 4-9 6',
+  },
+  {
+    title: 'Agent-artifact-aware',
+    body: 'Knows where Claude Code, Cursor, Aider, Copilot and friends leave logs, JSONL transcripts and caches. Tool config such as settings, instructions, skills and commands is never touched.',
+    icon: 'M4 5h16v11H4zM8 20h8M12 16v4M8 9l2 2-2 2m4 0h3',
+  },
+  {
+    title: 'Fast',
+    body: 'Parallel directory walking, skip lists for huge irrelevant folders and cached sizes that are invalidated by mtime.',
+    icon: 'M13 2 4 14h7l-1 8 9-12h-7l1-8Z',
+  },
+  {
+    title: 'Cross-platform',
+    body: 'One static binary for Windows, macOS and Linux on amd64 and arm64, using the native Recycle Bin, macOS Trash or freedesktop trash.',
+    icon: 'M3 4h18v12H3zM8 20h8M12 16v4',
+  },
+];
+---
+
+<section class="section" id="features" aria-labelledby="features-title">
+  <div class="wrap">
+    <h2 id="features-title">Built to be trusted with your disk</h2>
+    <p class="section-intro">
+      Scoped by default: without flags Brooom only touches the repository you are in, and paths
+      outside the allowed scope are refused.
+    </p>
+    <ul class="grid">
+      {
+        features.map((f) => (
+          <li class="card">
+            <svg
+              viewBox="0 0 24 24"
+              width="28"
+              height="28"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d={f.icon} />
+            </svg>
+            <h3>{f.title}</h3>
+            <p>{f.body}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+    gap: var(--space-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .card svg {
+    color: var(--neon);
+    margin-bottom: var(--space-2);
+  }
+
+  .card p {
+    margin: 0;
+    color: var(--text-muted);
+  }
+</style>

@@ -1,0 +1,76 @@
+---
+/**
+ * The four families from the README, with the concrete examples and the
+ * detector names from docs/SPEC.md. Detectors are grouped by family.
+ */
+const families = [
+  {
+    title: 'Agent artifacts',
+    body: 'Run logs, JSONL transcripts, caches and scratch files from Claude Code, Cursor, Aider, Copilot and custom scripts, in project folders and well-known user-level locations.',
+    detectors: ['ai-artifacts'],
+  },
+  {
+    title: 'Git leftovers',
+    body: 'Stale and already-merged branches (squash merges too), orphaned or prunable worktrees, loose objects, reflogs, packs, and large untracked or ignored files.',
+    detectors: ['stale-branch', 'merged-branch', 'worktrees', 'git-bloat', 'large-untracked'],
+  },
+  {
+    title: 'Build artifacts',
+    body: 'node_modules, dist, build, target, .venv, __pycache__, .next and co. in projects you stopped touching, weighted by how inactive the project is.',
+    detectors: ['build-artifacts'],
+  },
+  {
+    title: 'Logs and runtime junk',
+    body: 'npm, yarn and pnpm debug logs, pip and uv caches, Jest, Vitest and pytest caches, coverage output, .DS_Store, Thumbs.db, editor swap files and crash dumps. Files a process has open are flagged, not suggested.',
+    detectors: ['log-and-runtime-files'],
+  },
+];
+---
+
+<section class="section" id="finds" aria-labelledby="finds-title">
+  <div class="wrap">
+    <h2 id="finds-title">What it finds</h2>
+    <p class="section-intro">
+      Eight read-only detectors in four families. Detectors only report; nothing changes until you
+      apply an action.
+    </p>
+    <div class="grid">
+      {
+        families.map((f) => (
+          <article class="card">
+            <h3>{f.title}</h3>
+            <p>{f.body}</p>
+            <ul class="chips" aria-label={`${f.title} detectors`}>
+              {f.detectors.map((d) => (
+                <li>
+                  <code class="chip">{d}</code>
+                </li>
+              ))}
+            </ul>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+    gap: var(--space-4);
+  }
+
+  .card p {
+    color: var(--text-muted);
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+</style>

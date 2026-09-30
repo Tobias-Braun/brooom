@@ -1,0 +1,78 @@
+---
+import BroomMark from './BroomMark.astro';
+import { REPO_URL, repoFile } from '../lib/url';
+
+const docs = [
+  { href: repoFile('docs/SPEC.md'), label: 'Specification' },
+  { href: repoFile('docs/ARCHITECTURE.md'), label: 'Architecture' },
+  { href: repoFile('docs/findings.md'), label: 'Findings schema' },
+];
+---
+
+<footer class="site-footer">
+  <div class="wrap inner">
+    <p class="status">
+      <BroomMark size={22} id="broom-footer" />
+      Status: under active development towards v0.1.0.
+    </p>
+    <nav aria-label="Documentation">
+      <ul>
+        {
+          docs.map((d) => (
+            <li>
+              <a href={d.href}>{d.label}</a>
+            </li>
+          ))
+        }
+        <li><a href={REPO_URL}>GitHub</a></li>
+      </ul>
+    </nav>
+    <p class="license">Released under the <a href={repoFile('LICENSE')}>MIT license</a>.</p>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    border-top: 1px solid var(--border);
+    padding-block: var(--space-4);
+    background: var(--bg-elevated);
+  }
+
+  .inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-4);
+  }
+
+  p {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0;
+    color: var(--text-muted);
+  }
+
+  ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-inline: 0.5rem;
+  }
+
+  .license a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+</style>

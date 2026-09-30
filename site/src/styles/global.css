@@ -1,0 +1,245 @@
+/*
+ * Design tokens and base styles. Hand-written on purpose: no CSS framework,
+ * no external fonts, no third-party requests.
+ *
+ * Contrast ratios (WCAG 2.x, computed from the hex values below):
+ *   --text       #ecebf7 on --bg #0a0913        16.8:1  (surface #15132a 15.4:1)
+ *   --text-muted #aeacc9 on --bg                 9.0:1  (surface 8.2:1)
+ *   --violet     #a78bfa on --bg                 7.3:1  (surface 6.7:1)
+ *   --blue       #60a5fa on --bg                 7.8:1  (surface 7.1:1)
+ *   --neon       #5eead4 on --bg                13.4:1  (surface 12.3:1)
+ *   --bg as button text on the lightest gradient stops --violet 7.3:1 and
+ *   --blue 7.8:1, so dark text stays readable across the whole gradient.
+ *   The focus ring uses --neon, so it clears 3:1 on every surface above.
+ *   The hero glow and CTA tint are low-alpha violet, which moves these
+ *   numbers by well under one point.
+ */
+:root {
+  color-scheme: dark;
+
+  --bg: #0a0913;
+  --bg-elevated: #100e21;
+  --surface: #15132a;
+  --border: #2b2850;
+  --text: #ecebf7;
+  --text-muted: #aeacc9;
+  --violet: #a78bfa;
+  --blue: #60a5fa;
+  --neon: #5eead4;
+  --grad-brand: linear-gradient(120deg, var(--violet), var(--blue));
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --gutter: max(16px, 4vw);
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2.5rem;
+  --space-6: 4.5rem;
+  --content-width: 68rem;
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  background-image: radial-gradient(60rem 30rem at 50% -10%, rgb(139 92 246 / 0.22), transparent 70%);
+  background-repeat: no-repeat;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.15;
+  margin: 0 0 var(--space-3);
+  letter-spacing: -0.02em;
+}
+
+h1 {
+  font-size: clamp(2.25rem, 1.2rem + 5vw, 4.25rem);
+}
+
+h2 {
+  font-size: clamp(1.6rem, 1.1rem + 2vw, 2.4rem);
+}
+
+h3 {
+  font-size: 1.15rem;
+}
+
+p {
+  margin: 0 0 var(--space-3);
+}
+
+a {
+  color: var(--violet);
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  color: var(--blue);
+}
+
+/* Visible on every focusable element; --neon clears 3:1 on all backgrounds. */
+:focus-visible {
+  outline: 3px solid var(--neon);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+code {
+  font-size: 0.92em;
+}
+
+pre {
+  margin: 0;
+  overflow-x: auto;
+  /* Keeps the scroll inside the block instead of widening the page. */
+  max-width: 100%;
+  line-height: 1.5;
+  font-size: 0.9rem;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--gutter);
+  top: -4rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background: var(--neon);
+  color: var(--bg);
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+}
+
+.skip-link:focus {
+  top: var(--space-3);
+}
+
+.wrap {
+  width: 100%;
+  max-width: calc(var(--content-width) + 2 * var(--gutter));
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.section {
+  padding-block: var(--space-6);
+}
+
+.section-intro {
+  color: var(--text-muted);
+  max-width: 42rem;
+  margin-bottom: var(--space-5);
+}
+
+.eyebrow {
+  display: inline-block;
+  margin-bottom: var(--space-2);
+  color: var(--neon);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gradient-text {
+  background: var(--grad-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  min-width: 44px;
+  padding: 0.7rem 1.4rem;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.btn-primary {
+  background: var(--grad-brand);
+  color: var(--bg);
+  box-shadow: 0 0 24px rgb(139 92 246 / 0.4);
+}
+
+.btn-primary:hover {
+  color: var(--bg);
+  filter: brightness(1.1);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.btn-secondary:hover {
+  color: var(--text);
+  border-color: var(--violet);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+}
+
+.code-block {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  max-width: 100%;
+}
+
+/* Inline code in prose gets a subtle chip so commands stand out. */
+.chip {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+/* Text is always fully static unless the visitor allows motion. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

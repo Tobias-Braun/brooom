@@ -1,0 +1,66 @@
+---
+import BroomMark from './BroomMark.astro';
+import { REPO_URL } from '../lib/url';
+---
+
+<section class="hero" aria-labelledby="hero-title">
+  <div class="wrap inner">
+    <div class="copy">
+      <span class="eyebrow">CLI for AI-assisted development</span>
+      <h1 id="hero-title">
+        <span class="gradient-text">Sweep your workspace clean</span>, fast, so your agent fleet can run again.
+      </h1>
+      <p class="sub">
+        Brooom finds and cleans the disk clutter that agent tools, parallel branches and forgotten
+        projects leave behind. Every command is a dry run until you say <code>--apply</code>.
+      </p>
+      <div class="ctas">
+        <a class="btn btn-primary" href="#install">Install</a>
+        <a class="btn btn-secondary" href={REPO_URL}>View on GitHub</a>
+      </div>
+    </div>
+    <div class="mark">
+      <BroomMark size={200} id="broom-hero" sweep />
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    padding-block: var(--space-6) var(--space-5);
+  }
+
+  .inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-5);
+  }
+
+  .sub {
+    max-width: 38rem;
+    color: var(--text-muted);
+    font-size: clamp(1.05rem, 1rem + 0.5vw, 1.3rem);
+  }
+
+  .ctas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+  }
+
+  .mark {
+    filter: drop-shadow(0 0 28px rgb(139 92 246 / 0.55));
+  }
+
+  @media (max-width: 47.99rem) {
+    .inner {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .mark {
+      display: none;
+    }
+  }
+</style>

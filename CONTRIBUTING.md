@@ -27,6 +27,19 @@ conventions every change follows.
 - Anything that can modify or delete data needs tests for the refusal paths
   (outside scope, symlinks, dirty state, open files), not only the happy path.
 
+## Working on the site
+
+The landing page is an Astro project in `site/` (Node 22 LTS, see
+`site/.nvmrc`) and is deployed to GitHub Pages from `main`.
+
+```sh
+cd site && npm ci && npm run dev   # local dev server under /brooom/
+npm run check && npm run build     # what CI runs
+```
+
+Keep the copy accurate to `docs/SPEC.md` and the README: no invented
+features, numbers or install commands.
+
 ## Adding a detector
 
 1. Create `internal/detectors/<name>/` implementing `detect.Detector`.
