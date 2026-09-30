@@ -129,6 +129,9 @@ func (s *sizer) scan(path string, mtime int64, id string) *dirRecord {
 
 // add folds one directory entry into the record.
 func (r *dirRecord) add(e Entry) {
+	if isGitName(e.Name) {
+		r.HasGit = true
+	}
 	if e.IsDir() {
 		r.Subdirs = append(r.Subdirs, e.Name)
 		return
@@ -156,6 +159,7 @@ func (s *sizer) aggregate() DirSummary {
 	for rel, rec := range s.recs {
 		sum.SizeBytes += rec.DirectBytes
 		sum.Files += rec.DirectFiles
+		sum.HasGit = sum.HasGit || rec.HasGit
 		newest = max(newest, rec.DirectNewest)
 		if rel != "" {
 			// A directory's own mtime counts, except the queried root's.

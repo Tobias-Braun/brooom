@@ -103,6 +103,18 @@ once per scan for every selected, globally enabled detector, appends the
 `TargetUser` targets (deduplicated, missing locations dropped) and allows
 their paths in the guard. It only declares locations and never detects.
 
+The `ai-artifacts` detector (`internal/detectors/aiartifacts`) matches the
+`ai` category of the catalog. Project targets get one pruned `walk.Walk`
+(`.git`, `scan.skip_dirs`, well-known huge dirs, matched directories, root and
+repo excludes and nested repositories are not descended into). Catalog
+`protect` patterns always win: a candidate that is protected, below a
+protected path or a directory containing one is dropped, as is a matched
+directory containing a `.git` entry at any depth (`walk.DirSummary.HasGit`,
+gathered by the fresh size pass). User-level targets exist only when
+`detectors.ai-artifacts.user_locations` is true; findings there are entries
+inside a location, never the location itself. `tracked_files` is the only
+blocking flag `--force` lifts; an open file keeps the action at `none`.
+
 Detector names (config keys, `--detector` values): `stale-branch`,
 `merged-branch`, `worktrees`, `git-bloat`, `large-untracked`,
 `ai-artifacts`, `log-and-runtime-files`, `build-artifacts`.
