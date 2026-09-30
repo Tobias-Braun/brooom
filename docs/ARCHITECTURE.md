@@ -159,6 +159,20 @@ roots; `ErrRestoreConflict` and `ErrNotRestorable` are passed through.
 Cross-device moves fall back to copy + verify + delete. Windows locked files
 produce a clear error naming the file.
 
+Windows Recycle Bin (`SHFileOperationW`, no cgo): the shell silently deletes
+permanently what does not fit the bin or sits on a volume with the bin
+disabled, so `Remove` refuses before calling it (never after) when
+`NukeOnDelete=1`, the item is larger than `MaxCapacity`, the volume has no
+GUID (network shares, some removable media) or the per-volume settings under
+`HKCU\...\Explorer\BitBucket\Volume\<GUID>` cannot be read. A missing
+`MaxCapacity` counts as unreadable; opening the Recycle Bin properties once
+creates the key. All refusals recommend `--trash-strategy quarantine`. The
+shell API does not accept `\\?\` paths, so paths longer than 259 characters
+are refused the same way. Pure logic (`$I` parsing, `pFrom` buffer, path
+refusals, bin decision) is in `recyclebin_parse.go` and tested on every OS.
+After the call the new `$I`/`$R` pair is recorded; a vanished item without a
+matching pair is reported as a permanent deletion.
+
 The OS trash is selected per platform by `newOSTrasher` in
 `ostrash_unix.go` (freedesktop), `ostrash_darwin.go` and
 `ostrash_windows.go`; quarantine and delete live in `quarantine.go` and
