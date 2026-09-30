@@ -35,6 +35,24 @@ type Config struct {
 	Agent Agent `json:"agent"`
 	// UpdateCheck enables `brooom update-check` to contact GitHub. Opt-in.
 	UpdateCheck bool `json:"update_check"`
+
+	// The fields below are never read from or written to a file; ForTarget
+	// fills them on the effective configuration.
+	//
+	// Exclude contract for detectors: skip every directory that matches one
+	// of RootExclude (patterns relative to RootPath) or one of RepoExclude
+	// (patterns relative to the target directory), using scope.Excluded. This
+	// package only validates and carries the patterns.
+
+	// RootPath is the resolved path of the configured root selected by
+	// ForTarget, or "" when no configured root contains the target.
+	RootPath string `json:"-"`
+	// RootExclude holds the selected root's exclude globs, relative to
+	// RootPath.
+	RootExclude []string `json:"-"`
+	// RepoExclude holds the exclude globs of the target's .brooom.json,
+	// relative to the target directory.
+	RepoExclude []string `json:"-"`
 }
 
 // Root is a configured workspace root.
@@ -236,7 +254,8 @@ type Trash struct {
 	// PerDetector overrides the strategy per detector name.
 	PerDetector map[string]TrashStrategy `json:"per_detector,omitempty"`
 	// QuarantineRetentionDays: quarantined sessions older than this are
-	// purged by `brooom purge` (and announced on the next run).
+	// purged by `brooom purge` (and announced on the next run). 0 means
+	// "never purge"; negative values are invalid.
 	QuarantineRetentionDays int `json:"quarantine_retention_days"`
 	// AllowDelete must be true for StrategyDelete to be usable from config.
 	AllowDelete bool `json:"allow_delete"`
