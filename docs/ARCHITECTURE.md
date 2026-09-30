@@ -318,15 +318,33 @@ as merged". Remote containment alone still justifies `-D` (nothing is lost).
 The refusal text is joined with semicolons only, since the commit-count phrase
 can already carry a parenthesis.
 
-Known limitation (deferred from #88, plan item 4): a local branch whose name
-collides with a tag or a remote-tracking name (for example a local branch
-called `origin/main`) is handled safely (detectors and actions address refs
-fully qualified) but is not reported as an informational finding yet. Before deleting,
-`branch.<name>.remote/merge` are recorded in `Entry.Undo`
+Before deleting, `branch.<name>.remote/merge` are recorded in `Entry.Undo`
 (`upstream_remote`, `upstream_merge`). Undo validates them (name shape, git's
 `check-ref-format`), and only when it created the branch restores them with
 `git branch --set-upstream-to` if the remote-tracking ref exists, else by
 writing the two config keys.
+
+Known limitation (deferred from #88, plan item 4): a local branch whose name
+collides with a tag or a remote-tracking name (for example a local branch
+called `origin/main`) is handled safely (detectors and actions address refs
+fully qualified) but is not reported as an informational finding yet.
+
+Base candidates (#204): `gitx.DefaultBase` still names the one primary base
+(origin/HEAD, then origin/<name> before local <name>), and it stays the
+default for safety decisions because a stale local main misses merges. Merge
+detection, however, asks `gitx.BaseCandidates` / `MergedIntoAny`: a tip merged
+into any existing candidate counts, ancestry against every candidate before any
+patch-id guess. A match in a local candidate that ranks behind a remote primary
+is marked `Base.Unpushed` and reported as "local main (not pushed)"; it is not
+remote-verified, so `-D` still needs `ContainedInRemotes` exactly like a
+heuristic merge.
+
+Names the action refuses (`gitx.RefusedBranchName`) are checked by merged-branch
+and stale-branch too: such findings are not actionable and carry a quoted
+`git update-ref -d refs/heads/<name>` hint. The recovery hint stored with a
+deletion ignores branches that the same session deletes as well
+(`Env.plannedDeletes`), and undo reports a ref hierarchy clash (`feat` versus
+`feat/child`) as a conflict with a `git branch <name>-restored <sha>` hint.
 
 Dubious ownership: `gitx.Open` returns `ErrNotRepo` only for git's "not a git
 repository"; a repository git refuses because another user owns it is an

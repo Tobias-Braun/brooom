@@ -203,6 +203,9 @@ func (s *scan) meta(b gitx.Branch) map[string]string {
 // branch is never overridable.
 func (s *scan) action(b gitx.Branch, st remoteState, blocking []findings.RiskFlag) findings.SuggestedAction {
 	switch {
+	case gitx.RefusedBranchName(b.Name) != "":
+		// The action refuses such names at plan time, so no deletion is offered.
+		return findings.RefusedBranchDelete(b.Name, gitx.RefusedBranchName(b.Name))
 	case len(blocking) == 0:
 		return safeAction(b, st)
 	case s.env.Force && findings.Actionable(blocking, true):

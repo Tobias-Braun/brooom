@@ -57,7 +57,16 @@ type Env struct {
 	// Force allows acting on findings with blocking risk flags and makes
 	// delete-branch use -D.
 	Force bool
+
+	// plannedDeletes holds the branches (see plannedKey) that the running
+	// session deletes. The executor fills it before the first step so that a
+	// delete-branch recovery hint does not name a branch that is about to be
+	// deleted too as the one keeping the commits reachable.
+	plannedDeletes map[string]struct{}
 }
+
+// plannedKey identifies a local branch of a repository in Env.plannedDeletes.
+func plannedKey(repoPath, fullRef string) string { return repoPath + "\x00" + fullRef }
 
 // Step is one concrete, validated operation.
 type Step struct {
