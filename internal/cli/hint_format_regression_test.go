@@ -100,7 +100,7 @@ func TestApplyHintNamesOnlyWorkingShortcuts(t *testing.T) {
 			[]string{"`brooom sweep --apply`"}},
 		{"partial coverage is stated", []string{"scan"},
 			[]findings.Finding{hintFinding(config.DetectorLogs, high, "l"), hintFinding("build-artifacts", med, "dist")},
-			[]string{"`brooom sweep --apply`", "covers 1 of 2", "brooom clean --from brooom-findings.json --apply"},
+			[]string{"`brooom sweep --apply`", "covers up to 1 of 2", "brooom clean --from brooom-findings.json --apply"},
 			nil},
 		{"detector outside the preset", []string{"scan"},
 			[]findings.Finding{hintFinding("git-bloat", high, "g")},
@@ -198,6 +198,9 @@ func TestNoticeFollowsTheRenderedFormat(t *testing.T) {
 		want bool
 	}{
 		{"sessions ignores config format", []string{"sessions"}, true},
+		// sessionsFormat in sessions_render.go accepts -f json; that explicit
+		// machine format suppresses the notice, unlike the configured
+		// output.format above, which sessions never reads.
 		{"sessions with explicit json", []string{"sessions", "-f", "json"}, false},
 		{"clean ignores config format", []string{"clean", "--from", "EMPTY"}, true},
 	}

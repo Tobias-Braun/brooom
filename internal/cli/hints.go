@@ -108,15 +108,41 @@ func keepShort(letters string) string {
 // applyCommand is the command that executes what a dry run of cmd showed: the
 // same invocation plus --apply. Commands that cannot apply themselves (scan
 // and the bare command) get the closest command that can.
+//
+// Callers that word a hint (rerunHint, purge) only pass commands that have
+// --apply, and those always yield a single command. Only scan and the bare
+// command can yield the two-step form, and only applyHint words it, as
+// separate steps: joining them with `&&` would not run in Windows PowerShell
+// 5.1. String() joins the steps with `&&` for display in tests only.
 func (a *app) applyCommand(cmd *cobra.Command) string {
+	return a.applyPlanFor(cmd).String()
+}
+
+// applyPlan is the suggested way to act on a dry run: one command, or, when
+// steps is set, the two-step save-then-clean form that must be worded as
+// separate steps.
+type applyPlan struct {
+	command string
+	steps   []string
+}
+
+// String renders the plan on one line; steps are joined with `&&`.
+func (p applyPlan) String() string {
+	if p.steps != nil {
+		return strings.Join(p.steps, " && ")
+	}
+	return p.command
+}
+
+func (a *app) applyPlanFor(cmd *cobra.Command) applyPlan {
 	if cmd.Flags().Lookup("apply") == nil {
-		return a.scanApplyCommand(cmd)
+		return a.scanApplyPlan(cmd)
 	}
 	parts := []string{"brooom"}
 	for _, arg := range a.invocationArgs(cmd) {
 		parts = append(parts, a.quote(arg))
 	}
-	return strings.Join(append(parts, "--apply"), " ")
+	return applyPlan{command: strings.Join(append(parts, "--apply"), " ")}
 }
 
 // scanApplyCommand suggests how to act on what `brooom scan` (or the bare
@@ -129,17 +155,17 @@ func (a *app) applyCommand(cmd *cobra.Command) string {
 //
 // --force changes which findings are reported and planned, so a `scan --force`
 // hint repeats it on every command that selects or acts.
-func (a *app) scanApplyCommand(cmd *cobra.Command) string {
+func (a *app) scanApplyPlan(cmd *cobra.Command) applyPlan {
 	scopeFlags := a.scopeFlags()
 	detectors := a.detectorFlag()
 	force := forceFlag(cmd)
 	if len(detectors) == 0 {
-		return joinCommand("brooom", "sweep", scopeFlags, force, "--apply")
+		return applyPlan{command: joinCommand("brooom", "sweep", scopeFlags, force, "--apply")}
 	}
 	if sc := shortcutFor(a.flags.detectors); sc != "" {
-		return joinCommand("brooom", sc, scopeFlags, detectors, force, "--apply")
+		return applyPlan{command: joinCommand("brooom", sc, scopeFlags, detectors, force, "--apply")}
 	}
-	return strings.Join(a.fileApplySteps(cmd, detectors), " && ")
+	return applyPlan{steps: a.fileApplySteps(cmd, detectors)}
 }
 
 // findingsFile is the file the two-step hint saves the findings to.
@@ -256,23 +282,32 @@ func fromStdin(cmd *cobra.Command) bool {
 // on it". For a scan it looks at what was reported and names only what would
 // really act on those findings (see sweepHint).
 func (a *app) applyHint(cmd *cobra.Command, res *scanResult) string {
-	c := a.applyCommand(cmd)
+	plan := a.applyPlanFor(cmd)
+	c := plan.command
 	if cmd.Flags().Lookup("apply") != nil {
 		return "nothing was changed; run `" + c + "` or `brooom sweep`"
 	}
+	if plan.steps != nil {
+		return "nothing was changed; " + fileStepsText(plan.steps)
+	}
 	if strings.HasPrefix(c, "brooom sweep ") {
 		return a.sweepHint(cmd, c, res)
-	}
-	if strings.Contains(c, " && ") {
-		return "nothing was changed; " + a.fileSteps(cmd, a.detectorFlag())
 	}
 	return "nothing was changed; run `" + c + "`"
 }
 
 // fileSteps words fileApplySteps as one sentence fragment.
 func (a *app) fileSteps(cmd *cobra.Command, detectors []string) string {
-	steps := a.fileApplySteps(cmd, detectors)
-	return "run `" + steps[0] + "`, review the file, then run `" + steps[1] + "`"
+	return fileStepsText(a.fileApplySteps(cmd, detectors))
+}
+
+// fileStepsText words the two steps as "run A, review the file, then run B".
+// It notes where the file goes: the current directory, replacing a file of
+// that name, so it should not be somewhere the scan covers or holds something
+// worth keeping.
+func fileStepsText(steps []string) string {
+	return "run `" + steps[0] + "`, review the file, then run `" + steps[1] + "` (" + findingsFile +
+		" is written to the current directory and replaces an existing file of that name)"
 }
 
 // sweepHint words the hint of a scan without --detector. `sweep` runs its
@@ -310,7 +345,7 @@ func (a *app) sweepHint(cmd *cobra.Command, sweep string, res *scanResult) strin
 	}
 	hint := "nothing was changed; run `" + sweep + "`"
 	if covered < len(reported) {
-		hint += fmt.Sprintf(" (the %s preset covers %d of %d actionable findings; to act on all of them, %s)",
+		hint += fmt.Sprintf(" (the %s preset covers up to %d of %d actionable findings; to act on all of them, %s)",
 			p.Name, covered, len(reported), file)
 	}
 	if names := a.shortcutHints(reported); len(names) > 0 {

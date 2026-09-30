@@ -2,11 +2,13 @@ package findings
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 )
 
 func TestReadReport(t *testing.T) {
@@ -62,4 +64,46 @@ func TestReadReportCapsInput(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "larger than") {
 		t.Fatalf("error %v, want a size error", err)
 	}
+}
+
+// TestReadReportEncodings covers what shells write for `scan --format json >
+// file`: Windows PowerShell 5.1 produces UTF-16 LE with a BOM, and some tools
+// prepend a UTF-8 BOM. The path holds a non-BMP rune to exercise surrogates.
+func TestReadReportEncodings(t *testing.T) {
+	const path = "/x/ä🧹"
+	doc := `{"schema_version":1,"findings":[{"id":"a","path":"` + path + `"}]}`
+	encode16 := func(bom []byte, put func([]byte, uint16)) []byte {
+		out := append([]byte{}, bom...)
+		for _, u := range utf16.Encode([]rune(doc)) {
+			var b [2]byte
+			put(b[:], u)
+			out = append(out, b[:]...)
+		}
+		return out
+	}
+	tests := []struct {
+		name  string
+		input []byte
+	}{
+		{"utf-8", []byte(doc)},
+		{"utf-8 bom", append([]byte{0xEF, 0xBB, 0xBF}, doc...)},
+		{"utf-16 le bom", encode16([]byte{0xFF, 0xFE}, binary.LittleEndian.PutUint16)},
+		{"utf-16 be bom", encode16([]byte{0xFE, 0xFF}, binary.BigEndian.PutUint16)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rep, err := ReadReport(bytes.NewReader(tt.input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(rep.Findings) != 1 || rep.Findings[0].Path != path {
+				t.Fatalf("findings %+v", rep.Findings)
+			}
+		})
+	}
+	t.Run("utf-16 odd length", func(t *testing.T) {
+		if _, err := ReadReport(bytes.NewReader([]byte{0xFF, 0xFE, '{'})); err == nil {
+			t.Fatal("want an error")
+		}
+	})
 }

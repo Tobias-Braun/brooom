@@ -246,6 +246,10 @@ an action for findings blocked by an overridable risk flag.
 Use '--from -' to read the file from stdin. Without --apply this is a dry run.
 Stdin is then the findings, so there is no terminal to confirm on: --apply
 needs --yes (or use a file, which keeps the interactive confirmation).
+
+The file may be UTF-8 (with or without a byte order mark) or UTF-16 with a
+byte order mark, so 'brooom scan --format json > findings.json' also works in
+Windows PowerShell 5.1, which writes UTF-16.
 ```
 
 **Examples**
