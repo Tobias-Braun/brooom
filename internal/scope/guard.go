@@ -13,6 +13,9 @@ type Guard struct {
 	// allowed mirrors locations[i].path and backs Allowed().
 	allowed   []string
 	locations []location
+	// meta are repository-metadata locations: exact directories (never their
+	// content) that only ResolveRepoMeta accepts. See WithRepoMeta.
+	meta []location
 }
 
 // NewGuard returns a guard that allows the given locations and everything
@@ -125,6 +128,59 @@ func (g *Guard) ResolveParent(path string) (string, error) {
 	// The final element keeps its spelling on purpose (no symlink following),
 	// but its 8.3 alias must not hide what it is: GIT~1 names ".git".
 	return canonicalLast(joinName(parent, base)), nil
+}
+
+// WithRepoMeta returns a copy of g that additionally lets ResolveRepoMeta
+// accept exactly the given directories. It exists for the main worktree of a
+// linked worktree: git commands for branches and worktrees run there because
+// the repository's shared state lives in it, but nothing inside it (files,
+// sibling worktrees below it) becomes reachable through Resolve. The same
+// validation as NewGuard applies to every path.
+func (g *Guard) WithRepoMeta(paths ...string) (*Guard, error) {
+	out := &Guard{
+		allowed:   append([]string(nil), g.allowed...),
+		locations: append([]location(nil), g.locations...),
+		meta:      append([]location(nil), g.meta...),
+	}
+	for _, raw := range paths {
+		loc, err := newLocation(raw)
+		if err != nil {
+			return nil, err
+		}
+		out.meta = append(out.meta, loc)
+	}
+	return out, nil
+}
+
+// ResolveRepoMeta is Resolve that also accepts a repository-metadata location
+// registered with WithRepoMeta, but only that directory itself. Use it only to
+// locate the repository a branch or worktree operation runs git in, never
+// for paths that are read, walked or removed.
+func (g *Guard) ResolveRepoMeta(path string) (string, error) {
+	out, err := g.Resolve(path)
+	if err == nil || !errors.Is(err, ErrOutsideScope) {
+		return out, err
+	}
+	resolved, rerr := resolveFull(path)
+	if rerr != nil {
+		return "", err
+	}
+	for _, loc := range g.meta {
+		if respelled, rest, hit := loc.contains(resolved); hit && rest == 0 {
+			return respelled, nil
+		}
+	}
+	return "", err
+}
+
+// OutsideNote returns OutsideWorktreeHint when path does not resolve inside
+// the allowed locations and an empty string when it does. Repository metadata
+// locations do not count as inside.
+func (g *Guard) OutsideNote(path string) string {
+	if _, err := g.Resolve(path); err != nil {
+		return OutsideWorktreeHint
+	}
+	return ""
 }
 
 // IsAllowedRoot reports whether path resolves to an allowed location itself.

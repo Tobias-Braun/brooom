@@ -12,7 +12,6 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
-	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/session"
 )
 
@@ -148,7 +147,7 @@ func (a *app) undoEnv(ctx context.Context, req *scanRequest, m *session.Manifest
 	if err != nil {
 		return nil, err
 	}
-	env, err := a.envForAllowed(req.cfg, runner, ts.allowed, af, r)
+	env, err := a.envForAllowed(req.cfg, runner, ts, af, r)
 	if err != nil {
 		return nil, err
 	}
@@ -158,11 +157,11 @@ func (a *app) undoEnv(ctx context.Context, req *scanRequest, m *session.Manifest
 	withUser := *req.cfg
 	withUser.Detectors.AIArtifacts.UserLocations = true
 	ts.addExtraTargets(ctx, &withUser, detect.All())
-	return a.envForAllowed(req.cfg, runner, ts.allowed, af, r)
+	return a.envForAllowed(req.cfg, runner, ts, af, r)
 }
 
-func (a *app) envForAllowed(cfg *config.Config, runner gitx.Runner, allowed []string, af applyFlags, r *trasherResolver) (*action.Env, error) {
-	guard, err := scope.NewGuard(allowed...)
+func (a *app) envForAllowed(cfg *config.Config, runner gitx.Runner, ts *targetSet, af applyFlags, r *trasherResolver) (*action.Env, error) {
+	guard, err := ts.newGuard()
 	if err != nil {
 		return nil, fmt.Errorf("build scope: %w", err)
 	}

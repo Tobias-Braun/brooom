@@ -122,7 +122,7 @@ func (d *Detector) newScan(ctx context.Context, env *detect.Env, target scope.Ta
 	}
 	// The main worktree path keeps finding IDs identical from every worktree
 	// of one repository; a main worktree outside the guard is refused.
-	path, err := env.Guard.Resolve(main)
+	path, err := env.Guard.ResolveRepoMeta(main)
 	if err != nil {
 		return nil, fmt.Errorf("stale-branch: %w", err)
 	}

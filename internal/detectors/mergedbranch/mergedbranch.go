@@ -150,7 +150,7 @@ func (d *Detector) load(ctx context.Context, env *detect.Env, target scope.Targe
 	if err != nil {
 		return nil, fmt.Errorf("merged-branch: main worktree of %q: %w", target.Path, err)
 	}
-	path, err := env.Guard.Resolve(main)
+	path, err := env.Guard.ResolveRepoMeta(main)
 	if err != nil {
 		return nil, fmt.Errorf("merged-branch: main worktree %q of target %q is outside the allowed scope: %w", main, target.Path, err)
 	}
@@ -286,7 +286,7 @@ func (s *scan) buildFinding(ctx context.Context, b gitx.Branch, method string) f
 	}
 	f.Evidence = s.evidence(b, method)
 	f.RiskFlags = s.riskFlags(ctx, b)
-	f.SuggestedAction = s.action(b.Name, method, f.RiskFlags)
+	f.SuggestedAction = s.action(b, method, f.RiskFlags)
 	return f
 }
 
@@ -364,7 +364,8 @@ func (s *scan) recent(date time.Time) bool {
 }
 
 // action decides the suggestion for a merged branch given its risk flags.
-func (s *scan) action(name, method string, flags []findings.RiskFlag) findings.SuggestedAction {
+func (s *scan) action(b gitx.Branch, method string, flags []findings.RiskFlag) findings.SuggestedAction {
+	name := b.Name
 	blocking := blockingFlags(flags)
 	if len(blocking) == 0 {
 		return deleteAction(name, method, s.base.Ref)
@@ -374,7 +375,7 @@ func (s *scan) action(name, method string, flags []findings.RiskFlag) findings.S
 		a.Reason = "forced: overriding " + strings.Join(blocking, ", ") + "; " + a.Reason
 		return a
 	}
-	return findings.SuggestedAction{Type: findings.ActionNone, Reason: blockedReason(flags)}
+	return findings.SuggestedAction{Type: findings.ActionNone, Reason: blockedReason(flags, b.WorktreePath, s.env.Guard.OutsideNote(b.WorktreePath))}
 }
 
 func blockingFlags(flags []findings.RiskFlag) []string {
@@ -388,13 +389,15 @@ func blockingFlags(flags []findings.RiskFlag) []string {
 }
 
 // blockedReason explains every blocking flag and states which of them --force
-// does not override.
-func blockedReason(flags []findings.RiskFlag) string {
+// does not override. A branch checked out in a worktree names it; when the
+// worktree is outside the scope (outsideNote is not empty) the reason also says
+// how to bring it in, since Brooom cannot list or act on it otherwise.
+func blockedReason(flags []findings.RiskFlag, worktree, outsideNote string) string {
 	var parts []string
 	for _, f := range flags {
 		switch f {
 		case findings.RiskCurrentBranch:
-			parts = append(parts, "checked out in a worktree (--force does not override this)")
+			parts = append(parts, checkedOutReason(worktree, outsideNote))
 		case findings.RiskProtectedBranch:
 			parts = append(parts, "protected branch (--force does not override this)")
 		case findings.RiskHasOpenPR:
@@ -402,6 +405,18 @@ func blockedReason(flags []findings.RiskFlag) string {
 		}
 	}
 	return "not suggested for deletion: " + strings.Join(parts, "; ")
+}
+
+// checkedOutReason words the current_branch block, naming the worktree.
+func checkedOutReason(worktree, outsideNote string) string {
+	where := "a worktree"
+	if worktree != "" {
+		where = "worktree " + worktree
+	}
+	if outsideNote != "" {
+		where += ", which is " + outsideNote
+	}
+	return "checked out in " + where + " (--force does not override this)"
 }
 
 func deleteAction(name, method, base string) findings.SuggestedAction {

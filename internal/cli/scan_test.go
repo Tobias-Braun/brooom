@@ -89,43 +89,49 @@ func TestScanFromSubdirectoryScansRepoRoot(t *testing.T) {
 	}
 }
 
-func TestScanFromLinkedWorktreeAllowsMainWorktree(t *testing.T) {
+// TestScanFromLinkedWorktreeAcceptsMainWorktreeAsRepoOnly pins the guard shape
+// of a run from a linked worktree: the main worktree is accepted as the
+// repository git runs in (ResolveRepoMeta), but it is not a general location:
+// Resolve refuses it and everything below it.
+func TestScanFromLinkedWorktreeAcceptsMainWorktreeAsRepoOnly(t *testing.T) {
 	needGit(t)
 	isolate(t)
 	repo := testutil.NewRepo(t)
 	wt := repo.AddWorktree("agent-wt", "feat/agent")
 	t.Chdir(wt)
 
-	var resolved string
-	var resolveErr error
+	var meta, general, metaFile, generalFile error
+	var resolvedMeta string
 	d := registerFake(t, detect.CategoryGit, nil)
+	rec := &recorder{}
 	d.fn = func(_ context.Context, env *detect.Env, tg scope.Target, emit func(findings.Finding)) error {
-		resolved, resolveErr = env.Guard.Resolve(filepath.Join(repo.Dir, "README.md"))
+		rec.record(env, tg)
+		file := filepath.Join(repo.Dir, "README.md")
+		resolvedMeta, meta = env.Guard.ResolveRepoMeta(repo.Dir)
+		_, general = env.Guard.Resolve(repo.Dir)
+		_, metaFile = env.Guard.ResolveRepoMeta(file)
+		_, generalFile = env.Guard.Resolve(file)
 		emitAt(d, tg, emit, "")
 		return nil
-	}
-	rec := &recorder{}
-	inner := d.fn
-	d.fn = func(ctx context.Context, env *detect.Env, tg scope.Target, emit func(findings.Finding)) error {
-		rec.record(env, tg)
-		return inner(ctx, env, tg, emit)
 	}
 
 	code, _, errOut := runScanCmd(t, "scan", "-d", d.name)
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	if resolveErr != nil {
-		t.Fatalf("guard refused the main worktree: %v", resolveErr)
+	if meta != nil || resolvedMeta != repo.Dir {
+		t.Errorf("ResolveRepoMeta(main) = %q, %v; want %q", resolvedMeta, meta, repo.Dir)
 	}
-	if want := filepath.Join(repo.Dir, "README.md"); resolved != want {
-		t.Errorf("resolved %q, want %q", resolved, want)
+	for name, err := range map[string]error{"Resolve(main)": general, "ResolveRepoMeta(main/README.md)": metaFile, "Resolve(main/README.md)": generalFile} {
+		if !errors.Is(err, scope.ErrOutsideScope) {
+			t.Errorf("%s = %v, want ErrOutsideScope", name, err)
+		}
 	}
 	if got := rec.paths(); len(got) != 1 || got[0] != wt {
 		t.Errorf("targets = %v, want only the linked worktree %s", got, wt)
 	}
-	if !slices.Contains(rec.allowed, repo.Dir) || !slices.Contains(rec.allowed, wt) {
-		t.Errorf("guard allows %v, want both %s and %s", rec.allowed, wt, repo.Dir)
+	if !slices.Contains(rec.allowed, wt) || slices.Contains(rec.allowed, repo.Dir) {
+		t.Errorf("guard allows %v, want %s and not %s", rec.allowed, wt, repo.Dir)
 	}
 }
 

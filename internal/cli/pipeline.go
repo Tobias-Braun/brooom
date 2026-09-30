@@ -254,7 +254,7 @@ func (a *app) execute(ctx context.Context, req *scanRequest, onFinding func(find
 	if err := requireGit(gitErr, req.detectors, targets); err != nil {
 		return nil, err
 	}
-	guard, err := scope.NewGuard(ts.allowed...)
+	guard, err := ts.newGuard()
 	if err != nil {
 		return nil, fmt.Errorf("build scope: %w", err)
 	}

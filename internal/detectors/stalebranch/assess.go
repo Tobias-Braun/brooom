@@ -197,7 +197,7 @@ func (s *scan) action(b gitx.Branch, st remoteState, blocking []findings.RiskFla
 			Reason:  "forced: " + joinFlags(blocking),
 		}
 	default:
-		return findings.SuggestedAction{Type: findings.ActionNone, Reason: blockedReason(b, st, blocking)}
+		return findings.SuggestedAction{Type: findings.ActionNone, Reason: blockedReason(b, st, blocking, s.env.Guard.OutsideNote(b.WorktreePath))}
 	}
 }
 
@@ -223,7 +223,7 @@ func safeAction(b gitx.Branch, st remoteState) findings.SuggestedAction {
 }
 
 // blockedReason explains every blocking flag in one sentence-list.
-func blockedReason(b gitx.Branch, st remoteState, blocking []findings.RiskFlag) string {
+func blockedReason(b gitx.Branch, st remoteState, blocking []findings.RiskFlag, outsideNote string) string {
 	var parts []string
 	for _, f := range blocking {
 		switch f {
@@ -232,7 +232,11 @@ func blockedReason(b gitx.Branch, st remoteState, blocking []findings.RiskFlag) 
 		case findings.RiskHasOpenPR:
 			parts = append(parts, "an open pull request uses this branch (re-run with --force to override)")
 		case findings.RiskCurrentBranch:
-			parts = append(parts, "the branch is checked out in "+b.WorktreePath+" and cannot be deleted")
+			why := "the branch is checked out in " + b.WorktreePath + " and cannot be deleted"
+			if outsideNote != "" {
+				why += "; the worktree is " + outsideNote
+			}
+			parts = append(parts, why)
 		}
 	}
 	return strings.Join(parts, "; ")

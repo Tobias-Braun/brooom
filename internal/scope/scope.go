@@ -34,6 +34,11 @@ import (
 // every allowed root.
 var ErrOutsideScope = errors.New("path is outside the allowed scope")
 
+// OutsideWorktreeHint tells the user how to bring a linked worktree that lies
+// outside the scanned repository into scope. Detectors skip such worktrees on
+// purpose; this is the wording every skip note and blocked reason shares.
+const OutsideWorktreeHint = "outside the allowed scope; add its parent as a root and use --workspaces"
+
 // ErrNotInRepo is returned by FindRepoRoot when no enclosing git repository
 // exists.
 var ErrNotInRepo = errors.New("not inside a git repository")

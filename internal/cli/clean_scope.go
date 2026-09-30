@@ -59,12 +59,12 @@ func (a *app) newCleanScope(ctx context.Context, cfg *config.Config, user bool) 
 		return nil, err
 	}
 	sc := &cleanScope{cfg: cfg, git: runner, gitErr: gitErr, userEnabled: user}
-	if sc.project, err = scope.NewGuard(ts.allowed...); err != nil {
+	if sc.project, err = ts.newGuard(); err != nil {
 		return nil, fmt.Errorf("build scope: %w", err)
 	}
 	sc.repos = repoDirs(ts, a.flags.workspaces)
 	userAllowed := sc.userLocations(ctx, cfg)
-	if err := sc.buildGuards(ts.allowed, userAllowed); err != nil {
+	if err := sc.buildGuards(ts, userAllowed); err != nil {
 		return nil, err
 	}
 	sc.locations = append(append([]string{}, ts.allowed...), userAllowed...)
@@ -85,14 +85,15 @@ func (sc *cleanScope) userLocations(ctx context.Context, cfg *config.Config) []s
 }
 
 // buildGuards creates the user-only and the combined guard.
-func (sc *cleanScope) buildGuards(project, user []string) error {
+func (sc *cleanScope) buildGuards(ts *targetSet, user []string) error {
+	project := ts.allowed
 	var err error
 	if len(user) > 0 {
 		if sc.user, err = scope.NewGuard(user...); err != nil {
 			return fmt.Errorf("build user scope: %w", err)
 		}
 	}
-	if sc.guard, err = scope.NewGuard(append(append([]string{}, project...), user...)...); err != nil {
+	if sc.guard, err = guardWithMeta(append(append([]string{}, project...), user...), ts.repoMeta); err != nil {
 		return fmt.Errorf("build scope: %w", err)
 	}
 	return nil
@@ -100,11 +101,12 @@ func (sc *cleanScope) buildGuards(project, user []string) error {
 
 // repoDirs returns the repositories of the scope. In repository mode every
 // allowed location is one (the repository and, for a linked worktree, its
-// main worktree); with --workspaces the discovered repository targets are.
+// main worktree as a metadata location); with --workspaces the discovered repository targets are.
 func repoDirs(ts *targetSet, workspaces bool) []string {
 	var out []string
 	if !workspaces {
 		out = append(out, ts.allowed...)
+		out = append(out, ts.repoMeta...)
 	}
 	for _, t := range ts.targets {
 		if t.Kind == scope.TargetRepo {
