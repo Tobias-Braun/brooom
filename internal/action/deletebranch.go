@@ -100,6 +100,9 @@ func (deleteBranch) Apply(ctx context.Context, env *Env, s Step) (session.Entry,
 	en.Path = d.repo.Dir
 	// Git drops branch.<name>.* together with the branch, so the tracking
 	// configuration has to be read before deleting.
+	// The read happens between evaluate and run, so a concurrent config
+	// change can make it stale; undo validates it again and a wrong value
+	// only affects which tracking config is restored.
 	upstream := d.readUpstream(ctx, env)
 	sha, err := d.run(ctx, env)
 	if err != nil {
@@ -191,7 +194,9 @@ func (d decision) expandDeleted(ctx context.Context, env *Env, short string) str
 // -D` deletes whatever the ref points to at that moment, so a commit made or a
 // fetch landed after re-validation (the merge check above ran on the old tip)
 // would be destroyed. A moved ref is a skip, not a failure. update-ref does not
-// know about checked-out branches, so that check is repeated right before.
+// know about checked-out branches, so that check is repeated right before; a
+// worktree created in the short window between that check and update-ref is
+// not caught (best effort, documented in ARCHITECTURE.md).
 func (d decision) deleteForced(ctx context.Context, env *Env) (string, error) {
 	ref := "refs/heads/" + d.name
 	if err := d.checkNotCheckedOut(ctx, ref); err != nil {
@@ -239,6 +244,12 @@ var (
 	mergeRef   = regexp.MustCompile(`^refs/heads/[A-Za-z0-9_./+@#%=,-]+$`)
 )
 
+// validRemote applies the remoteName shape and additionally rejects ".."
+// anywhere, so a recorded remote can never climb out of refs/remotes/.
+func validRemote(remote string) bool {
+	return remoteName.MatchString(remote) && !strings.Contains(remote, "..")
+}
+
 // readUpstream returns the branch.<name>.remote/merge configuration to record
 // for undo, or nil when the branch tracks nothing or the values are not
 // something undo would accept.
@@ -251,7 +262,7 @@ func (d decision) readUpstream(ctx context.Context, env *Env) map[string]string 
 		return out
 	}
 	remote, merge := get("remote"), get("merge")
-	if !remoteName.MatchString(remote) || !mergeRef.MatchString(merge) {
+	if !validRemote(remote) || !mergeRef.MatchString(merge) {
 		return nil
 	}
 	return map[string]string{undoUpstreamRemote: remote, undoUpstreamMerge: merge}
@@ -570,19 +581,25 @@ func upstreamFromEntry(undo map[string]string) (upstream, error) {
 	if remote == "" && merge == "" {
 		return upstream{}, nil
 	}
-	if !remoteName.MatchString(remote) || !mergeRef.MatchString(merge) {
+	if !validRemote(remote) || !mergeRef.MatchString(merge) {
 		return upstream{}, fmt.Errorf("invalid upstream %q %q in manifest", remote, merge)
 	}
 	return upstream{remote, merge}, nil
 }
 
-// checkMergeRef lets git judge the recorded merge ref (for example "..").
+// checkMergeRef lets git judge the recorded merge ref and remote (for example
+// ".."), the latter as the refs/remotes/<remote> namespace it is used in.
 func checkMergeRef(ctx context.Context, env *Env, dir string, up upstream) error {
 	if up == (upstream{}) {
 		return nil
 	}
 	if _, err := env.Git.Run(ctx, dir, "check-ref-format", up.merge); err != nil {
 		return fmt.Errorf("invalid upstream ref %q in manifest", up.merge)
+	}
+	if up.remote != "." {
+		if _, err := env.Git.Run(ctx, dir, "check-ref-format", "refs/remotes/"+up.remote+"/x"); err != nil {
+			return fmt.Errorf("invalid upstream remote %q in manifest", up.remote)
+		}
 	}
 	return nil
 }

@@ -228,6 +228,9 @@ func TestDeleteBranchUndoRejectsForgedUpstream(t *testing.T) {
 	tests := []struct{ name, remote, merge string }{
 		{"option remote", "--evil", "refs/heads/x"},
 		{"remote with control character", "or\x01igin", "refs/heads/x"},
+		{"remote with traversal", "..", "refs/heads/x"},
+		{"remote with inner traversal", "a/../b", "refs/heads/x"},
+		{"remote ending in lock", "origin.lock", "refs/heads/x"},
 		{"merge outside heads", "origin", "HEAD"},
 		{"merge with traversal", "origin", "refs/heads/../x"},
 		{"merge with option", "origin", "-x"},

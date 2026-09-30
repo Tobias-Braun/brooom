@@ -69,22 +69,11 @@ func Run(ctx context.Context, env *Env, targets []scope.Target, detectors []Dete
 			opts.OnFinding(f)
 		}
 	}
-	// addErr records a detector failure under the mutex. A repository git
-	// refuses because of dubious ownership is reported once per path as a
-	// skip that names the fix, instead of once per detector.
+	// addErr records a detector failure under the mutex.
 	addErr := func(p pair, err error) {
 		mu.Lock()
 		defer mu.Unlock()
-		var unsafe *gitx.UnsafeRepoError
-		if !errors.As(err, &unsafe) {
-			errs = append(errs, findings.ScanError{Detector: p.d.Name(), Path: p.t.Path, Message: err.Error()})
-			return
-		}
-		if unsafeSeen[p.t.Path] {
-			return
-		}
-		unsafeSeen[p.t.Path] = true
-		errs = append(errs, findings.ScanError{Path: p.t.Path, Message: "skipped: " + unsafe.Error()})
+		errs = appendScanError(errs, unsafeSeen, p, err)
 	}
 	work := make(chan pair)
 	for i := 0; i < n; i++ {
@@ -131,4 +120,20 @@ func safeDetect(ctx context.Context, env *Env, p pair, emit func(findings.Findin
 		}
 	}()
 	return p.d.Detect(ctx, env, p.t, emit)
+}
+
+// appendScanError records a detector failure. A repository git refuses because
+// of dubious ownership is reported once per path as a skip that names the
+// fix, instead of once per detector. The caller holds the mutex guarding both
+// errs and unsafeSeen.
+func appendScanError(errs []findings.ScanError, unsafeSeen map[string]bool, p pair, err error) []findings.ScanError {
+	var unsafe *gitx.UnsafeRepoError
+	if !errors.As(err, &unsafe) {
+		return append(errs, findings.ScanError{Detector: p.d.Name(), Path: p.t.Path, Message: err.Error()})
+	}
+	if unsafeSeen[p.t.Path] {
+		return errs
+	}
+	unsafeSeen[p.t.Path] = true
+	return append(errs, findings.ScanError{Path: p.t.Path, Message: "skipped: " + unsafe.Error()})
 }

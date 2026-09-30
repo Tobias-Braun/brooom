@@ -246,7 +246,10 @@ sha git reports as deleted, which is what the manifest records. Every `-D`
 (chosen up front or escalated after git refuses `-d`) instead runs
 `git update-ref -d refs/heads/<name> <verified tip>` after re-checking that no
 worktree has the branch checked out, so a branch that moved after
-re-validation is skipped ("branch moved during apply") and never deleted;
+re-validation is skipped ("branch moved during apply") and never deleted (the
+checked-out check is best effort: a worktree created between it and
+`update-ref` is not caught; the `-d` path is not compare-and-swap, git itself
+refuses unmerged branches there);
 `branch.<name>.*` is then removed like `git branch -D` does. Before deleting,
 `branch.<name>.remote/merge` are recorded in `Entry.Undo`
 (`upstream_remote`, `upstream_merge`). Undo validates them (name shape, git's
