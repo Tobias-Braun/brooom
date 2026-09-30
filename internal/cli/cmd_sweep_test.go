@@ -70,11 +70,11 @@ func TestSweepDryRunChangesNothing(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	before := f.snapshot()
-	code, out, errOut := brooom(t, "", "sweep")
+	code, out, errOut := brooom(t, "", "sweep", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	for _, want := range []string{"feat/merged", "feat/squash", "re-run 'brooom sweep --apply'"} {
+	for _, want := range []string{"feat/merged", "feat/squash", "$ git branch -d", "re-run 'brooom sweep'"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -87,19 +87,15 @@ func TestSweepDryRunChangesNothing(t *testing.T) {
 	}
 }
 
-func TestSweepApplyConfirmsAndWritesManifest(t *testing.T) {
+// TestSweepAppliesWithoutConfirmation pins the default: sweep acts right away
+// (stdin is empty and not a terminal, so any prompt would fail), records a
+// session for undo, and prints a summary that ends with the reclaimed size and
+// carries no per-item plan or git command.
+func TestSweepAppliesWithoutConfirmation(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 
-	code, _, _ := brooom(t, "", "sweep", "--apply")
-	if code != ExitUsage {
-		t.Fatalf("--apply without confirmation: code %d, want %d", code, ExitUsage)
-	}
-	if !f.hasBranch("feat/merged") || len(f.sessions()) != 0 {
-		t.Fatal("an unconfirmed apply changed something")
-	}
-
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "--apply", "--yes"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", append([]string{"sweep"}, quarantine...)...)
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -110,8 +106,80 @@ func TestSweepApplyConfirmsAndWritesManifest(t *testing.T) {
 	if len(ms) != 1 {
 		t.Fatalf("want 1 session, got %d", len(ms))
 	}
-	if !strings.HasPrefix(ms[0].Command, "brooom sweep --apply --yes") {
-		t.Errorf("manifest command %q", ms[0].Command)
+	for _, bad := range []string{"git ", "$ ", "recovery hints"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("default output contains %q:\n%s", bad, out)
+		}
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if last := lines[len(lines)-1]; last != "2 merged branches removed. 0 B reclaimed" {
+		t.Errorf("last line %q\n%s", last, out)
+	}
+	if !strings.Contains(out, "undo: brooom undo "+ms[0].ID) {
+		t.Errorf("no undo line:\n%s", out)
+	}
+}
+
+// TestSweepVerboseShowsThePlan: --verbose lists the items (and their commands)
+// before applying, then still ends with the summary.
+func TestSweepVerboseShowsThePlan(t *testing.T) {
+	f := newCleanupFixture(t, nil)
+	f.mergedAndSquashed()
+	code, out, errOut := brooom(t, "", append([]string{"sweep", "--verbose"}, quarantine...)...)
+	if code != ExitOK {
+		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
+	}
+	for _, want := range []string{"feat/merged", "$ git branch -d", "summary: 2 applied"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if f.hasBranch("feat/merged") {
+		t.Error("--verbose did not apply")
+	}
+}
+
+// TestSweepQuietPrintsOnlyFailures: a successful quiet sweep is silent.
+func TestSweepQuietPrintsOnlyFailures(t *testing.T) {
+	f := newCleanupFixture(t, nil)
+	f.mergedAndSquashed()
+	code, out, errOut := brooom(t, "", append([]string{"sweep", "-q"}, quarantine...)...)
+	if code != ExitOK || out != "" {
+		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	if f.hasBranch("feat/merged") {
+		t.Error("-q did not apply")
+	}
+}
+
+func TestSweepNothingToClean(t *testing.T) {
+	newCleanupFixture(t, nil)
+	code, out, errOut := brooom(t, "", "sweep")
+	if code != ExitOK || strings.TrimSpace(out) != "nothing to clean" {
+		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
+// TestSweepDeprecatedApplyFlagsStillWork keeps existing scripts running, and
+// rejects the contradiction of --apply with --dry-run.
+func TestSweepDeprecatedApplyFlagsStillWork(t *testing.T) {
+	f := newCleanupFixture(t, nil)
+	f.mergedAndSquashed()
+
+	code, _, errOut := brooom(t, "", "sweep", "--apply", "--dry-run")
+	if code != ExitUsage || !strings.Contains(errOut, "--dry-run") {
+		t.Fatalf("code %d, want %d; stderr %q", code, ExitUsage, errOut)
+	}
+	if !f.hasBranch("feat/merged") {
+		t.Fatal("a rejected invocation changed something")
+	}
+
+	code, out, errOut := brooom(t, "", append([]string{"sweep", "--apply", "--yes"}, quarantine...)...)
+	if code != ExitOK {
+		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
+	}
+	if f.hasBranch("feat/merged") {
+		t.Error("--apply --yes did not apply")
 	}
 }
 

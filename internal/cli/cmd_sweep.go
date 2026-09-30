@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,15 +14,20 @@ import (
 func newSweepCmd(a *app) *cobra.Command {
 	var af applyFlags
 	var preset string
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "sweep",
 		Short: "The no-brainer: scan and clean with a preset",
 		Example: `  brooom sweep
-  brooom sweep --preset standard --apply
+  brooom sweep --dry-run
+  brooom sweep --preset standard
   brooom sweep --workspaces --root ~/code --detector build-artifacts`,
 		Long: sweepLong(),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun && af.apply {
+				return usageError{errors.New("--dry-run and --apply contradict each other; sweep applies unless --dry-run is given")}
+			}
 			p, err := a.resolvePreset(cmd, preset)
 			if err != nil {
 				return err
@@ -29,18 +35,33 @@ func newSweepCmd(a *app) *cobra.Command {
 			if err := a.checkPresetDetectors(p); err != nil {
 				return err
 			}
+			// Sweep acts by default and never asks: --dry-run replaces the
+			// confirmation. A machine format cannot apply (its stream would be
+			// corrupted by the summary), so it keeps producing the read-only report
+			// unless --apply was passed explicitly, which runCleanup rejects.
+			af.apply = af.apply || (!dryRun && !machineFormats[a.flags.format])
+			af.yes = true
 			return a.runCleanup(cmd, cleanupSelection{
 				detectors:     p.Detectors,
 				label:         "sweep",
 				configOverlay: func(c *config.Config) { *c = *presets.Apply(c, p) },
 				minConfidence: p.MinConfidence,
+				compact:       true,
 			}, af)
 		},
 	}
 	cmd.Flags().StringVarP(&preset, "preset", "p", "",
 		fmt.Sprintf("preset: %s (default: sweep.preset from the config, else %s)",
 			strings.Join(presets.Names(), ", "), config.DefaultPreset))
-	addApplyFlags(cmd, &af)
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be cleaned and change nothing")
+	cmd.Flags().BoolVar(&af.force, "force", false, "also act on findings with blocking risk flags (e.g. git branch -D)")
+	cmd.Flags().StringVar(&af.trashStrategy, "trash-strategy", "", "override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files)")
+	// Sweep used to be a dry run that needed these two; scripts that still pass
+	// them keep working, they just no longer change anything.
+	cmd.Flags().BoolVar(&af.apply, "apply", false, "deprecated: sweep applies by default")
+	cmd.Flags().BoolVarP(&af.yes, "yes", "y", false, "deprecated: sweep never asks for confirmation")
+	_ = cmd.Flags().MarkHidden("apply")
+	_ = cmd.Flags().MarkHidden("yes")
 	return cmd
 }
 
@@ -60,9 +81,13 @@ func sweepLong() string {
 does not include. Findings below the preset's minimum confidence are dropped.
 Findings with blocking risk flags are shown as blocked and not planned; only
 an explicit --force lifts them, exactly as in every other command. Presets
-never change the trash strategy, protected branches or the confirmation.
+never change the trash strategy or protected branches.
 
-Like every command, sweep is a dry run unless you pass --apply.`)
+Unlike the other commands, sweep applies right away and does not ask: it
+prints how many items of each kind were removed and how much disk was
+reclaimed. --dry-run lists what it would do, with the commands, and changes
+nothing; --verbose lists every item before applying. Everything is recorded
+for 'brooom undo'.`)
 	return b.String()
 }
 

@@ -46,6 +46,7 @@ func (a *app) invocationArgs(cmd *cobra.Command) []string {
 		arg := a.args[i]
 		switch {
 		case arg == "--apply", strings.HasPrefix(arg, "--apply="),
+			arg == "--dry-run", strings.HasPrefix(arg, "--dry-run="),
 			arg == "--yes", strings.HasPrefix(arg, "--yes="),
 			strings.HasPrefix(arg, "--format="):
 		case arg == "--format":
@@ -142,7 +143,12 @@ func (a *app) applyPlanFor(cmd *cobra.Command) applyPlan {
 	for _, arg := range a.invocationArgs(cmd) {
 		parts = append(parts, a.quote(arg))
 	}
-	return applyPlan{command: strings.Join(append(parts, "--apply"), " ")}
+	// Sweep applies by default, so re-running it without --dry-run is the
+	// whole hint.
+	if cmd.Name() != "sweep" {
+		parts = append(parts, "--apply")
+	}
+	return applyPlan{command: strings.Join(parts, " ")}
 }
 
 // scanApplyCommand suggests how to act on what `brooom scan` (or the bare
@@ -160,7 +166,7 @@ func (a *app) scanApplyPlan(cmd *cobra.Command) applyPlan {
 	detectors := a.detectorFlag()
 	force := forceFlag(cmd)
 	if len(detectors) == 0 {
-		return applyPlan{command: joinCommand("brooom", "sweep", scopeFlags, force, "--apply")}
+		return applyPlan{command: joinCommand("brooom", "sweep", scopeFlags, force)}
 	}
 	if sc := shortcutFor(a.flags.detectors); sc != "" {
 		return applyPlan{command: joinCommand("brooom", sc, scopeFlags, detectors, force, "--apply")}
@@ -292,7 +298,7 @@ func (a *app) applyHint(cmd *cobra.Command, res *scanResult) string {
 	if plan.steps != nil {
 		return "nothing was changed; " + fileStepsText(plan.steps)
 	}
-	if strings.HasPrefix(c, "brooom sweep ") {
+	if c == "brooom sweep" || strings.HasPrefix(c, "brooom sweep ") {
 		return a.sweepHint(cmd, c, res)
 	}
 	return "nothing was changed; run `" + c + "`"

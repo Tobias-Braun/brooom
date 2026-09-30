@@ -42,6 +42,10 @@ type Options struct {
 	// Quiet drops the plan detail, totals, hint and empty-state text of a
 	// dry run and shrinks the apply summary to what a script needs.
 	Quiet bool
+	// Brief replaces the per-item plan and the multi-line apply summary with
+	// one line of counts and the reclaimed size (see renderBriefSummary). It
+	// only affects applying runs; a dry run always shows the plan.
+	Brief bool
 	IO    IO
 	// Store receives the session manifest (required with Apply).
 	Store *session.Store
@@ -246,25 +250,43 @@ func (e *Executor) Run(ctx context.Context, fs []findings.Finding) (*Result, err
 	// The plan and the prompts are ordinary stdout text: the live display
 	// steps aside until the apply phase starts again.
 	e.opts.Progress.Pause()
-	out := e.opts.IO.Out
-	if !e.opts.Quiet {
-		renderPlan(out, plan)
-	}
-	if plan.Empty() {
-		if !e.opts.Quiet {
-			fmt.Fprintln(out, "nothing to clean")
-		}
-		return res, nil
-	}
-	if !e.opts.Apply {
-		if e.opts.Quiet {
-			return res, nil
-		}
-		fmt.Fprintf(out, "dry run: nothing was changed; %s to execute\n", output.Sanitize(e.opts.RerunHint))
+	if e.present(plan, res) {
 		return res, nil
 	}
 	return e.apply(ctx, plan, res)
 }
+
+// present prints the plan and reports whether the run ends there: an empty
+// plan has nothing to execute and a dry run must not. A brief run skips the
+// plan itself and, when nothing is left to do, only speaks up if findings were
+// skipped or failed, because "nothing to clean" would hide them.
+func (e *Executor) present(plan *Plan, res *Result) (done bool) {
+	out := e.opts.IO.Out
+	if !e.opts.Quiet && !e.brief() {
+		renderPlan(out, plan)
+	}
+	if plan.Empty() {
+		switch {
+		case e.opts.Quiet:
+		case e.brief() && res.Skipped+res.Failed > 0:
+			renderBriefSummary(out, res, false)
+		default:
+			fmt.Fprintln(out, "nothing to clean")
+		}
+		return true
+	}
+	if !e.opts.Apply {
+		if !e.opts.Quiet {
+			fmt.Fprintf(out, "dry run: nothing was changed; %s to execute\n", output.Sanitize(e.opts.RerunHint))
+		}
+		return true
+	}
+	return false
+}
+
+// brief reports whether this run prints the brief summary: only an applying
+// run does, so a dry run keeps showing what it would do.
+func (e *Executor) brief() bool { return e.opts.Brief && e.opts.Apply }
 
 // planResult seeds a Result with the skips and failures found while planning.
 func planResult(plan *Plan) *Result {
@@ -356,7 +378,11 @@ func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planS
 	res.ReclaimedBytes = m.ReclaimedBytes
 	res.Skipped = len(res.Skips)
 	e.opts.Progress.Pause()
-	renderSummary(e.opts.IO.Out, res, res.Skips[planSkips:], e.opts.Quiet)
+	if e.brief() {
+		renderBriefSummary(e.opts.IO.Out, res, e.opts.Quiet)
+	} else {
+		renderSummary(e.opts.IO.Out, res, res.Skips[planSkips:], e.opts.Quiet)
+	}
 	return res, runErr
 }
 

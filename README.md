@@ -103,8 +103,8 @@ network access in the whole tool is the opt-in update check:
 
 ```sh
 brooom                      # scan the current repo, dry run
-brooom sweep                # the no-brainer: safe preset, dry run
-brooom sweep --apply        # ...and clean up (asks first)
+brooom sweep                # the no-brainer: safe preset, cleans up right away
+brooom sweep --dry-run      # ...or only show what it would do
 brooom branches --merged    # merged branches, incl. squash merges
 brooom worktrees --apply    # remove leftover worktrees
 brooom ai --user            # agent artifacts, incl. user-level caches
@@ -143,8 +143,11 @@ explicitly.
 
 `brooom sweep [--preset safe|standard|aggressive]` runs a fixed detector set
 with a minimum confidence and a few tuned thresholds. The preset is chosen by
-`--preset`, else by `sweep.preset` in the config, else `safe`. It is always a
-dry run unless you pass `--apply`, blocking risk flags still block, and
+`--preset`, else by `sweep.preset` in the config, else `safe`. Unlike the other
+commands it applies right away and does not ask; it prints what it removed and
+how much disk that reclaimed (`2 worktrees deleted, 5 stale branches removed.
+4.2 GB reclaimed`), `--dry-run` shows the plan instead, `--verbose` lists every
+item, and `brooom undo` restores. Blocking risk flags still block, and
 `.brooom.json` can still tighten what a preset lowers. `--detector` narrows the
 set. The definitions live in `internal/presets`; `brooom sweep --help` prints
 them.

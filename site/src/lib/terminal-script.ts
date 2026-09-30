@@ -4,8 +4,8 @@
  * the real binary: the output is hand-authored, modelled on the sweep flow in
  * internal/action/prompt.go (renderPlan: a "detector / action: N items, SIZE"
  * header per group, each item with its "$ command" line, then "total
- * reclaimable"; per-group confirmation prompts; renderSummary with session
- * and undo hint) and internal/action/executor.go (the lowercase dry run
+ * reclaimable"), internal/action/brief.go (renderBriefSummary, the output of
+ * an applying sweep) and internal/action/executor.go (the lowercase dry run
  * notice). Only the default safe preset is shown, so only detectors that
  * belong to it appear. Every size and path is sample data inside an
  * imaginary demo repository.
@@ -53,8 +53,8 @@ const dim = (text: string): Line => ({ text, tone: 'dim' });
 const bold = (text: string): Line => ({ text, tone: 'bold' });
 const ok = (text: string): Line => ({ text, tone: 'ok' });
 
-export const SWEEP_COMMAND = 'brooom sweep';
-export const APPLY_COMMAND = 'brooom sweep --apply';
+export const DRY_RUN_COMMAND = 'brooom sweep --dry-run';
+export const APPLY_COMMAND = 'brooom sweep';
 
 /**
  * The plan `brooom sweep` prints (renderPlan): a header per detector and
@@ -75,33 +75,27 @@ const planLines: Line[] = [
 /** The dry run: the plan, then the notice that nothing was changed. */
 export const dryRunLines: Line[] = [
   ...planLines,
-  plain('dry run: nothing was changed; re-run with --apply to execute'),
+  plain("dry run: nothing was changed; re-run 'brooom sweep' to execute"),
 ];
 
-/** The confirmation prompts of `--apply`, each auto-answered "y". */
-const confirmLines: Line[] = [
-  plain('merged-branch / delete-branch: apply 2 items (0 B)? [y]es/[n]o/[i]ndividually/[q]uit y'),
-  plain('build-artifacts / trash: apply 1 item (610.0 MB)? [y]es/[n]o/[i]ndividually/[q]uit y'),
-];
-
-/** renderSummary; the real flow prints no per-action progress lines. */
+/**
+ * renderBriefSummary: sweep applies without asking and prints no plan, so this
+ * is the whole output of the real run: the undo line, then the counts and the
+ * reclaimed size as the last line.
+ */
 const summaryLines: Line[] = [
-  plain('summary: 3 applied, 0 skipped, 0 failed'),
-  ok('reclaimed: 610.0 MB'),
-  plain('session: 20260930-142201-3f9a'),
   plain('undo: brooom undo 20260930-142201-3f9a'),
+  ok('2 merged branches removed, 1 build artifact removed. 610.0 MB reclaimed'),
 ];
 
-/** The complete animation: dry run, pause, apply, summary, pause, loop. */
+/** The complete animation: dry run, pause, sweep, summary, pause, loop. */
 export const terminalScript: Step[] = [
-  { kind: 'type', text: SWEEP_COMMAND },
+  { kind: 'type', text: DRY_RUN_COMMAND },
   { kind: 'print', lines: dryRunLines, delay: 55 },
   { kind: 'pause', ms: 3500 },
   { kind: 'clear' },
   { kind: 'type', text: APPLY_COMMAND },
-  { kind: 'print', lines: planLines, delay: 55 },
-  { kind: 'print', lines: confirmLines, delay: 450 },
-  { kind: 'print', lines: summaryLines, delay: 120 },
+  { kind: 'print', lines: summaryLines, delay: 450 },
   { kind: 'pause', ms: 4500 },
 ];
 

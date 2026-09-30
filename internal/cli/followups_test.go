@@ -53,7 +53,7 @@ func TestApplyHintDropsYesAndFormat(t *testing.T) {
 		{"cluster with yes", []string{"branches", "-qy"}, "brooom branches -q --apply"},
 		{"cluster ending in format", []string{"branches", "-qf", "json"}, "brooom branches -q --apply"},
 		{"other flags stay", []string{"sweep", "-y", "-d", "merged-branch", "-f", "table", "--trash-strategy", "quarantine"},
-			"brooom sweep -d merged-branch --trash-strategy quarantine --apply"},
+			"brooom sweep -d merged-branch --trash-strategy quarantine"},
 		{"clean from file", []string{"clean", "--from", "f.json", "--yes", "--format", "json"}, "brooom clean --from f.json --apply"},
 	}
 	for _, tt := range tests {
@@ -79,12 +79,12 @@ func TestScanHintKeepsForce(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"sweep", []string{"scan", "--force"}, "brooom sweep --force --apply"},
-		{"scope flags", []string{"scan", "--force", "-w", "--root", "/r"}, "brooom sweep --workspaces --root /r --force --apply"},
+		{"sweep", []string{"scan", "--force"}, "brooom sweep --force"},
+		{"scope flags", []string{"scan", "--force", "-w", "--root", "/r"}, "brooom sweep --workspaces --root /r --force"},
 		{"shortcut", []string{"scan", "--force", "-d", "merged-branch"}, "brooom branches --detector merged-branch --force --apply"},
 		{"pipeline forces both ends", []string{"scan", "--force", "-d", "git-bloat,logs"},
 			"brooom scan --detector " + findings.Quote("git-bloat,logs") + " --force --format json > brooom-findings.json && brooom clean --from brooom-findings.json --force --apply"},
-		{"without force nothing is added", []string{"scan"}, "brooom sweep --apply"},
+		{"without force nothing is added", []string{"scan"}, "brooom sweep"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -250,15 +250,15 @@ func TestQuietOutputIsExact(t *testing.T) {
 func TestSweepFormatsAndQuiet(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	_, summary, _ := brooom(t, "", "sweep", "-f", "summary")
+	_, summary, _ := brooom(t, "", "sweep", "--dry-run", "-f", "summary")
 	if !strings.Contains(summary, "DETECTOR") || !strings.Contains(summary, "dry run: nothing was changed") {
 		t.Errorf("sweep -f summary:\n%s", summary)
 	}
-	_, table, _ := brooom(t, "", "sweep", "-f", "table")
+	_, table, _ := brooom(t, "", "sweep", "--dry-run", "-f", "table")
 	if table == summary || !strings.Contains(table, "feat/merged") {
 		t.Errorf("sweep -f table:\n%s", table)
 	}
-	code, quiet, errOut := brooom(t, "", "sweep", "-q")
+	code, quiet, errOut := brooom(t, "", "sweep", "--dry-run", "-q")
 	if code != ExitOK || errOut != "" {
 		t.Fatalf("code %d stderr %q", code, errOut)
 	}
