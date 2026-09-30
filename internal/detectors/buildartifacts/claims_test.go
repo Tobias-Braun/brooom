@@ -146,6 +146,10 @@ func TestClaimsIsReadOnly(t *testing.T) {
 	}
 }
 
+// snapshot lists every path with the modification time of regular files only.
+// NTFS reports directory timestamps lazily (they can change between two Stat
+// calls without any write), so directory times would make the comparison flaky
+// on Windows; creating or deleting an entry still shows up as a path change.
 func snapshot(t *testing.T, dir string) []string {
 	t.Helper()
 	var out []string
