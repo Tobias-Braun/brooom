@@ -105,7 +105,7 @@ func (b *trackedBatch) checkRepo(ctx context.Context, env *Env, root string, ps 
 // repoRootOf finds the repository root around a trash target, the same way
 // checkTracked does.
 func repoRootOf(path string) (string, bool) {
-	root, err := scope.FindRepoRoot(trackedStart(path))
+	root, err := scope.FindRepoRoot(repoLookupStart(path))
 	if err != nil {
 		return "", false
 	}
