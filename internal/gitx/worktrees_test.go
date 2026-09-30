@@ -106,7 +106,12 @@ func TestListWorktreesLegacyGit(t *testing.T) {
 		}
 		return "", errors.New("unexpected " + args[0])
 	})
-	repo := &gitx.Repo{Runner: fake, Dir: "."}
+	// Git < 2.31 has no "locked" token, so the administrative directories
+	// must exist for the lock fallback.
+	common := testutil.ResolvedTempDir(t)
+	addAdmin(t, common, "old", missing)
+	addAdmin(t, common, "old-locked", missing+"-locked")
+	repo := &gitx.Repo{Runner: fake, Dir: ".", Common: common}
 	wts, err := repo.ListWorktrees(context.Background())
 	if err != nil {
 		t.Fatal(err)

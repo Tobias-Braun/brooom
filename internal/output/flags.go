@@ -15,6 +15,7 @@ var riskLabels = map[findings.RiskFlag]string{
 	findings.RiskFileOpen:           "open",
 	findings.RiskWorktreeDirty:      "dirty",
 	findings.RiskWorktreeLocked:     "locked",
+	findings.RiskWorktreeOperation:  "operation",
 	findings.RiskHasOpenPR:          "open-pr",
 	findings.RiskCurrentBranch:      "current",
 	findings.RiskProtectedBranch:    "protected",

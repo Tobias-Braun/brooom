@@ -64,7 +64,7 @@ everything. Worktree paths are listed for inspection only: removing them with
 
 Blocking flags force `suggested_action.type = "none"`; actions refuse to act
 on them without `--force`. `--force` never overrides `file_open_by_process`,
-`worktree_locked`, `current_branch` and `protected_branch`
+`worktree_locked`, `worktree_operation_in_progress`, `current_branch` and `protected_branch`
 (`findings.Actionable(flags, force)`).
 
 | Flag | Blocking | Meaning |
@@ -74,6 +74,7 @@ on them without `--force`. `--force` never overrides `file_open_by_process`,
 | `file_open_by_process` | yes | A process has the file open (e.g. log still written) or stands in the directory (Linux: cwd, root, exe; a worktree containing the current directory is flagged the same way). |
 | `worktree_dirty` | yes | Worktree has uncommitted changes. |
 | `worktree_locked` | yes | Worktree is locked. |
+| `worktree_operation_in_progress` | yes | A rebase, merge, cherry-pick, revert or bisect is in progress in the worktree. |
 | `has_open_pr` | yes | An open pull request uses the branch (via `gh`). |
 | `current_branch` | yes | Branch is checked out in some worktree. |
 | `protected_branch` | yes | Branch matches a protected pattern. |

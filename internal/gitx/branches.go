@@ -3,6 +3,7 @@ package gitx
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -64,8 +65,57 @@ func (r *Repo) ListBranches(ctx context.Context) ([]Branch, error) {
 		if err != nil {
 			return nil, err
 		}
-		return parseBranches(out)
+		branches, err := parseBranches(out)
+		if err != nil {
+			return nil, err
+		}
+		return r.markOperationBranches(branches), nil
 	})
+}
+
+// markOperationBranches sets WorktreePath for a branch that a rebase or
+// bisect in progress will return to. Such a branch is not checked out while
+// the operation runs (HEAD is detached), so %(worktreepath) is empty for it,
+// but git refuses to delete it ("used by worktree") and finishing the
+// operation moves it. Treating it as checked out keeps every branch action
+// away from it. The git directories are read from the file system (no extra
+// git call, and a broken worktree registration cannot hide an operation).
+func (r *Repo) markOperationBranches(branches []Branch) []Branch {
+	if r.Common == "" {
+		return branches
+	}
+	for _, dir := range WorktreeGitDirs(r.Common) {
+		name := OperationBranch(dir)
+		if name == "" {
+			continue
+		}
+		if _, _, found := OperationInProgress(dir); !found {
+			continue
+		}
+		for i := range branches {
+			if branches[i].Name == name && branches[i].WorktreePath == "" {
+				branches[i].WorktreePath = worktreeOfGitDir(r.Common, dir)
+			}
+		}
+	}
+	return branches
+}
+
+// worktreeOfGitDir returns the working directory that owns gitDir: the parent
+// of the common directory for the main worktree, the target of the "gitdir"
+// back-pointer for a linked one. The common directory itself is the fallback
+// (bare-like layouts, unreadable pointer), so the result is never empty.
+func worktreeOfGitDir(common, gitDir string) string {
+	if gitDir != common {
+		if ptr := readFirstLine(filepath.Join(gitDir, "gitdir")); ptr != "" {
+			return NormalizePath(filepath.Dir(cleanNative(ptr)))
+		}
+		return gitDir
+	}
+	if filepath.Base(common) == ".git" {
+		return filepath.Dir(common)
+	}
+	return common
 }
 
 func parseBranches(out string) ([]Branch, error) {

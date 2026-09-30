@@ -30,6 +30,9 @@ var operationMarkers = []struct {
 	{"CHERRY_PICK_HEAD", "cherry-pick"},
 	{"REVERT_HEAD", "revert"},
 	{"BISECT_LOG", "bisect"},
+	// A multi-commit cherry-pick or revert keeps its todo list here even
+	// between conflicts, when CHERRY_PICK_HEAD or REVERT_HEAD is absent.
+	{"sequencer", "cherry-pick or revert sequence"},
 }
 
 // OperationInProgress reports the first operation (rebase, merge,

@@ -2,6 +2,7 @@ package gitx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -16,6 +17,10 @@ type Version struct {
 // MinGitVersion is the oldest git Brooom supports (`%(worktreepath)` in
 // for-each-ref arrived in 2.23). Newer features degrade gracefully.
 var MinGitVersion = Version{Major: 2, Minor: 23}
+
+// ErrGitTooOld is returned (wrapped) when the git binary is older than
+// MinGitVersion.
+var ErrGitTooOld = errors.New("git is too old")
 
 var versionRe = regexp.MustCompile(`(\d+)\.(\d+)(?:\.(\d+))?`)
 
