@@ -435,7 +435,10 @@ expiries follow the same rule (`shorterExpiry`): the preset's `90.days.ago`
 replaces a configured `reflog_expire` / `prune_expire` only when it is shorter
 in the restricted comparison of `now`, `never`, `N.days.ago` and `N.weeks.ago`;
 longer, equal and unparseable values are kept, so the default `2.weeks.ago`
-prune expiry is never raised. Overlays never
+prune expiry is never raised. `standard` leaves the log
+categories as configured (it never switches one on, so a category the user
+disabled stays disabled; only `safe` limits them to OS junk and old logs).
+Overlays never
 touch `RecentDays`, protected branches, the trash strategy or `AllowDelete`,
 and never switch `ai-artifacts.user_locations` on. `--detector` is intersected
 with the preset; naming one outside it is a usage error. Preset detectors that

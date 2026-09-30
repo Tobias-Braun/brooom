@@ -21,7 +21,10 @@ Bash (needs the bash-completion package):
     source <(brooom completion bash)
 
   Install it permanently:
-    Linux:  brooom completion bash > /etc/bash_completion.d/brooom
+    Linux (per user, no root needed):
+      mkdir -p ~/.local/share/bash-completion/completions
+      brooom completion bash > ~/.local/share/bash-completion/completions/brooom
+    Linux (system-wide, needs root): brooom completion bash | sudo tee /etc/bash_completion.d/brooom >/dev/null
     macOS (Homebrew): brooom completion bash > "$(brew --prefix)/etc/bash_completion.d/brooom"
 
 Zsh:
@@ -54,11 +57,11 @@ Start a new shell after installing a script.`
 // completionExamples are the per-shell example blocks of the completion
 // command and its subcommands.
 var completionExamples = map[string]string{
-	"": `  brooom completion bash > /etc/bash_completion.d/brooom
+	"": `  brooom completion bash > ~/.local/share/bash-completion/completions/brooom
   brooom completion fish > ~/.config/fish/completions/brooom.fish
   brooom completion powershell | Out-String | Invoke-Expression`,
 	"bash": `  source <(brooom completion bash)
-  brooom completion bash > /etc/bash_completion.d/brooom`,
+  brooom completion bash > ~/.local/share/bash-completion/completions/brooom`,
 	"zsh": `  brooom completion zsh > "${fpath[1]}/_brooom"
   brooom completion zsh --no-descriptions`,
 	"fish": `  brooom completion fish | source

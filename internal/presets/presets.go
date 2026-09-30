@@ -103,7 +103,7 @@ func all() []Preset {
 		},
 		{
 			Name:          Standard,
-			Summary:       "safe plus stale branches, AI tool artifacts and caches",
+			Summary:       "safe plus stale branches and AI tool artifacts",
 			Detectors:     standardDetectors,
 			MinConfidence: findings.ConfidenceMedium,
 			Overlay:       overlayStandard,
@@ -111,7 +111,7 @@ func all() []Preset {
 				"everything in safe, at medium confidence and above",
 				"stale branches",
 				"AI tool artifacts in projects (never user-level locations)",
-				"all log and cache categories",
+				"log and cache categories as configured (safe limits them to OS junk and old logs)",
 			},
 		},
 		{

@@ -266,3 +266,21 @@ func TestCompletionCommand(t *testing.T) {
 		t.Errorf("root help does not list the completion command")
 	}
 }
+
+// TestCompleteRootsWithComma covers a root whose path contains a comma: the
+// positional argument of `roots remove` is one path, only --root is a list.
+func TestCompleteRootsWithComma(t *testing.T) {
+	emptyHome(t)
+	t.Setenv(NoUpdateCheckEnv, "1")
+	root := filepath.Join(t.TempDir(), "a,b")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, "roots", "add", root); code != ExitOK {
+		t.Fatalf("roots add: %d %s", code, errOut)
+	}
+	lines, _ := complete(t, "roots", "remove", root)
+	if got := values(lines); len(got) != 1 || got[0] != root {
+		t.Errorf("roots remove completion = %q, want %q", got, root)
+	}
+}

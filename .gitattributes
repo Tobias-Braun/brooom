@@ -4,3 +4,6 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+
+# The generated CLI reference is compared byte-for-byte by a test.
+docs/cli.md text eol=lf
