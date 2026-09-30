@@ -1,7 +1,6 @@
 package trash
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -111,21 +110,6 @@ func inspectSession(path, id string) QuarantinedSession {
 	}
 	s.SizeBytes, _ = treeSize(path)
 	return s
-}
-
-// loadQuarantineManifest reads manifest.json without the "missing means
-// empty" behaviour of readManifest: listing must tell a missing manifest
-// apart to apply its fallbacks.
-func loadQuarantineManifest(sessionDir string) (*QuarantineManifest, error) {
-	data, err := os.ReadFile(filepath.Join(sessionDir, ManifestName))
-	if err != nil {
-		return nil, err
-	}
-	var m QuarantineManifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, err
-	}
-	return &m, nil
 }
 
 // PurgeResult is the outcome for one session directory.

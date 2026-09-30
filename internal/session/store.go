@@ -54,6 +54,10 @@ func (s *Store) Save(m *Manifest) error {
 		return fmt.Errorf("save session %s: %w", final, err)
 	}
 	syncDir(s.Dir)
+	// The snapshot now contains every journaled entry (callers save their
+	// full in-memory manifest), so the journal is compacted away. A failed
+	// removal is harmless: replay skips entries the snapshot already holds.
+	_ = os.Remove(filepath.Join(s.Dir, m.ID+journalExt))
 	return nil
 }
 
@@ -171,6 +175,15 @@ func (s *Store) readFile(path string) (*Manifest, error) {
 	}
 	if m.ID == "" {
 		return nil, fmt.Errorf("%s: manifest has no id", path)
+	}
+	// Save writes <Dir>/<ID>.json, so a copy such as X.backup.json whose id is
+	// X would otherwise be loaded as X and later saved over the real X.json,
+	// and two files with one id would both show up in List.
+	if want := strings.TrimSuffix(filepath.Base(path), manifestExt); m.ID != want {
+		return nil, fmt.Errorf("%s: manifest id %q does not match its file name %q", path, m.ID, want)
+	}
+	if err := replayJournal(strings.TrimSuffix(path, manifestExt)+journalExt, &m); err != nil {
+		return nil, err
 	}
 	return &m, nil
 }

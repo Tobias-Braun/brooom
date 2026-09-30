@@ -588,6 +588,44 @@ func TestManifestLifecycle(t *testing.T) {
 	}
 }
 
+// TestApplyJournalsEntriesInsteadOfRewritingManifest is the regression test
+// for the quadratic manifest rewrite: while steps run, <id>.json keeps the
+// snapshot taken at the start and every entry is durable in <id>.journal
+// (visible through Load); Finish then folds the journal into the snapshot.
+func TestApplyJournalsEntriesInsteadOfRewritingManifest(t *testing.T) {
+	const id = "20260930-120000-abcd"
+	fx := newFixture(t, func(o *Options) { o.SessionID = id })
+	snapshot := filepath.Join(fx.store.Dir, id+".json")
+	journal := filepath.Join(fx.store.Dir, id+".journal")
+	var start []byte
+	fx.fake(findings.ActionTrash).apply = func(s Step) (session.Entry, error) {
+		cur, err := os.ReadFile(snapshot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if start == nil {
+			start = cur
+		}
+		if string(cur) != string(start) {
+			t.Errorf("manifest snapshot rewritten before %s", label(s.Finding))
+		}
+		return session.Entry{}, nil
+	}
+	if _, err := fx.run(
+		find("d", findings.ActionTrash, fx.path("a"), "", 1),
+		find("d", findings.ActionTrash, fx.path("b"), "", 1),
+		find("d", findings.ActionTrash, fx.path("c"), "", 1),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(journal); !os.IsNotExist(err) {
+		t.Errorf("journal not compacted at finish: %v", err)
+	}
+	if m := fx.manifests()[0]; len(m.Entries) != 3 || m.FinishedAt.IsZero() {
+		t.Errorf("final manifest %+v", m)
+	}
+}
+
 func TestGeneratedSessionID(t *testing.T) {
 	fx := newFixture(t, nil)
 	fx.fake(findings.ActionTrash)

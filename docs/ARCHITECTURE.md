@@ -622,6 +622,16 @@ and `reclaimed_bytes` (sum of `size_bytes` of `applied` entries only; call
 
 `Store.Save` writes atomically (temp file in the same dir, fsync, rename), so
 a crash never leaves a half-written manifest; `*.tmp` files are ignored.
+During a run the executor saves the snapshot once at the start and appends
+one fsynced JSON line per entry to `<id>.journal` (`Store.AppendEntry`), so the
+I/O of an apply is linear instead of rewriting the whole manifest per entry;
+`Finish` saves the full snapshot, which removes the journal. `Load`/`List`
+replay the journal on top of the snapshot (idempotent by entry index, a torn
+last line is ignored). A manifest whose `id` differs from its file name
+(`X.backup.json` holding id `X`) is refused, `List` reports it as a problem.
+The quarantine manifest works the same way: `manifest.json` is written once and
+`manifest.journal` gets one item line per `Remove`; the parsed manifest is
+cached per trasher and `Restore` folds the journal into a rewritten manifest.
 `Load` takes a full id or unique prefix (`ErrNotFound`, `ErrAmbiguous`; ids
 with separators or `..` are refused). `List` returns manifests newest first
 plus `[]Problem` for unreadable, corrupt or unsupported-version files, so one

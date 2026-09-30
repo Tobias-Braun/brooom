@@ -25,6 +25,10 @@ type quarantine struct {
 	// mu serialises Remove and Restore: the item counter and the manifest are
 	// read-modify-written.
 	mu sync.Mutex
+	// manifest caches the parsed manifest of this trasher's own session
+	// (guarded by mu), so Remove does not re-read and re-parse it per item.
+	// Restore drops it because it rewrites the manifest on disk.
+	manifest *QuarantineManifest
 }
 
 // newQuarantine returns the trasher that moves items into
@@ -70,7 +74,7 @@ func (q *quarantine) Remove(ctx context.Context, path string) (Record, error) {
 	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
 		return Record{}, fmt.Errorf("cannot create quarantine directory for %q: %w", path, err)
 	}
-	m, err := readManifest(sessionDir, q.session, q.now())
+	m, err := q.ownManifest(sessionDir)
 	if err != nil {
 		return Record{}, err
 	}
@@ -90,17 +94,39 @@ func (q *quarantine) Remove(ctx context.Context, path string) (Record, error) {
 		RemovedAt:    q.now().UTC(),
 		Restorable:   true,
 	}
-	m.Items = append(m.Items, QuarantineItem{
+	item := QuarantineItem{
 		N: n, OriginalPath: path, StoredPath: filepath.ToSlash(filepath.Join(strconv.Itoa(n), filepath.Base(path))),
 		RemovedAt: rec.RemovedAt, SizeBytes: size, IsDir: rec.IsDir, IsSymlink: isSymlink(fi),
-	})
-	if err := writeManifest(sessionDir, m); err != nil {
+	}
+	if err := appendItem(sessionDir, item); err != nil {
 		return Record{}, q.undoMove(ctx, path, stored, partial, err)
 	}
+	m.Items = append(m.Items, item)
 	if partial != nil {
 		return rec, fmt.Errorf("quarantined %q, but: %w", path, partial)
 	}
 	return rec, nil
+}
+
+// ownManifest returns the cached manifest of this session, loading it on
+// first use. A session without manifest.json gets an empty one written right
+// away: the journal alone would leave `brooom purge` without a creation time.
+// Callers hold q.mu.
+func (q *quarantine) ownManifest(sessionDir string) (*QuarantineManifest, error) {
+	if q.manifest != nil {
+		return q.manifest, nil
+	}
+	m, err := readManifest(sessionDir, q.session, q.now())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Lstat(filepath.Join(sessionDir, ManifestName)); errors.Is(err, fs.ErrNotExist) {
+		if err := writeManifest(sessionDir, m); err != nil {
+			return nil, err
+		}
+	}
+	q.manifest = m
+	return m, nil
 }
 
 // checkRemoveTarget validates path for Remove and returns its Lstat info and
@@ -292,6 +318,7 @@ func (q *quarantine) Restore(ctx context.Context, r Record) error {
 	// After a partial removal the item is complete at its original path, so
 	// the manifest must stop listing it either way.
 	derr := dropFromManifest(loc, r.OriginalPath)
+	q.manifest = nil
 	switch {
 	case partial != nil && derr != nil:
 		return fmt.Errorf("restored %q, but: %w (and %w)", r.OriginalPath, partial, derr)
