@@ -672,7 +672,7 @@ each is validated with git's own dry run before it is offered.
 
 What they do:
 
-  * git gc: repacks loose objects and packs (this can take a while and rewrites packs), deletes unreachable objects older than the configured prune_expire, and also expires reflog entries per gc.reflogExpire / gc.reflogExpireUnreachable (git defaults 90 / 30 days) and runs 'git worktree prune' and 'git rerere gc'. Recovery points are lost too. Stash entries (refs/stash) are kept: Brooom protects them even if gc.refs/stash.reflogExpire is set. Not restorable.
+  * git gc: repacks loose objects and packs (this can take a while and rewrites packs), deletes unreachable objects older than the configured prune_expire, and also expires reflog entries per gc.reflogExpire / gc.reflogExpireUnreachable (git defaults 90 / 30 days) and runs 'git rerere gc'. Recovery points are lost too. Stash entries (refs/stash) are kept: Brooom protects them even if gc.refs/stash.reflogExpire is set. Worktree registrations are kept too (gc.worktreePruneExpire=never); use 'brooom worktrees' to prune them safely. Not restorable.
   * git reflog expire: removes reflog entries older than the date. Deleted branches and reset commits older than that can no longer be recovered via the reflog (entries of unreachable commits also follow gc.reflogExpireUnreachable). Stash entries (refs/stash) are uncommitted work and are never expired; the plan counts the old ones that are kept. Not restorable.
   * git prune: deletes unreachable objects older than the date permanently; commits only reachable through them cannot be recovered. Not restorable.
 

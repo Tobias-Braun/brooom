@@ -156,7 +156,7 @@ func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeE
 	if err := checkRemovable(wt, f); err != nil {
 		return nil, err
 	}
-	if err := checkUnmodified(ctx, path, f); err != nil {
+	if err := checkStillSafe(ctx, env, repo, wt, path, f); err != nil {
 		return nil, err
 	}
 	ev := &removeEval{repo: repo, wt: wt, path: path}
@@ -170,6 +170,17 @@ func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeE
 		return nil, skipf("%s", blockedReason(f.RiskFlags, env.Force))
 	}
 	return ev, nil
+}
+
+// checkStillSafe re-verifies what the scan established and the world may have
+// changed since: a detached HEAD that a remote branch held at scan time can
+// be unreferenced now (the removal deletes HEAD and its reflog), and files
+// may have been edited. Neither is overridable by --force.
+func checkStillSafe(ctx context.Context, env *Env, repo *gitx.Repo, wt gitx.Worktree, path string, f findings.Finding) error {
+	if err := checkDetachedHead(ctx, env, repo, wt); err != nil {
+		return err
+	}
+	return checkUnmodified(ctx, path, f)
 }
 
 // checkUnmodified refuses when any file below the worktree is newer than the

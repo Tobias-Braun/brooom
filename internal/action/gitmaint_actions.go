@@ -17,8 +17,11 @@ import (
 // always passed explicitly so gc never falls back to its own default
 // implicitly. Never `--force`, `--aggressive` or `--cruft`: those are the
 // user's git configuration to decide. gc also expires reflog entries per
-// gc.reflogExpire / gc.reflogExpireUnreachable and runs `git worktree prune`
-// and `git rerere gc`, which is why the hint and the plan say so.
+// gc.reflogExpire / gc.reflogExpireUnreachable and runs `git rerere gc`, which
+// is why the hint and the plan say so. Its built-in `git worktree prune` is
+// switched off (gc.worktreePruneExpire=never): dropping the registration of a
+// missing detached worktree can orphan commits that exist nowhere else, and
+// only `brooom worktrees` may prune after checking that.
 type gitGC struct{}
 
 var gcBase = maintBase{
@@ -48,7 +51,8 @@ func (gitGC) Plan(ctx context.Context, env *Env, f findings.Finding) (Step, erro
 	return Step{
 		Finding: f,
 		Description: fmt.Sprintf("git gc in %s: repack %d loose objects and %d packs, delete unreachable objects older than %s, "+
-			"expire old reflog entries per gc.reflogExpire / gc.reflogExpireUnreachable (NOT restorable)%s",
+			"expire old reflog entries per gc.reflogExpire / gc.reflogExpireUnreachable (NOT restorable); "+
+			"worktree registrations are kept%s",
 			filepath.Base(m.repo.Dir), stats.Count, stats.Packs, m.date, gcStashNote(stashes)),
 		Command: gcCommand(m),
 	}, nil
@@ -70,9 +74,12 @@ func gcCommand(m *maintCtx) string {
 
 // gcArgs is the gc invocation with the stash reflog protected: gc runs
 // `reflog expire --all` internally, so without the protection old stash
-// entries are dropped and their commits pruned.
+// entries are dropped and their commits pruned. Worktree registrations are
+// protected the same way: without it gc runs `git worktree prune` with its
+// 3 month default and drops missing detached worktrees.
 func gcArgs(date string) []string {
-	return append(gitx.StashProtection(), "gc", "--quiet", "--prune="+date)
+	args := append(gitx.StashProtection(), "-c", "gc.worktreePruneExpire=never")
+	return append(args, "gc", "--quiet", "--prune="+date)
 }
 
 // Apply implements Action.
