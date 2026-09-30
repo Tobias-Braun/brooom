@@ -146,7 +146,7 @@ func targetGitBloat(env *Env, f findings.Finding) config.GitBloat {
 	if env.Config == nil {
 		return gitBloatConfig(env)
 	}
-	if cfg, err := env.Config.ForTarget("", f.Path); err == nil {
+	if cfg, err := env.Config.ForTarget(f.Path); err == nil {
 		return cfg.Detectors.GitBloat
 	}
 	return gitBloatConfig(env)

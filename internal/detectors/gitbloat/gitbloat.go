@@ -112,7 +112,7 @@ func (d *Detector) resolve(ctx context.Context, env *detect.Env, target scope.Ta
 	if target.Kind != scope.TargetRepo {
 		return nil, nil
 	}
-	cfg, err := env.Config.ForTarget(target.Scope.Path, target.Path)
+	cfg, err := env.Config.ForTarget(target.Path)
 	if err != nil {
 		return nil, fmt.Errorf("git-bloat: config for %s: %w", target.Path, err)
 	}

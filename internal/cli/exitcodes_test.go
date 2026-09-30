@@ -16,18 +16,15 @@ func TestUsageErrorsExitTwo(t *testing.T) {
 		msg  string
 	}{
 		{"unknown top-level command", []string{"foo"}, ExitUsage, "unknown command"},
-		{"extra arg to scan", []string{"scan", "extra"}, ExitUsage, "unknown command"},
-		{"roots add without path", []string{"roots", "add"}, ExitUsage, "requires at least 1 arg"},
-		{"roots remove without path", []string{"roots", "remove"}, ExitUsage, "requires at least 1 arg"},
+		{"missing path for scan", []string{"scan", "extra"}, ExitUsage, "no such file"},
+		{"two paths for scan", []string{"scan", "a", "b"}, ExitUsage, "accepts at most 1 arg"},
+		{"removed command", []string{"roots"}, ExitUsage, "unknown command"},
 		{"undo too many", []string{"undo", "a", "b"}, ExitUsage, "accepts at most 1 arg"},
 		{"sessions too many", []string{"sessions", "a", "b"}, ExitUsage, "accepts at most 1 arg"},
 		{"config typo", []string{"config", "bogus"}, ExitUsage, "unknown command"},
-		{"roots typo", []string{"roots", "lst"}, ExitUsage, "unknown command"},
-		{"roots ad with arg", []string{"roots", "ad", "~/dev"}, ExitUsage, "unknown command"},
 		{"git typo", []string{"git", "bogus"}, ExitUsage, "unknown command"},
 		{"config show extra", []string{"config", "show", "x"}, ExitUsage, "unknown command"},
 		{"config bare prints help", []string{"config"}, ExitOK, ""},
-		{"roots bare prints help", []string{"roots"}, ExitOK, ""},
 		{"git bare prints help", []string{"git"}, ExitOK, ""},
 	}
 	for _, tc := range tests {

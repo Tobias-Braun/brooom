@@ -8,38 +8,14 @@ import (
 )
 
 // ForTarget returns the effective configuration for a target directory: the
-// global config, overlaid with the matching root's overrides and then with
-// the target's .brooom.json (tighten-only; see ApplyRepoConfig). The receiver
-// is never modified.
-//
-// root is only a hint. If it equals a configured root (compared after
-// ResolvedPath, Clean and best-effort EvalSymlinks) that root is used;
-// otherwise, including root == "", the longest configured root containing
-// target component-wise is selected. If none contains target the root layer
-// is skipped. A relative target is an error. A non-matching hint is never an error, so repo mode (hint = the
-// repo root) and workspace mode get the same overlay for the same directory.
-//
-// The selected root's thresholds replace the global values (root overrides
-// are the user's own and not tighten-only) and its detector toggles set
-// Enabled. RootPath, RootExclude and RepoExclude on the result carry the
-// exclude globs for detectors (see Config).
-func (c *Config) ForTarget(root, target string) (*Config, error) {
-	// A relative target cannot be compared with the (absolute) roots, so the
-	// root overlay would be skipped silently and looser global values applied.
+// global config overlaid with the target's .brooom.json (tighten-only; see
+// ApplyRepoConfig). The receiver is never modified. A relative target is an
+// error, because the .brooom.json of the working directory would be read.
+func (c *Config) ForTarget(target string) (*Config, error) {
 	if !filepath.IsAbs(target) {
 		return nil, fmt.Errorf("config: target %q is not an absolute path", target)
 	}
 	eff := c.clone()
-	eff.RootPath, eff.RootExclude = "", nil
-	sel, err := c.selectRoot(root, target)
-	if err != nil {
-		return nil, err
-	}
-	if sel != nil {
-		if err := eff.applyRoot(sel.root, sel.path); err != nil {
-			return nil, err
-		}
-	}
 	rc, err := LoadRepoConfig(filepath.Join(target, RepoConfigFileName))
 	if err != nil {
 		return nil, err
@@ -48,58 +24,6 @@ func (c *Config) ForTarget(root, target string) (*Config, error) {
 		return eff, nil
 	}
 	return eff.ApplyRepoConfig(rc)
-}
-
-type selectedRoot struct {
-	root Root
-	path string // canonical (symlink-resolved) root path
-}
-
-// selectRoot implements the root selection rules documented on ForTarget.
-func (c *Config) selectRoot(hint, target string) (*selectedRoot, error) {
-	canonTarget := canonicalPath(target)
-	canonHint := ""
-	if hint != "" {
-		canonHint = pathKey(canonicalPath(hint))
-	}
-	var best *selectedRoot
-	for i, r := range c.Roots {
-		rp, err := r.ResolvedPath()
-		if err != nil {
-			return nil, fmt.Errorf("roots[%d].path: %w", i, err)
-		}
-		cp := canonicalPath(rp)
-		if canonHint != "" && pathKey(cp) == canonHint {
-			return &selectedRoot{r, cp}, nil
-		}
-		if pathWithin(cp, canonTarget) && (best == nil || len(cp) > len(best.path)) {
-			best = &selectedRoot{r, cp}
-		}
-	}
-	return best, nil
-}
-
-// applyRoot applies the root's overrides to c in place (c is already a copy).
-func (c *Config) applyRoot(r Root, path string) error {
-	c.RootPath = path
-	c.RootExclude = slices.Clone(r.Exclude)
-	if t := r.Thresholds; t != nil {
-		if t.MinAgeDays != nil {
-			c.Thresholds.MinAgeDays = *t.MinAgeDays
-		}
-		if t.MinSizeBytes != nil {
-			c.Thresholds.MinSizeBytes = *t.MinSizeBytes
-		}
-		if t.RecentDays != nil {
-			c.Thresholds.RecentDays = *t.RecentDays
-		}
-	}
-	for _, name := range sortedKeys(r.Detectors) {
-		if !c.setDetectorEnabled(name, r.Detectors[name]) {
-			return fmt.Errorf("root %s: detectors.%s: unknown detector", r.Path, name)
-		}
-	}
-	return nil
 }
 
 // setDetectorEnabled toggles a detector by name; false means unknown name.
@@ -302,27 +226,6 @@ func cloneCatalogProtect(in []CatalogProtect) []CatalogProtect {
 	return out
 }
 
-func cloneRoots(in []Root) []Root {
-	if in == nil {
-		return nil
-	}
-	out := make([]Root, len(in))
-	for i, r := range in {
-		r.Exclude = slices.Clone(r.Exclude)
-		r.Detectors = cloneMap(r.Detectors)
-		if r.Thresholds != nil {
-			t := ThresholdOverrides{
-				MinAgeDays:   clonePtr(r.Thresholds.MinAgeDays),
-				MinSizeBytes: clonePtr(r.Thresholds.MinSizeBytes),
-				RecentDays:   clonePtr(r.Thresholds.RecentDays),
-			}
-			r.Thresholds = &t
-		}
-		out[i] = r
-	}
-	return out
-}
-
 // Clone returns a deep copy of the configuration including the fields that
 // are never serialised. Callers that adjust a loaded configuration for one
 // run (sweep presets) work on a clone so the loaded value stays untouched.
@@ -332,7 +235,8 @@ func (c *Config) Clone() *Config { return c.clone() }
 // alias slices, maps or pointers of the receiver.
 func (c *Config) clone() *Config {
 	n := *c
-	n.Roots = cloneRoots(c.Roots)
+	n.LegacyRoots = slices.Clone(c.LegacyRoots)
+	n.Deprecated = slices.Clone(c.Deprecated)
 	n.Git.ProtectedBranches = slices.Clone(c.Git.ProtectedBranches)
 	n.Git.BaseBranches = slices.Clone(c.Git.BaseBranches)
 	n.Detectors.AIArtifacts.Tools = cloneMap(c.Detectors.AIArtifacts.Tools)
@@ -345,7 +249,6 @@ func (c *Config) clone() *Config {
 	n.Detectors.BuildArtifacts.ExtraDirs = slices.Clone(c.Detectors.BuildArtifacts.ExtraDirs)
 	n.Trash.PerDetector = cloneMap(c.Trash.PerDetector)
 	n.Scan.SkipDirs = slices.Clone(c.Scan.SkipDirs)
-	n.RootExclude = slices.Clone(c.RootExclude)
 	n.RepoExclude = slices.Clone(c.RepoExclude)
 	return &n
 }

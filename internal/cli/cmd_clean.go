@@ -44,7 +44,7 @@ func newCleanCmd(a *app) *cobra.Command {
 what gets cleaned. Every finding is re-validated before anything is done.
 
 The file is untrusted input. The scope comes from this invocation (the current
-repository, or the configured roots with --workspaces), never from the file:
+repository, or the folder --path names), never from the file:
 findings outside it are refused and make the command exit with 1. User-level
 locations are only accepted with --user. The action in the file only selects
 which action to run; risk flags, sizes and ages in the file are never trusted,
@@ -79,6 +79,7 @@ Windows PowerShell 5.1, which writes UTF-16.`,
 	cmd.Flags().BoolVar(&opts.user, "user", false, "also accept findings in user-level tool locations")
 	addApplyFlags(cmd, &af)
 	addForceFlag(cmd, &af)
+	addPathFlag(cmd, a)
 	return cmd
 }
 
@@ -117,9 +118,6 @@ func (a *app) runClean(cmd *cobra.Command, opts cleanOptions, af applyFlags) err
 // checkCleanUsage validates the flags before the file is read (usage errors,
 // exit 2). --detector is checked against the registry exactly like scan does.
 func (a *app) checkCleanUsage(opts cleanOptions, af applyFlags) (cleanOptions, config.TrashStrategy, error) {
-	if len(a.flags.roots) > 0 && !a.flags.workspaces {
-		return opts, "", usageError{fmt.Errorf("--root only narrows --workspaces; add --workspaces or drop --root")}
-	}
 	if opts.from == "" {
 		return opts, "", usageError{fmt.Errorf("--from is required: give a findings file, or '-' for stdin")}
 	}

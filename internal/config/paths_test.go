@@ -71,19 +71,6 @@ func TestExpandPathUsesHomeOverride(t *testing.T) {
 	}
 }
 
-func TestResolvedPath(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("HOME", h)
-	t.Setenv("USERPROFILE", h)
-	got, err := Root{Path: "~/x/../y"}.ResolvedPath()
-	if err != nil || got != filepath.Join(h, "y") {
-		t.Errorf("got %q, %v", got, err)
-	}
-	if _, err := (Root{Path: "$BROOOM_TEST_UNSET_VAR"}).ResolvedPath(); err == nil {
-		t.Error("undefined variable must be an error")
-	}
-}
-
 func TestIsFilesystemRoot(t *testing.T) {
 	type row struct {
 		path string

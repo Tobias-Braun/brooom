@@ -7,7 +7,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/scope"
@@ -452,12 +451,6 @@ func TestExcludesPruneSubtrees(t *testing.T) {
 		setup func(f *fixture)
 		want  []string
 	}{
-		{"root exclude relative to the target root", func(f *fixture) {
-			f.cfg.Roots = []config.Root{{Path: f.dir, Exclude: []string{"legacy", "scratch"}}}
-		}, []string{"keep/node_modules"}},
-		{"root exclude relative to a parent root", func(f *fixture) {
-			f.cfg.Roots = []config.Root{{Path: filepath.Dir(f.dir), Exclude: []string{filepath.Base(f.dir) + "/scratch", "**/legacy"}}}
-		}, []string{"keep/node_modules"}},
 		{"repo exclude from .brooom.json", func(f *fixture) {
 			testutil.WriteFile(f.t, f.dir, ".brooom.json", `{"version":1,"exclude":["scratch","nested/legacy"]}`)
 		}, []string{"keep/node_modules", "legacy/node_modules"}},
@@ -480,9 +473,9 @@ func TestExcludesPruneSubtrees(t *testing.T) {
 func TestExcludedSubtreeDoesNotCountAsActivity(t *testing.T) {
 	f := newFixture(t, false)
 	f.write("package.json", "node_modules/x", "legacy/new.js")
+	testutil.WriteFile(t, f.dir, ".brooom.json", `{"version":1,"exclude":["legacy"]}`)
 	f.settle(f.daysAgo(100))
 	f.touch("legacy/new.js", f.daysAgo(1))
-	f.cfg.Roots = []config.Root{{Path: f.dir, Exclude: []string{"legacy"}}}
 	if got := f.byRel()["node_modules"]; got.Confidence != high {
 		t.Fatalf("excluded files are not looked at: %+v", got)
 	}
@@ -650,11 +643,13 @@ func TestDisabledAndUserTargets(t *testing.T) {
 		t.Fatalf("disabled: %v", rels(got))
 	}
 	f.cfg.Detectors.BuildArtifacts.Enabled = true
-	f.cfg.Roots = []config.Root{{Path: f.dir, Detectors: map[string]bool{Name: false}}}
+	testutil.WriteFile(t, f.dir, ".brooom.json", `{"version":1,"disable":["build-artifacts"]}`)
 	if got := f.byRel(); len(got) != 0 {
-		t.Fatalf("disabled for the root: %v", rels(got))
+		t.Fatalf("disabled for the repository: %v", rels(got))
 	}
-	f.cfg.Roots = nil
+	if err := os.Remove(filepath.Join(f.dir, ".brooom.json")); err != nil {
+		t.Fatal(err)
+	}
 	tgt := f.target()
 	tgt.Kind = scope.TargetUser
 	out, err := f.runWith(context.Background(), f.env(), tgt)

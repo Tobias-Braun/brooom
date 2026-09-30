@@ -57,9 +57,7 @@ type Options struct {
 	// SessionID is optional; callers that build a quarantine trasher need the
 	// id before the run. Generated with session.NewID when empty.
 	SessionID string
-	// Workspaces is stored in the manifest (see session.Manifest.Workspaces).
-	Workspaces bool
-	// UndoFlags are the pre-quoted scope flags (--workspaces, --root, --config)
+	// UndoFlags are the pre-quoted scope flags (--path, --config)
 	// appended to the printed undo command, so the hint works from anywhere.
 	UndoFlags []string
 	// RerunHint completes the dry-run hint, e.g. "brooom sweep".
@@ -361,7 +359,7 @@ func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planS
 	if id == "" {
 		id = session.NewID(now)
 	}
-	m := &session.Manifest{Version: session.ManifestVersion, ID: id, StartedAt: now.UTC(), Command: e.opts.Command, Workspaces: e.opts.Workspaces, Entries: []session.Entry{}}
+	m := &session.Manifest{Version: session.ManifestVersion, ID: id, StartedAt: now.UTC(), Command: e.opts.Command, Entries: []session.Entry{}}
 	if err := e.opts.Store.Save(m); err != nil {
 		return res, fmt.Errorf("create session manifest (nothing was changed): %w", err)
 	}

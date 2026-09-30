@@ -1,9 +1,8 @@
 // Package scope decides what Brooom is allowed to look at and touch.
 //
 // By default Brooom operates only on the git repository containing the
-// current directory (FindRepoRoot). With --workspaces it operates on every
-// repository and project folder below the configured workspace roots
-// (Discover). Every path a detector reports and every path an action touches
+// current directory (FindRepoRoot). Given a folder as the path argument it
+// operates on every repository and project folder below it (Discover). Every path a detector reports and every path an action touches
 // must be validated through a Guard: the path is made absolute, symlinks are
 // resolved and the result must lie inside one of the allowed locations.
 // Anything outside is refused with ErrOutsideScope.
@@ -38,7 +37,7 @@ var ErrOutsideScope = errors.New("path is outside the allowed scope")
 // outside the scanned repository into scope. Detectors skip such worktrees on
 // purpose; this is the wording every informational finding and blocked reason
 // shares.
-const OutsideWorktreeHint = "outside the allowed scope; run `brooom roots add <parent>` or use --workspaces"
+const OutsideWorktreeHint = "outside the allowed scope; pass the folder that holds the repository and its worktrees as the path, e.g. `brooom sweep after-agents <folder>`"
 
 // ErrNotInRepo is returned by FindRepoRoot when no enclosing git repository
 // exists.
@@ -64,7 +63,7 @@ type Target struct {
 	// Path is the absolute, symlink-resolved directory of the target.
 	Path string
 	// Scope is the scope findings of this target are reported under: the repo
-	// itself in repo mode, the workspace root in --workspaces mode, or the
+	// itself in repo mode, the walked folder of the path argument, or the
 	// user location.
 	Scope findings.Scope
 	// Tool is set for TargetUser: the catalog tool the location belongs to.

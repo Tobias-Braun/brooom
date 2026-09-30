@@ -42,13 +42,6 @@ func (f *purgeFixture) hasObject(id string) bool {
 	return exec.Command("git", "-C", f.repo.Dir, "cat-file", "-e", id).Run() == nil
 }
 
-// workspaceConfig is a config with one root and no gh lookups.
-func workspaceConfig(root string) map[string]any {
-	cfg := rootsConfig(root)
-	cfg["git"] = map[string]any{"use_gh": false}
-	return cfg
-}
-
 // looseCommits creates many loose objects.
 func (f *purgeFixture) looseCommits(n int) {
 	f.t.Helper()
@@ -295,14 +288,13 @@ func TestGitPurgeLinkedWorktreeIsOneOperationPerRepo(t *testing.T) {
 		t.Errorf("%d prune steps, want 1:\n%s", n, out)
 	}
 
-	// The workspace scan sees the main and the linked worktree as targets.
-	t.Chdir(f.repo.Dir)
-	writeConfig(t, f.home, workspaceConfig(f.repo.Dir))
-	code, out, errOut = brooom(t, "", "git", "purge", "--workspaces", "--prune", "now", "--dry-run")
+	// A walked folder sees the main and the linked worktree as targets.
+	t.Chdir(t.TempDir())
+	code, out, errOut = brooom(t, "", "git", "purge", filepath.Dir(f.repo.Dir), "--prune", "now", "--dry-run")
 	if code != ExitOK {
-		t.Fatalf("workspaces: code %d, stderr %q\n%s", code, errOut, out)
+		t.Fatalf("folder: code %d, stderr %q\n%s", code, errOut, out)
 	}
 	if n := strings.Count(out, "git prune in"); n != 1 {
-		t.Errorf("workspaces: %d prune steps, want 1:\n%s", n, out)
+		t.Errorf("folder: %d prune steps, want 1:\n%s", n, out)
 	}
 }

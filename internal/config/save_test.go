@@ -11,14 +11,7 @@ import (
 )
 
 func roundTripConfigs(t *testing.T) map[string]*Config {
-	root := t.TempDir()
 	custom := Default()
-	custom.Roots = []Root{{
-		Path:       root,
-		Exclude:    []string{"node_modules", "**/vendor"},
-		Thresholds: &ThresholdOverrides{MinAgeDays: intp(30), MinSizeBytes: int64p(1 << 40)},
-		Detectors:  map[string]bool{"build-artifacts": false},
-	}}
 	custom.Git.ProtectedBranches = []string{"main", "prod/*"}
 	custom.Detectors.StaleBranch.MinAgeDays = 10
 	custom.Detectors.AIArtifacts.MinAgeDays = intp(3)
@@ -131,6 +124,9 @@ func TestSaveFullContainsEveryTopLevelKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	for k := range jsonFields(reflect.TypeOf(Config{})) {
+		if k == "roots" {
+			continue // a legacy key that is read, never written
+		}
 		if _, ok := m[k]; !ok {
 			t.Errorf("full document lacks %q", k)
 		}

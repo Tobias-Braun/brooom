@@ -64,7 +64,7 @@ func newGitPurgeCmd(a *app) *cobra.Command {
 	var af applyFlags
 	var pf purgeFlags
 	cmd := &cobra.Command{
-		Use:   "purge",
+		Use:   "purge [path]",
 		Short: "Report git bloat and run gc, prune and reflog expiry (each opt-in)",
 		Example: `  brooom git purge
   brooom git purge --gc
@@ -95,9 +95,10 @@ What they do:
 expiry, then prune, then gc, so later steps see the expired reflog. A
 repository with a rebase, merge, cherry-pick, revert or bisect in progress is
 skipped. Large blobs need a history rewrite (git filter-repo), which Brooom
-does not do. Use --workspaces for all repositories below the configured roots.`,
-		Args: cobra.NoArgs,
+does not do. Pass a folder as the path for all repositories below it.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			a.setPath(args)
 			pf.setReflog = cmd.Flags().Changed("reflog-expire")
 			pf.setPrune = cmd.Flags().Changed("prune")
 			return a.runGitPurge(cmd, pf, af)

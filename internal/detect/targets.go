@@ -10,7 +10,7 @@ import (
 // TargetSource is an optional interface of a Detector that needs user-level
 // targets (for example the catalog locations of AI tools below the home
 // directory) in addition to the repositories and project folders the scan
-// pipeline builds from the working directory or the workspace roots.
+// pipeline builds from the working directory or the path argument.
 //
 // The pipeline calls ExtraTargets once per scan on every selected detector
 // that is enabled in the global configuration, appends the returned targets

@@ -116,7 +116,6 @@ func (c *Config) Validate() error {
 	if c.Version < 1 || c.Version > CurrentVersion {
 		p.add("version", "%s", versionMessage(c.Version, CurrentVersion))
 	}
-	validateRoots(&p, c.Roots)
 	validateThresholds(&p, "thresholds", c.Thresholds)
 	validateGit(&p, c.Git)
 	validateDetectors(&p, &c.Detectors)
@@ -167,55 +166,6 @@ func validGlob(pattern string) error {
 
 func hasControlChars(s string) bool {
 	return strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f })
-}
-
-func validateRoots(p *problemList, roots []Root) {
-	seen := map[string]int{}
-	for i, r := range roots {
-		field := fmt.Sprintf("roots[%d]", i)
-		validateRootPath(p, field, r.Path, seen, i)
-		for j, g := range r.Exclude {
-			if err := validGlob(g); err != nil {
-				p.add(fmt.Sprintf("%s.exclude[%d]", field, j), "%v", err)
-			}
-		}
-		for _, name := range sortedKeys(r.Detectors) {
-			if !slices.Contains(DetectorNames(), name) {
-				p.add(field+".detectors."+name, "unknown detector; known detectors: %s", strings.Join(DetectorNames(), ", "))
-			}
-		}
-		if r.Thresholds != nil {
-			validateOverrides(p, field+".thresholds", r.Thresholds)
-		}
-	}
-}
-
-// validateRootPath checks one root path and records it in seen (cleaned,
-// case-folded where the filesystem is) to detect duplicates.
-func validateRootPath(p *problemList, field, raw string, seen map[string]int, idx int) {
-	field += ".path"
-	if strings.TrimSpace(raw) == "" {
-		p.add(field, "must not be empty")
-		return
-	}
-	expanded, err := ExpandPath(raw)
-	if err != nil {
-		p.add(field, "%v", err)
-		return
-	}
-	switch {
-	case !filepath.IsAbs(expanded):
-		p.add(field, "%q must be an absolute path after expansion (got %q)", raw, expanded)
-	case IsFilesystemRoot(expanded):
-		p.add(field, "%q is a filesystem root; choose a workspace folder instead", raw)
-	default:
-		key := pathKey(expanded)
-		if first, dup := seen[key]; dup {
-			p.add(field, "duplicate of roots[%d].path (%q)", first, filepath.Clean(expanded))
-		} else {
-			seen[key] = idx
-		}
-	}
 }
 
 func validateOverrides(p *problemList, field string, t *ThresholdOverrides) {

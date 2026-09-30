@@ -13,7 +13,7 @@ import (
 // TestConfigValidateChecksRepoConfig pins that validate reports what a scan
 // would: a repository .brooom.json that scan rejects must not validate ok.
 func TestConfigValidateChecksRepoConfig(t *testing.T) {
-	cfg, _, _ := rootsEnv(t)
+	cfg, _, _ := configEnv(t)
 	writeFile(t, cfg, `{"version":1}`)
 	repo := testutil.NewRepo(t)
 	t.Chdir(repo.Dir)
@@ -53,22 +53,26 @@ func TestConfigValidateChecksRepoConfig(t *testing.T) {
 	})
 }
 
-// TestConfigValidateWarnsAboutMissingRoots checks that a root that does not
-// exist is only a warning: unmounted volumes are legitimate.
-func TestConfigValidateWarnsAboutMissingRoots(t *testing.T) {
-	cfg, work, _ := rootsEnv(t)
+// TestConfigNotesRemovedRoots: a config of an earlier release with a root
+// registry still loads, and every command that reads it says once that the
+// key is ignored and what replaced it.
+func TestConfigNotesRemovedRoots(t *testing.T) {
+	cfg, work, _ := configEnv(t)
 	t.Chdir(testutil.ResolvedTempDir(t))
-	gone := filepath.Join(work, "gone")
-	quoted, err := json.Marshal(gone)
+	quoted, err := json.Marshal(filepath.Join(work, "ws"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, cfg, `{"version":1,"roots":[{"path":`+string(quoted)+`}]}`)
-	code, out, errOut := run(t, "config", "validate")
-	if code != ExitOK || strings.TrimSpace(out) != "ok" {
-		t.Fatalf("code=%d out=%q err=%q", code, out, errOut)
+	for _, args := range [][]string{{"config", "validate"}, {"scan", work}} {
+		code, _, errOut := run(t, args...)
+		if code != ExitOK || strings.Count(errOut, "note: config: roots:") != 1 || !strings.Contains(errOut, "brooom sweep ~/code") {
+			t.Errorf("%v: code=%d err=%q", args, code, errOut)
+		}
 	}
-	if !strings.Contains(errOut, "warning: roots[0].path") || !strings.Contains(errOut, gone) {
-		t.Errorf("no warning for the missing root:\n%s", errOut)
+	// The empty list `config init` used to write says nothing.
+	writeFile(t, cfg, `{"version":1,"roots":[]}`)
+	if code, _, errOut := run(t, "config", "validate"); code != ExitOK || strings.Contains(errOut, "roots") {
+		t.Errorf("empty roots: code=%d err=%q", code, errOut)
 	}
 }

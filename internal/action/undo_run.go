@@ -253,7 +253,7 @@ func renderUndoSummary(w io.Writer, r *UndoResult) {
 	fmt.Fprintf(w, "summary: %d restored, %d conflicts, %d failed, %d not restorable, %d already restored",
 		r.Restored, r.Conflicts, r.Failed, r.NotRestorable, r.AlreadyRestored)
 	if r.OutsideScope > 0 {
-		fmt.Fprintf(w, ", %d skipped (outside scope; re-run with -w)", r.OutsideScope)
+		fmt.Fprintf(w, ", %d skipped (outside scope; re-run with --path)", r.OutsideScope)
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "session: %s\n", output.Sanitize(r.SessionID))
