@@ -69,7 +69,7 @@ func TestSummaryAndHintsSanitize(t *testing.T) {
 	en := session.Entry{Path: hostilePath, Ref: hostileRef, RecoveryHint: "hint\nfake", Error: "err\nfake"}
 	r := &Result{Applied: 1, Failed: 1, Entries: []session.Entry{en}, Failures: []session.Entry{en}, SessionID: "s1"}
 	var out bytes.Buffer
-	renderSummary(&out, r, []Skip{{Finding: hostileFinding(), Reason: "r\nfake"}})
+	renderSummary(&out, r, []Skip{{Finding: hostileFinding(), Reason: "r\nfake"}}, false)
 	assertClean(t, out.String())
 }
 
