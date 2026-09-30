@@ -41,6 +41,7 @@ func newGitCmd(a *app) *cobra.Command {
 		Example: `  brooom git purge
   brooom git purge --gc --apply`,
 		Args: cobra.NoArgs,
+		RunE: groupRunE,
 	}
 	cmd.AddCommand(newGitPurgeCmd(a))
 	return cmd

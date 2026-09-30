@@ -28,6 +28,11 @@ const (
 	ExitOK    = 0
 	ExitError = 1
 	ExitUsage = 2
+	// ExitScanFailed means nothing was scanned because of scan errors (for
+	// example every repository was skipped), so an empty report is not a
+	// clean bill of health. Partial failures keep exit 0 and report the
+	// errors on the format's error channel.
+	ExitScanFailed = 3
 )
 
 // IO bundles the standard streams so commands are testable.
@@ -91,6 +96,13 @@ type usageError struct{ err error }
 func (e usageError) Error() string { return e.err.Error() }
 func (e usageError) Unwrap() error { return e.err }
 
+// scanFailedError marks a scan that covered no target because of scan errors
+// (exit code 3). The report has already been written when it is returned.
+type scanFailedError struct{ err error }
+
+func (e scanFailedError) Error() string { return e.err.Error() }
+func (e scanFailedError) Unwrap() error { return e.err }
+
 // Main runs the CLI with args (without the program name) and returns the
 // process exit code.
 //
@@ -125,8 +137,12 @@ func executeContext(ctx context.Context, a *app, args []string) int {
 	}
 	fmt.Fprintln(stdio.Err, "brooom:", output.Sanitize(err.Error()))
 	var ue usageError
-	if errors.As(err, &ue) {
+	var sf scanFailedError
+	switch {
+	case errors.As(err, &ue):
 		return ExitUsage
+	case errors.As(err, &sf):
+		return ExitScanFailed
 	}
 	return ExitError
 }
@@ -192,10 +208,35 @@ Without flags Brooom only looks at the git repository you are in. Use
 		newVersionCmd(a),
 		newUpdateCheckCmd(a),
 	)
+	markArgErrorsAsUsage(root)
 	customizeCompletionCmd(root)
 	registerCompletions(root, a)
 	return root
 }
+
+// markArgErrorsAsUsage wraps the positional-argument validator of every
+// command so a wrong invocation (unknown subcommand, missing or extra
+// argument) is a usage error with exit code 2, like a bad flag. Cobra reports
+// these as plain errors, which would otherwise exit 1.
+func markArgErrorsAsUsage(cmd *cobra.Command) {
+	if validate := cmd.Args; validate != nil {
+		cmd.Args = func(c *cobra.Command, args []string) error {
+			if err := validate(c, args); err != nil {
+				return usageError{err}
+			}
+			return nil
+		}
+	}
+	for _, c := range cmd.Commands() {
+		markArgErrorsAsUsage(c)
+	}
+}
+
+// groupRunE is the RunE of commands that only group subcommands. Cobra treats
+// a command without RunE as help-only and never validates its arguments, so
+// `brooom config bogus` would print help and exit 0. With a RunE the NoArgs
+// validator rejects the typo; without arguments the help is printed.
+func groupRunE(cmd *cobra.Command, _ []string) error { return cmd.Help() }
 
 // NewRootCommand returns a fresh command tree without any collaborators wired
 // in. It exists for tooling that only inspects the tree (the CLI reference

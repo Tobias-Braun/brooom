@@ -644,4 +644,7 @@ The full key reference, merge semantics, validation rules and the
 
 ## Exit codes
 
-`0` success, `1` error, `2` usage error.
+`0` success, `1` error, `2` usage error (bad flags, unknown subcommands, wrong
+argument counts), `3` nothing was scanned because of scan errors (for example
+every repository was skipped). A partial scan failure stays `0`; its errors
+are in the report (table, tree, summary, json) or on stderr (plain, ndjson).
