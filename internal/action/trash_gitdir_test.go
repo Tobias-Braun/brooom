@@ -50,6 +50,8 @@ func TestTrashRefusesSeparateGitDir(t *testing.T) {
 	fx := newTrashFixture(t)
 	fx.env.Force = true
 	work := fx.mkdir("work")
+	// git for Windows does not create missing parents of the git dir.
+	fx.mkdir("meta")
 	gitdir := fx.path("meta/store")
 	cmd := exec.Command("git", "init", "-q", "--separate-git-dir", gitdir, work)
 	if out, err := cmd.CombinedOutput(); err != nil {

@@ -8,7 +8,7 @@ import "os"
 // compares device and inode from data the stat already returned, so it has no
 // error path of its own.
 func platformIdentity(path string, follow bool) (fileID, error) {
-	stat := lstat
+	stat := os.Lstat
 	if follow {
 		stat = os.Stat
 	}

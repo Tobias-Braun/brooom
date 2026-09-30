@@ -3,7 +3,6 @@ package action
 import (
 	"errors"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"syscall"
 )
@@ -27,10 +26,6 @@ var isSameEntry = func(a, b string) bool {
 	}
 	return ia.sameAs(ib)
 }
-
-// lstat is os.Lstat, replaceable by tests that need a stat failure a
-// privileged Linux test run cannot provoke with permissions.
-var lstat = os.Lstat
 
 // isAbsent reports whether a stat error means the entry is not there (also
 // when a parent is a file), as opposed to an entry that exists but cannot be
