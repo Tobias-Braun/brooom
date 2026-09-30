@@ -375,9 +375,41 @@ func TestRestoreConflictAndMissingFD(t *testing.T) {
 	}
 }
 
+// TestEnsureTrashDirAllowsSymlinkedHomeRoot: a home trash symlinked to another
+// disk is a common setup and must keep working, while a symlinked files/ is
+// still refused.
+func TestEnsureTrashDirAllowsSymlinkedHomeRoot(t *testing.T) {
+	f, trash, _ := newTestTrasher(t)
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(trash), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, trash); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ensureTrashDir(trash, false); err != nil {
+		t.Fatalf("symlinked home trash root rejected: %v", err)
+	}
+	if err := f.checkRootOnDisk(trash, true); err != nil {
+		t.Errorf("checkRootOnDisk: %v", err)
+	}
+	if err := os.Remove(filepath.Join(target, "files")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(target, "files")); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ensureTrashDir(trash, false); err == nil {
+		t.Error("symlinked files/ accepted")
+	}
+}
+
 func TestFreedesktopRemoveRefusals(t *testing.T) {
 	f, trash, work := newTestTrasher(t)
-	if err := ensureTrashDir(trash, false); err != nil {
+	if err := f.ensureTrashDir(trash, false); err != nil {
 		t.Fatal(err)
 	}
 	inside := filepath.Join(trash, "files", "x")

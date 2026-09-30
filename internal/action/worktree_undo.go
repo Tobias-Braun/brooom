@@ -222,6 +222,9 @@ func recordTrasher(env *Env, rec trash.Record, path string) (trash.Trasher, erro
 	if !gitx.SamePath(rec.OriginalPath, path) {
 		return nil, fmt.Errorf("worktree undo: trash record path %s does not match worktree %s", rec.OriginalPath, path)
 	}
+	if err := checkRecordPaths(rec); err != nil {
+		return nil, fmt.Errorf("worktree undo: %w", err)
+	}
 	if env.TrasherFor == nil {
 		return nil, errors.New("worktree undo: no trasher factory configured")
 	}

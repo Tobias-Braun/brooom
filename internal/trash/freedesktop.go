@@ -25,6 +25,9 @@ type freedesktop struct {
 	now       func() time.Time
 	deviceOf  func(string) (uint64, error)
 	lstat     func(string) (fs.FileInfo, error)
+	// ownerOf reports the uid owning a file; injectable because tests cannot
+	// create foreign-owned directories without root.
+	ownerOf func(fs.FileInfo) (int, bool)
 }
 
 // trashLoc is a chosen trash directory. topdir is empty for the home trash,
@@ -115,7 +118,7 @@ func (f *freedesktop) locate(real string) (trashLoc, error) {
 	if underTrash(real, f.homeTrash) {
 		return trashLoc{}, fmt.Errorf("refusing to trash %q: it is or contains the trash directory %q", real, f.homeTrash)
 	}
-	if err := ensureTrashDir(f.homeTrash, false); err != nil {
+	if err := f.ensureTrashDir(f.homeTrash, false); err != nil {
 		return trashLoc{}, err
 	}
 	home := trashLoc{dir: f.homeTrash}
@@ -147,7 +150,7 @@ func (f *freedesktop) locateTopdir(real, parent string, home trashLoc) (trashLoc
 		}
 	}
 	for _, dir := range topdirCandidates(top, f.uid, f.lstat) {
-		if ensureTrashDir(dir, true) == nil {
+		if f.ensureTrashDir(dir, true) == nil {
 			return trashLoc{dir: dir, topdir: top}, nil
 		}
 	}
@@ -219,9 +222,37 @@ func (f *freedesktop) checkRecord(r Record) (string, error) {
 	if r.InfoPath != "" && r.InfoPath != wantInfo {
 		return "", fmt.Errorf("refusing to restore %q: info path %q does not belong to it", stored, r.InfoPath)
 	}
+	if err := f.checkRootOnDisk(root, r.InfoPath != ""); err != nil {
+		return "", fmt.Errorf("refusing to restore %q: %w", stored, err)
+	}
 	orig := r.OriginalPath
 	if !filepath.IsAbs(orig) || filepath.Clean(orig) != orig || filepath.Dir(orig) == orig {
 		return "", fmt.Errorf("refusing to restore to %q: not a clean absolute non-root path", orig)
 	}
 	return root, nil
+}
+
+// checkRootOnDisk is the filesystem half of checkRecord. A topdir root has to
+// pass the full topdir verification (mount point, owner, mode, no symlinks).
+// The home trash is the user's own tree and only has to keep files/ (and
+// info/, when the record names an info file) as real directories, since
+// Restore moves from and deletes inside them and a symlinked files/ would turn
+// that into access to an arbitrary directory. The check runs before the move
+// and is inherently subject to a time-of-check/time-of-use race; it defends
+// against stale or forged manifests, not against a concurrent local attacker.
+func (f *freedesktop) checkRootOnDisk(root string, withInfo bool) error {
+	if top := f.topdirOf(root); top != "" {
+		return f.checkTopdirRoot(root, top)
+	}
+	subs := []string{"files"}
+	if withInfo {
+		subs = append(subs, "info")
+	}
+	for _, sub := range subs {
+		fi, err := f.lstat(filepath.Join(root, sub))
+		if err != nil || !fi.IsDir() || fi.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%q is not a real directory", filepath.Join(root, sub))
+		}
+	}
+	return nil
 }

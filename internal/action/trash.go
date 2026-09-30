@@ -463,6 +463,9 @@ func (trashAction) Undo(ctx context.Context, env *Env, e session.Entry) error {
 		return err
 	}
 	rec.OriginalPath = dest
+	if err := checkRecordPaths(rec); err != nil {
+		return err
+	}
 	tr, err := env.TrasherFor(rec.Strategy)
 	if err != nil {
 		return fmt.Errorf("trash undo: %w", err)
