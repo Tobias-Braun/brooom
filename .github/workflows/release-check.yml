@@ -9,6 +9,12 @@ on:
       - .github/workflows/release*.yml
       - scripts/install.*
       - scripts/test-install.sh
+      - scripts/test-install.ps1
+      - scripts/smoke-darwin.sh
+      # The shipped macOS binary reaches the Trash through purego.
+      - internal/trash/**
+      - go.mod
+      - go.sum
       - docs/releasing.md
 
 permissions:
@@ -40,6 +46,62 @@ jobs:
       - name: Snapshot binary reports the stamped version
         run: |
           ./dist/brooom_linux_amd64_v1/brooom version --format plain | grep -q SNAPSHOT
+      # The macOS and Windows jobs below smoke-test the real snapshot archives.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-dist
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+          retention-days: 3
+
+  smoke-darwin:
+    name: Smoke darwin/${{ matrix.arch }}
+    needs: goreleaser
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+          - os: macos-15-intel
+            arch: amd64
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: snapshot-dist
+          path: dist
+      - name: Unpack the snapshot binary
+        run: |
+          mkdir bin
+          tar -xzf dist/brooom_*_darwin_${{ matrix.arch }}.tar.gz -C bin brooom
+          file bin/brooom
+      - name: Version, quarantine and Trash run
+        run: sh scripts/smoke-darwin.sh bin/brooom
+
+  install-ps1:
+    name: install.ps1 (${{ matrix.shell }})
+    needs: goreleaser
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: snapshot-dist
+          path: dist
+      - name: Install the snapshot with ${{ matrix.shell }}
+        shell: ${{ matrix.shell }}
+        run: ./scripts/test-install.ps1 -DistDir dist
+      - name: Install against a fake release with ${{ matrix.shell }}
+        shell: ${{ matrix.shell }}
+        run: ./scripts/test-install.ps1
 
   install-script:
     name: Install script (${{ matrix.os }})

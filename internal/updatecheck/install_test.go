@@ -14,6 +14,8 @@ func TestDetectInstall(t *testing.T) {
 	}{
 		{"brew cellar arm", "/opt/homebrew/Cellar/brooom/1.0.0/bin/brooom", env, MethodBrew},
 		{"brew cellar intel", "/usr/local/Cellar/brooom/1.0.0/bin/brooom", env, MethodBrew},
+		{"brew caskroom intel", "/usr/local/Caskroom/brooom/1.0.0/brooom", env, MethodBrew},
+		{"brew caskroom arm", "/opt/homebrew/Caskroom/brooom/1.0.0/brooom", env, MethodBrew},
 		{"linuxbrew", "/home/linuxbrew/.linuxbrew/Homebrew/bin/brooom", env, MethodBrew},
 		{"scoop", `C:\Users\u\scoop\apps\brooom\current\brooom.exe`, winEnv, MethodScoop},
 		{"scoop upper", `C:\Users\u\Scoop\Apps\brooom\1.0.0\brooom.exe`, winEnv, MethodScoop},

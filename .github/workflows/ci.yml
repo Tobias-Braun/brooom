@@ -50,6 +50,29 @@ jobs:
         if: runner.os == 'Windows'
         run: go test -count=1 -v -timeout 8m ./...
 
+  # Releases are built with CGO_ENABLED=0, where macOS reaches the Trash through
+  # purego (Dlopen and objc into NSFileManager). The test job above runs with
+  # cgo, so this job runs the trash tests, including the trashItemAtURL round
+  # trips, the way the shipped binary is built. No -race: it needs cgo. The job
+  # has no path filter, so every change under internal/trash runs it.
+  test-darwin-purego:
+    name: Test purego (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is arm64; the Intel runner covers darwin/amd64.
+        os: [macos-latest, macos-15-intel]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Test trash without cgo
+        env:
+          CGO_ENABLED: "0"
+        run: go test -count=1 -v ./internal/trash/...
+
   build:
     name: Cross-build
     runs-on: ubuntu-latest

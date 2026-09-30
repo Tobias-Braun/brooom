@@ -51,7 +51,9 @@ type Install struct {
 func DetectInstall(exePath string, env InstallEnv) Install {
 	p := normalizePath(exePath)
 	switch {
-	case strings.Contains(p, "/cellar/") || strings.Contains(p, "/homebrew/"):
+	// Casks live in <prefix>/Caskroom, which on Intel Macs (/usr/local) has
+	// no "homebrew" path element, unlike the Apple Silicon prefix.
+	case strings.Contains(p, "/cellar/") || strings.Contains(p, "/caskroom/") || strings.Contains(p, "/homebrew/"):
 		return Install{Method: MethodBrew, Upgrade: "brew upgrade brooom", Suggestion: !PackagesPublished}
 	case strings.Contains(p, "scoop/apps"):
 		return Install{Method: MethodScoop, Upgrade: "scoop update brooom", Suggestion: !PackagesPublished}

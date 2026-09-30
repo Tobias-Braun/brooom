@@ -113,6 +113,16 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/Tobias-Braun/brooom
     description: Sweep disk clutter left behind by AI-assisted development.
+    # The darwin binaries are ad-hoc signed and not notarized, and Homebrew
+    # downloads casks with com.apple.quarantine, so Gatekeeper would block the
+    # first run. Remove the attribute until the binaries are notarized
+    # (notarize.macos needs Apple credentials); then drop this hook.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/brooom"]
+          end
     skip_upload: true
     commit_author:
       name: Tobias Braun
