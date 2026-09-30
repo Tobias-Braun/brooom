@@ -20,6 +20,10 @@ import (
 // returned before anything is created or changed.
 var ErrConfirmationRequired = errors.New("refusing to act without confirmation: stdin is not a terminal; pass --yes to proceed or --dry-run to only preview")
 
+// reasonNotConfirmed is the skip reason of an item the user did not confirm
+// (answered no, or unticked it in the list).
+const reasonNotConfirmed = "not confirmed"
+
 // ErrInterrupted is returned by Run when the context was cancelled (Ctrl-C)
 // between steps. The manifest and summary are complete for what did run.
 var ErrInterrupted = fmt.Errorf("interrupted: %w", context.Canceled)
@@ -38,6 +42,11 @@ type Options struct {
 	Apply bool
 	// Yes skips the confirmation question.
 	Yes bool
+	// Select, when set, adds "e" to the confirmation question: it lets the
+	// user untick items of the plan (setting Item.Confirmed) and reports
+	// whether to go on. False, or an error, changes nothing. The CLI sets it
+	// only when stdin and stdout are terminals.
+	Select func(*Plan) (bool, error)
 	// Force allows acting on findings with overridable blocking risk flags.
 	Force bool
 	// Quiet drops the plan detail, totals, hint and empty-state text of a
@@ -323,7 +332,9 @@ func (e *Executor) apply(ctx context.Context, plan *Plan, res *Result) (*Result,
 	if e.opts.Yes {
 		plan.setConfirmed(true)
 	} else {
-		newConfirmer(e.opts.IO.In, e.opts.IO.Out).confirm(plan)
+		c := newConfirmer(e.opts.IO.In, e.opts.IO.Out)
+		c.sel = e.opts.Select
+		c.confirm(plan)
 	}
 	var confirmed []Item
 	planSkips := len(res.Skips)
@@ -333,7 +344,7 @@ func (e *Executor) apply(ctx context.Context, plan *Plan, res *Result) (*Result,
 				confirmed = append(confirmed, it)
 				continue
 			}
-			res.Skips = append(res.Skips, Skip{it.Step.Finding, "not confirmed"})
+			res.Skips = append(res.Skips, Skip{it.Step.Finding, reasonNotConfirmed})
 		}
 	}
 	res.Skipped = len(res.Skips)

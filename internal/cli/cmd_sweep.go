@@ -57,8 +57,11 @@ func sweepLong() string {
 	b.WriteString(`Scan the repository (or the repository or folder the path names; below a
 folder every repository and project is swept), show what would be cleaned, ask
 once and then clean.
-Answer y to clean everything listed; anything else changes nothing. --yes
-skips the question (for scripts), --dry-run only shows the plan.
+Answer y to clean everything listed; anything else changes nothing. On a
+terminal, e opens a list of every item to untick what should stay (space
+toggles, a toggles a group, enter cleans the checked items, q changes
+nothing). --yes skips the question (for scripts), --dry-run only shows the
+plan.
 
 Presets:
 `)

@@ -100,8 +100,17 @@ func renderBriefSummary(w io.Writer, r *Result, quiet bool) {
 	if quiet {
 		return
 	}
-	if r.Skipped > 0 {
-		fmt.Fprintf(w, "%s skipped (blocked or changed since the scan; run with --verbose for details)\n", plural(r.Skipped, "item"))
+	kept := 0
+	for _, s := range r.Skips {
+		if s.Reason == reasonNotConfirmed {
+			kept++
+		}
+	}
+	if kept > 0 {
+		fmt.Fprintf(w, "%s kept as you chose\n", plural(kept, "item"))
+	}
+	if skipped := r.Skipped - kept; skipped > 0 {
+		fmt.Fprintf(w, "%s skipped (blocked or changed since the scan; run with --verbose for details)\n", plural(skipped, "item"))
 	}
 	if r.Restorable() {
 		fmt.Fprintf(w, "undo: brooom undo %s\n", undoCommandTail(r))

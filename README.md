@@ -168,8 +168,9 @@ explicitly.
 ### Sweep presets
 
 `brooom sweep [preset]` scans with a fixed detector set, shows the plan, asks
-`Proceed? [y/N]` once and then cleans. Only an explicit yes acts; `--yes`
-skips the question and `--dry-run` stops after the plan. Afterwards it prints
+`Proceed? [y/N/e to choose]` once and then cleans. Only an explicit yes acts;
+`e` opens a checklist of every item (all ticked) to untick what should stay;
+`--yes` skips the question and `--dry-run` stops after the plan. Afterwards it prints
 what it removed and how much disk that reclaimed (`2 worktrees deleted, 5
 merged branches removed. 4.2 GB reclaimed`), `--verbose` prints the full
 summary, and `brooom undo` restores. Without a preset, `sweep.preset` in the

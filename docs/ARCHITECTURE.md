@@ -579,7 +579,14 @@ and can be acted on through `clean --from` with `--force`.
 
 The executor shows the plan, asks `Proceed with N items (SIZE)? [y/N]` once
 (`action.confirmer.confirm`, naming permanent deletions in the question) and
-acts on an explicit yes. The terminal check comes after planning, so a run with
+acts on an explicit yes. When `action.Options.Select` is set (the CLI sets it
+only when stdin and stdout are terminals, `app.planSelector`), the question
+offers `e`: `internal/cli/checklist` (bubbletea, alternate screen) lists every
+item ticked, and only the items still ticked on enter run; q, esc, ctrl+c,
+ctrl+d, an error or unticking everything change nothing. Unticked items are
+reported as "kept as you chose", not as skipped. The terminal is handed to
+bubbletea as the `*os.File` itself, otherwise it does not switch to raw mode
+and Enter never arrives; other readers are wrapped so the end of input aborts. The terminal check comes after planning, so a run with
 nothing to do never needs an answer. `compact` becomes `action.Options.Brief`:
 the plan is still shown when the run asks, but the summary is the one line of
 `renderBriefSummary` (`internal/action/brief.go`): failures, a skipped count,
