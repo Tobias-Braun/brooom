@@ -45,7 +45,7 @@ func TestClaimsCovers(t *testing.T) {
 		// A file that merely carries a build directory name is not a build dir.
 		{"dist", false, false},
 		{"src/main.go", false, false},
-		{".claude/run.log", false, true},
+		{".agent/runs/2026/run.jsonl", false, true},
 		{".claude/settings.json", false, false},
 		{"notes/.DS_Store", false, true},
 	}

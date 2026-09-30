@@ -312,14 +312,14 @@ func TestClaimedDirsAreNotDuplicated(t *testing.T) {
 	h.big("node_modules/pkg/other.bin")
 	// Untracked but not ignored: git lists each file, claims must still apply.
 	h.big("dist/bundle.js")
-	h.big(".claude/run.log")
+	h.big(".agent/runs/run.jsonl")
 	h.big("keep/plain.bin")
 	h.big(".claude/notes.bin")
 
 	fs := h.run()
 	h.want(fs, "keep/plain.bin", ".claude/notes.bin")
 	for _, f := range fs {
-		for _, claimed := range []string{"node_modules", "dist", "run.log"} {
+		for _, claimed := range []string{"node_modules", "dist", "run.jsonl"} {
 			if strings.Contains(f.Path, claimed) {
 				t.Errorf("finding %s lies inside a claimed path", f.Path)
 			}
