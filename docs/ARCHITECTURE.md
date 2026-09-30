@@ -215,8 +215,16 @@ uncached) and look worktrees up with `Repo.ListWorktrees` and `gitx.SamePath`.
 
 `remove-worktree` skips when the path is no longer registered, is the main or
 a bare worktree, is locked (never overridable, the reason is quoted), its
-directory is missing, HEAD or branch differ from the finding, or it is dirty
-without `--force`. A clean worktree goes through `git worktree remove` (git's
+directory is missing, HEAD or branch differ from the finding, the current
+directory is inside it or a process has it open (`checkOpen`, both before the
+dirty handling and never overridable), or it is dirty without `--force`.
+
+The `worktrees` detector protects active worktrees the same way: a candidate
+containing the current directory or open by a process gets the blocking
+`file_open_by_process` flag (evidence `worktree_in_use`, action `none`), and a
+candidate modified within `thresholds.recent_days` (fresh mtimes) gets
+`recently_modified` and one lower confidence level, which keeps it out of the
+`safe` preset (high only). A clean worktree goes through `git worktree remove` (git's
 `--force` is never passed; ignored build output is deleted with it and not
 restored by undo). A dirty one needs `--force` and a non-`delete` trasher: the
 directory is moved with `Trasher.Remove`, then `git worktree prune` frees the
@@ -408,8 +416,11 @@ where it is. The trasher also implements the optional `trash.BatchTrasher`
 open file below them) are open by a process. Best effort with a bounded
 timeout (`DefaultTimeout` when the context has no deadline). `ErrUnavailable`
 and `ErrIncomplete` (partial map still returned, `true` entries reliable) mean
-unknown for `false` entries, never "safe". Per OS: `/proc/<pid>/fd` on Linux,
-`lsof` on macOS, Restart Manager on Windows.
+unknown for `false` entries, never "safe". Per OS: `/proc/<pid>/fd` plus the
+`cwd`, `root` and `exe` links on Linux (so a shell standing in a directory
+counts; `(deleted)` targets and `/` are ignored), `lsof` on macOS, Restart
+Manager on Windows. `gitx.CwdWithin` additionally answers on every OS whether
+this process's own working directory is inside a path.
 
 ### Output (`internal/output`)
 

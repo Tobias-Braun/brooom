@@ -144,7 +144,8 @@ Git:
   squash-merge detected via patch-id / `git cherry` against the base branch.
   Merge detection mode configurable (ancestor-only, ancestor+squash).
 - **worktrees**: worktrees whose branch is merged/stale/deleted, worktrees
-  whose directory is missing (prunable), dirty worktrees flagged not
+  whose directory is missing (prunable), worktrees in use or modified
+  recently (agents still working) protected, dirty worktrees flagged not
   suggested.
 - **git-bloat**: loose object count, reflog size, pack count, large blobs;
   suggests `git gc`, `git prune`, reflog expiry, with configurable expiry

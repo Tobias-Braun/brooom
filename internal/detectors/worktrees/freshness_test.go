@@ -62,6 +62,8 @@ func TestRecentlyModifiedFlag(t *testing.T) {
 			ignored := testutil.WriteFile(t, wt, "cache.bin", "old")
 			ageTree(t, wt, testutil.BaseTime)
 			h := wtHarness(t, repo, wt)
+			// The shared harness disables recency; this test is about it.
+			h.env.Config.Thresholds.RecentDays = 2
 			h.env.CacheDir = filepath.Join(t.TempDir(), "cache")
 			one(t, h.detect()) // warm the cache
 

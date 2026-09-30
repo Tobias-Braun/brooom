@@ -88,6 +88,70 @@ func TestScanProcCancelledIsIncomplete(t *testing.T) {
 	}
 }
 
+// TestScanProcWorkingDirectoryRootAndExe covers the links that are not file
+// descriptors: a shell standing in a directory holds no fd on it, yet moving
+// the directory away pulls the floor from under that process.
+func TestScanProcWorkingDirectoryRootAndExe(t *testing.T) {
+	links := map[string]string{
+		"200/cwd":  "/work/tree/sub",
+		"201/cwd":  "/work/exact",
+		"202/cwd":  "/work/gone (deleted)",
+		"203/cwd":  "/",
+		"203/root": "/",
+		"204/root": "/jail/newroot",
+		"205/exe":  "/work/tree/bin/tool",
+		"206/cwd":  "/work/treeextra",
+	}
+	root := fakeProc(t, links)
+
+	dirs := []string{"/work/tree", "/work/exact", "/work/gone", "/jail", "/work/none"}
+	files := []string{"/work/tree/bin/tool"}
+	res := map[string]bool{}
+	for _, p := range append(append([]string{}, dirs...), files...) {
+		res[p] = false
+	}
+	if err := scanProc(context.Background(), root, files, dirs, res); err != nil {
+		t.Fatalf("scanProc: %v", err)
+	}
+	want := map[string]bool{
+		"/work/tree":          true,  // cwd and exe below it, but not /work/treeextra
+		"/work/exact":         true,  // cwd is the directory itself
+		"/work/gone":          false, // deleted cwd names no path
+		"/jail":               true,  // chroot below it
+		"/work/none":          false, // "/" must not match anything
+		"/work/tree/bin/tool": true,  // exe of a running binary
+	}
+	for p, w := range want {
+		if res[p] != w {
+			t.Errorf("%s: got %v, want %v", p, res[p], w)
+		}
+	}
+}
+
+func TestScanProcRootSlashNeverMatchesFilesystemRoot(t *testing.T) {
+	root := fakeProc(t, map[string]string{"1/cwd": "/", "1/root": "/"})
+	res := map[string]bool{"/": false}
+	if err := scanProc(context.Background(), root, nil, []string{"/"}, res); err != nil {
+		t.Fatal(err)
+	}
+	if res["/"] {
+		t.Error("every process has / as cwd or root; it must not count as open")
+	}
+}
+
+// TestOpenFilesSeesOwnWorkingDirectory checks the real /proc: the test
+// process stands in the directory without holding a descriptor on it.
+func TestOpenFilesSeesOwnWorkingDirectory(t *testing.T) {
+	if _, err := os.Stat("/proc/self/cwd"); err != nil {
+		t.Skipf("no readable /proc: %v", err)
+	}
+	dir := resolvedTemp(t)
+	t.Chdir(dir)
+	if !query(t, dir)[dir] {
+		t.Error("own working directory not found")
+	}
+}
+
 func TestOpenFilesSeesOwnProcess(t *testing.T) {
 	// The real /proc must include the test process itself.
 	file := filepath.Join(resolvedTemp(t), "own.log")

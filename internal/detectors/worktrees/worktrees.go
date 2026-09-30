@@ -21,15 +21,18 @@
 // trash instead of deleting. Locked worktrees are never suggested, also not
 // with --force.
 //
-// # Freshness
+// # Active worktrees
 //
-// The newest modification time comes from a Fresh walk.DirSize (the scan cache
-// is refreshed but never trusted, see internal/walk). It feeds the stale rule,
-// LastModified and the informational recently_modified flag (a file changed
-// within recent_days). Repo.IsDirty does not cover this: git status ignores
-// gitignored files, so an in-place edit of build output or an env file is
-// visible only through the file mtime. The remove-worktree action re-checks
-// the newest mtime at apply time.
+// A worktree an agent is working in must never look removable. The newest
+// modification time comes from a Fresh walk.DirSize (the cache would miss
+// in-place writes). A candidate modified within thresholds.recent_days gets
+// the informational recently_modified flag and one lower confidence level
+// (high to medium), which keeps it out of the safe preset. A worktree that
+// contains the working directory of this process, or that a process has open
+// or stands in (procs, best effort per OS), gets the blocking
+// file_open_by_process flag and no action, also with --force. An unavailable
+// open-file check is unknown, not safe: it is noted as evidence and the
+// action re-checks at apply time.
 package worktrees
 
 import (
