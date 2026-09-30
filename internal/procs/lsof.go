@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -156,9 +158,11 @@ func anyBelow(names []string, prefix string) bool {
 	for _, sp := range lsofSpellings(prefix) {
 		// The directory itself is reported when a process stands in it (its
 		// cwd), so the name without the trailing separator counts too.
-		dir := strings.TrimSuffix(sp, "/")
+		// Either separator is accepted so the match behaves the same on
+		// every OS the tests run on (lsof itself only reports "/").
+		dir := strings.TrimSuffix(strings.TrimSuffix(sp, "/"), string(filepath.Separator))
 		for _, n := range names {
-			if len(n) >= len(dir) && strings.EqualFold(n[:len(dir)], dir) && (len(n) == len(dir) || n[len(dir)] == '/') {
+			if len(n) >= len(dir) && strings.EqualFold(n[:len(dir)], dir) && (len(n) == len(dir) || n[len(dir)] == '/' || os.IsPathSeparator(n[len(dir)])) {
 				return true
 			}
 		}
