@@ -90,6 +90,22 @@ func brooomStateDirs() []string {
 	return dirs
 }
 
+// brooomHomeDirs returns the whole Brooom home (config, cache, sessions,
+// quarantine) in its configured and resolved spelling. Unlike
+// brooomStateDirs it also covers config and cache: a restored file there
+// could replace the configuration Brooom trusts.
+func brooomHomeDirs() []string {
+	d, err := config.ResolveDirs()
+	if err != nil {
+		return nil
+	}
+	dirs := []string{d.Home}
+	if r, err := filepath.EvalSymlinks(d.Home); err == nil && r != d.Home {
+		dirs = append(dirs, r)
+	}
+	return dirs
+}
+
 // refuseTarget applies the static refusals of the trash action to a resolved
 // path. They depend on the path alone and are never overridable by --force,
 // because acting on any of them is the highest-damage mistake there is:
@@ -154,21 +170,31 @@ func resolveTarget(env *Env, path string) (string, error) {
 	}
 }
 
+// restoreForbiddenDirs lists every Brooom directory a restore must not write
+// into: the state directories and the whole home with config and cache.
+func restoreForbiddenDirs() []string {
+	return append(brooomStateDirs(), brooomHomeDirs()...)
+}
+
 // refuseRestoreTarget applies the static refusals that matter for writing:
 // a restore destination must never be git metadata or Brooom's own session or
 // quarantine data, since a forged manifest could otherwise plant hooks or
 // rewrite the undo information itself. The check is lexical first and then
 // identity based (os.SameFile on every existing ancestor), because a name
-// comparison alone misses aliases such as Windows 8.3 short names, bind
-// mounts and hard-linked directories. The error is not a skip: a manifest
-// asking for this is corrupt or forged.
+// comparison alone misses aliases such as Windows 8.3 short names and
+// symlinks. Known limit: identity is compared per ancestor of dest, so a bind
+// mount or hard link of .git (or of a state directory) that is reached under
+// a different parent is only caught when the aliased directory itself is an
+// ancestor of dest or has a sibling ".git" entry; the scope guard's allowed
+// roots remain the defence for everything else. The error is not a skip: a
+// manifest asking for this is corrupt or forged.
 func refuseRestoreTarget(dest string) error {
 	if insideGitDir(dest) {
 		return fmt.Errorf("trash undo: refusing to restore to %s: inside .git", dest)
 	}
-	for _, p := range brooomStateDirs() {
+	for _, p := range restoreForbiddenDirs() {
 		if covers(p, dest) {
-			return fmt.Errorf("trash undo: refusing to restore to %s: inside Brooom's session or quarantine data", dest)
+			return fmt.Errorf("trash undo: refusing to restore to %s: inside Brooom's own data (home, sessions or quarantine)", dest)
 		}
 	}
 	return refuseRestoreByIdentity(dest)
@@ -180,7 +206,7 @@ func refuseRestoreTarget(dest string) error {
 // anything yet.
 func refuseRestoreByIdentity(dest string) error {
 	var state []os.FileInfo
-	for _, p := range brooomStateDirs() {
+	for _, p := range restoreForbiddenDirs() {
 		if fi, err := os.Stat(p); err == nil {
 			state = append(state, fi)
 		}
@@ -189,7 +215,7 @@ func refuseRestoreByIdentity(dest string) error {
 		if fi, err := os.Stat(cur); err == nil {
 			for _, s := range state {
 				if os.SameFile(fi, s) {
-					return fmt.Errorf("trash undo: refusing to restore to %s: inside Brooom's session or quarantine data", dest)
+					return fmt.Errorf("trash undo: refusing to restore to %s: inside Brooom's own data (home, sessions or quarantine)", dest)
 				}
 			}
 			if g, err := os.Stat(filepath.Join(filepath.Dir(cur), ".git")); err == nil && os.SameFile(fi, g) {

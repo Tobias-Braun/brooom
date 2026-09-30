@@ -200,14 +200,21 @@ reason at the first failure:
 Not overridable by `--force`: steps 1, 2, 3, 4 (open files, also via the
 `file_open_by_process` flag) and 7. `--force` only lifts blocking risk flags
 and the tracked-files check. `Apply` re-resolves and re-checks the static
-refusals, then re-runs the nested `.git`, open-file and delete+untracked
-checks (a step may come from any caller), removes the re-resolved path and returns a manifest entry with the
+refusals, then re-runs the nested `.git`, open-file, tracked-files and
+delete-strategy checks against live state (a step may come from any caller, so
+neither its `Meta` nor its risk flags are trusted; the delete strategy needs
+git to show that the path holds no untracked, non-ignored file, and is refused
+outside a repository). The nested `.git` check walks the tree a second time.
+`Apply` removes the re-resolved path and returns a manifest entry with the
 trash record; a path that vanished is a skip, not a failure. `Undo` restores
 with the strategy recorded in the entry (`Env.TrasherFor`), never the
 configured one, after checking that the original path lies inside the allowed
-roots and is neither inside `.git` nor inside the Brooom sessions or
-quarantine dirs (by name, then by file identity of every existing ancestor, so
-aliases like 8.3 short names are caught); `ErrRestoreConflict` and `ErrNotRestorable` are passed through.
+roots and is neither inside `.git` nor inside the Brooom home (config, cache,
+sessions, quarantine). That check is by name, then by file identity of every
+existing ancestor, so aliases like 8.3 short names and symlinks are caught;
+bind mounts or hard links of `.git` under another parent are not (the scope
+guard is the defence there). `ErrRestoreConflict` and `ErrNotRestorable` are
+passed through.
 
 #### The worktree actions
 

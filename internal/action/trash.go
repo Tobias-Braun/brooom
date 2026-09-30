@@ -78,7 +78,7 @@ func (trashAction) Plan(ctx context.Context, env *Env, f findings.Finding) (Step
 	if tracked {
 		notes = append(notes, "tracked files")
 	}
-	strategy, err := planStrategy(env, f)
+	strategy, err := planStrategy(ctx, env, f, path)
 	if err != nil {
 		return Step{}, err
 	}
@@ -166,17 +166,51 @@ func unknownTracked(env *Env, why string) (bool, error) {
 // planStrategy resolves the trasher the finding will be removed with and
 // enforces the delete-strategy guard: permanent deletion of untracked files
 // is refused even with --force, since they may be the only copy of the
-// user's work. It returns the strategy for the step description.
-func planStrategy(env *Env, f findings.Finding) (config.TrashStrategy, error) {
+// user's work. The finding's Meta hint is honoured, but it is never the
+// proof of safety: a step from any caller may carry empty Meta, so permanent
+// deletion additionally requires live git state to show that the path holds
+// no untracked, non-ignored file. Outside a repository, or when git cannot
+// answer, that cannot be shown and the deletion is refused. It returns the
+// strategy for the step description.
+func planStrategy(ctx context.Context, env *Env, f findings.Finding, path string) (config.TrashStrategy, error) {
 	tr, err := trasherFor(env, f.Detector)
 	if err != nil {
 		return "", err
 	}
 	strategy := tr.Strategy()
-	if strategy == config.StrategyDelete && f.Meta[metaUserDataRisk] == userDataUntracked {
+	if strategy != config.StrategyDelete {
+		return strategy, nil
+	}
+	if f.Meta[metaUserDataRisk] == userDataUntracked {
 		return "", skipf("refusing to permanently delete untracked files; use --trash-strategy trash or quarantine")
 	}
+	if err := proveNoUntracked(ctx, env, path); err != nil {
+		return "", err
+	}
 	return strategy, nil
+}
+
+// proveNoUntracked succeeds only when git reports no untracked, non-ignored
+// file below path. Ignored files are regenerable by definition and tracked
+// files are recoverable from history; anything else may be the only copy.
+func proveNoUntracked(ctx context.Context, env *Env, path string) error {
+	const refuse = "refusing to permanently delete %s; use --trash-strategy trash or quarantine"
+	start := path
+	if fi, err := os.Lstat(path); err != nil || !fi.IsDir() {
+		start = filepath.Dir(path)
+	}
+	root, err := scope.FindRepoRoot(start)
+	if err != nil || env.Git == nil {
+		return skipf(refuse, "a path outside a git repository (cannot show that it holds no untracked files)")
+	}
+	out, err := env.Git.Run(ctx, root, "ls-files", "-z", "--others", "--exclude-standard", "--", path)
+	if err != nil {
+		return skipf(refuse, "a path git cannot inspect (cannot show that it holds no untracked files)")
+	}
+	if strings.Trim(out, "\x00 \n") != "" {
+		return skipf(refuse, "untracked files")
+	}
+	return nil
 }
 
 func trasherFor(env *Env, detector string) (trash.Trasher, error) {
@@ -289,9 +323,14 @@ func (trashAction) Apply(ctx context.Context, env *Env, s Step) (session.Entry, 
 	return appliedEntry(en, rec), nil
 }
 
-// recheckStep repeats the Plan checks that cannot be overridden by --force
-// and are not purely static. A path that vanished is left to the caller's
-// existence check, which runs before this one.
+// recheckStep repeats the live-state checks of Plan: nested repositories,
+// open files, tracked files (skipped without --force) and the delete-strategy
+// guard. Nothing here trusts the step's Meta or risk flags. A path that
+// vanished is left to the caller's existence check, which runs before this
+// one. refreshFinding walks the whole tree once more, so a large directory
+// is scanned twice per run (Plan, then Apply); that is the price of not
+// trusting a step, and the walk is only needed for the nested .git check
+// here, its size result is discarded.
 func recheckStep(ctx context.Context, env *Env, f findings.Finding, path string) error {
 	if _, err := refreshFinding(ctx, f, path); err != nil {
 		return err
@@ -299,7 +338,10 @@ func recheckStep(ctx context.Context, env *Env, f findings.Finding, path string)
 	if _, err := checkOpen(ctx, path); err != nil {
 		return err
 	}
-	_, err := planStrategy(env, f)
+	if _, err := checkTracked(ctx, env, path); err != nil {
+		return err
+	}
+	_, err := planStrategy(ctx, env, f, path)
 	return err
 }
 
