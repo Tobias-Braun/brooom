@@ -167,7 +167,7 @@ func (s *scan) mergedSkip(ctx context.Context, name string) (bool, error) {
 		return false, nil
 	}
 	squash := s.cfg.Detectors.MergedBranch.Mode == config.MergeAncestorSquash
-	res, err := s.repo.MergedInto(ctx, s.base.Ref, name, squash)
+	res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/heads/"+name, squash)
 	if err != nil {
 		return false, fmt.Errorf("stale-branch: check whether branch %q is merged into %s: %w", name, s.base.Ref, err)
 	}

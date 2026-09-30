@@ -123,7 +123,7 @@ func (s *scan) mergedRule(ctx context.Context, e *entry) (verdict, bool, error) 
 	if e.wt.Detached || b == "" || !s.hasBase || gitx.IsBaseBranch(s.base, s.cfg.Git.BaseBranches, b) {
 		return verdict{}, false, nil
 	}
-	res, err := s.repo.MergedInto(ctx, s.base.Ref, e.wt.BranchRef, s.squash)
+	res, err := s.repo.MergedInto(ctx, s.base.FullRef, e.wt.BranchRef, s.squash)
 	if err != nil || !res.Merged {
 		return verdict{}, false, ctxErr(ctx)
 	}
@@ -158,7 +158,7 @@ func (s *scan) detachedRule(ctx context.Context, e *entry) (verdict, bool, error
 // when none does (or when that is unknown).
 func (s *scan) containedIn(ctx context.Context, sha string) (string, error) {
 	if s.hasBase {
-		ok, err := s.repo.IsAncestor(ctx, sha, s.base.Ref)
+		ok, err := s.repo.IsAncestor(ctx, sha, s.base.FullRef)
 		if err != nil {
 			if cerr := ctxErr(ctx); cerr != nil {
 				return "", cerr

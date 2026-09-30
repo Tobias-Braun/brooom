@@ -25,7 +25,7 @@ func TestDefaultBase(t *testing.T) {
 			name:  "origin/HEAD wins",
 			setup: testutil.NewRepoWithRemote,
 			conf:  []string{"master"},
-			want:  gitx.Base{Ref: "origin/main", Name: "main", Remote: "origin", Source: gitx.BaseSourceOriginHead},
+			want:  gitx.Base{Ref: "origin/main", FullRef: "refs/remotes/origin/main", Name: "main", Remote: "origin", Source: gitx.BaseSourceOriginHead},
 		},
 		{
 			name: "no origin/HEAD, configured remote ref",
@@ -35,7 +35,7 @@ func TestDefaultBase(t *testing.T) {
 				return repo
 			},
 			conf: configured,
-			want: gitx.Base{Ref: "origin/main", Name: "main", Remote: "origin", Source: gitx.BaseSourceConfigRemote},
+			want: gitx.Base{Ref: "origin/main", FullRef: "refs/remotes/origin/main", Name: "main", Remote: "origin", Source: gitx.BaseSourceConfigRemote},
 		},
 		{
 			name: "dangling origin/HEAD falls back to local",
@@ -45,13 +45,13 @@ func TestDefaultBase(t *testing.T) {
 				return repo
 			},
 			conf: configured,
-			want: gitx.Base{Ref: "main", Name: "main", Source: gitx.BaseSourceConfigLocal},
+			want: gitx.Base{Ref: "main", FullRef: "refs/heads/main", Name: "main", Source: gitx.BaseSourceConfigLocal},
 		},
 		{
 			name:  "no remote, local main",
 			setup: testutil.NewRepo,
 			conf:  configured,
-			want:  gitx.Base{Ref: "main", Name: "main", Source: gitx.BaseSourceConfigLocal},
+			want:  gitx.Base{Ref: "main", FullRef: "refs/heads/main", Name: "main", Source: gitx.BaseSourceConfigLocal},
 		},
 		{
 			name: "only master",
@@ -61,7 +61,7 @@ func TestDefaultBase(t *testing.T) {
 				return repo
 			},
 			conf: configured,
-			want: gitx.Base{Ref: "master", Name: "master", Source: gitx.BaseSourceConfigLocal},
+			want: gitx.Base{Ref: "master", FullRef: "refs/heads/master", Name: "master", Source: gitx.BaseSourceConfigLocal},
 		},
 		{
 			name:    "nothing matches",

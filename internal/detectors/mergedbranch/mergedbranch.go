@@ -216,7 +216,7 @@ func (s *scan) localBranch(ctx context.Context, b gitx.Branch) error {
 	if s.unstarted(ctx, b) {
 		return nil
 	}
-	res, err := s.repo.MergedInto(ctx, s.base.Ref, b.Name, s.squash)
+	res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/heads/"+b.Name, s.squash)
 	if err != nil {
 		// One unclassifiable branch must not hide the others, but it must
 		// not vanish silently either.
@@ -454,7 +454,7 @@ func (s *scan) remoteBranches(ctx context.Context) error {
 		if s.skipRemote(rb) {
 			continue
 		}
-		res, err := s.repo.MergedInto(ctx, s.base.Ref, rb.Name, s.squash)
+		res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/remotes/"+rb.Name, s.squash)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()

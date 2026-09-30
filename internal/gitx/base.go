@@ -20,8 +20,13 @@ const (
 
 // Base is the resolved base branch merge detection compares against.
 type Base struct {
-	// Ref is the ref to compare against: "origin/main" or a local "main".
+	// Ref is the short form "origin/main" or a local "main". It is for
+	// display only: git resolves tags and local branches before remote-tracking
+	// refs, so a branch named "origin/main" would shadow it.
 	Ref string
+	// FullRef is the fully qualified ref ("refs/remotes/origin/main" or
+	// "refs/heads/main") that every git call must use.
+	FullRef string
 	// Name is the branch name without remote, e.g. "main".
 	Name string
 	// Remote is "origin" when Ref is a remote-tracking ref, else empty.
@@ -45,10 +50,10 @@ func (r *Repo) DefaultBase(ctx context.Context, configured []string) (Base, erro
 		}
 		for _, name := range configured {
 			if r.refExists(ctx, "refs/remotes/"+originRemote+"/"+name) {
-				return Base{Ref: originRemote + "/" + name, Name: name, Remote: originRemote, Source: BaseSourceConfigRemote}, nil
+				return Base{Ref: originRemote + "/" + name, FullRef: "refs/remotes/" + originRemote + "/" + name, Name: name, Remote: originRemote, Source: BaseSourceConfigRemote}, nil
 			}
 			if r.refExists(ctx, "refs/heads/"+name) {
-				return Base{Ref: name, Name: name, Source: BaseSourceConfigLocal}, nil
+				return Base{Ref: name, FullRef: "refs/heads/" + name, Name: name, Source: BaseSourceConfigLocal}, nil
 			}
 		}
 		return Base{}, ErrNoBase
@@ -68,7 +73,7 @@ func (r *Repo) originHeadBase(ctx context.Context) (Base, bool) {
 		return Base{}, false
 	}
 	name := strings.TrimPrefix(target, prefix)
-	return Base{Ref: originRemote + "/" + name, Name: name, Remote: originRemote, Source: BaseSourceOriginHead}, true
+	return Base{Ref: originRemote + "/" + name, FullRef: target, Name: name, Remote: originRemote, Source: BaseSourceOriginHead}, true
 }
 
 // IsBaseBranch reports whether the local branch name is a base branch: the
