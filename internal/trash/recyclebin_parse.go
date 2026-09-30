@@ -117,7 +117,9 @@ func validateBinPath(path string) error {
 	if err := checkComponents(path, rest); err != nil {
 		return err
 	}
-	if len(path) > maxShellPath {
+	// The limit counts UTF-16 code units, not UTF-8 bytes: a path of many
+	// non-ASCII characters is short for the shell but long in bytes.
+	if len(utf16.Encode([]rune(path))) > maxShellPath {
 		return fmt.Errorf("cannot move %s to the Recycle Bin: the path is longer than %d characters, which the Windows shell API does not support; %s", path, maxShellPath, quarantineHint)
 	}
 	return nil
@@ -309,7 +311,10 @@ func infoNameOf(storedItem string) string { return "$I" + strings.TrimPrefix(sto
 
 // matchTolerance is how far a $I deletion time may differ from the time of
 // the call. The shell stamps it a moment after brooom read the clock.
-const matchTolerance = 5 * time.Second
+// It is generous because the shell stamps the time only after it has walked
+// and moved the whole tree, which takes long for a large directory. A wider
+// window stays safe: the original path must match too and the newest match wins.
+const matchTolerance = 30 * time.Second
 
 // chooseRecycled returns the newest entry whose original path equals orig
 // (case-insensitive, normalised) and whose deletion time is within tol of at.
@@ -330,6 +335,26 @@ func chooseRecycled(entries []binEntry, orig string, at time.Time, tol time.Dura
 		}
 	}
 	return best, found
+}
+
+// checkBinInfoPath verifies that info is exactly the $I file that belongs to
+// the $R item stored: same directory, name derived from the stored name. A
+// tampered manifest thus cannot get the metadata of another item deleted.
+func checkBinInfoPath(info, stored string) error {
+	svol, srest, _ := winSplit(stored)
+	ivol, irest, _ := winSplit(info)
+	if len(srest) == 0 || len(irest) != len(srest) || !strings.EqualFold(svol, ivol) {
+		return fmt.Errorf("refusing %q: it does not belong to %q", info, stored)
+	}
+	for i := 0; i < len(srest)-1; i++ {
+		if !strings.EqualFold(srest[i], irest[i]) {
+			return fmt.Errorf("refusing %q: it does not belong to %q", info, stored)
+		}
+	}
+	if irest[len(irest)-1] != infoNameOf(srest[len(srest)-1]) {
+		return fmt.Errorf("refusing %q: it does not belong to %q", info, stored)
+	}
+	return nil
 }
 
 // checkBinItemPath verifies that p is a direct item of a per-user bin
@@ -393,4 +418,14 @@ func shellErrorMessage(code int) string {
 
 // isInUseCode reports whether a shell result code means a locked file:
 // ERROR_SHARING_VIOLATION (32) and ERROR_LOCK_VIOLATION (33).
-func isInUseCode(code int) bool { return code == 32 || code == 33 }
+func isInUseCode(code int) bool {
+	return code == errorSharingViolation || code == errorLockViolation
+}
+
+// Win32 error codes used to classify shell results. They are plain numbers
+// here because this file has no build tag and syscall.Errno constants for
+// them exist on Windows only.
+const (
+	errorSharingViolation = 32
+	errorLockViolation    = 33
+)

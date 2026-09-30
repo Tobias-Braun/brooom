@@ -55,6 +55,11 @@ cleanup safe, fast and reviewable.
   filesystems, Windows file locking and the three OS trash implementations
   (Recycle Bin, macOS Trash via a Finder-compatible mechanism, freedesktop
   trash spec on Linux) behind one interface.
+- Windows Recycle Bin limits: the shell API behind it does not accept
+  `\\?\` long-path prefixes, so paths longer than 259 UTF-16 characters are
+  refused with a hint to use `--trash-strategy quarantine`. The same refusal
+  applies when the bin is disabled or too small for an item, because Windows
+  would delete such items permanently; brooom never lets that happen silently.
 - Release track with GoReleaser + GitHub Actions: tagged releases build
   binaries for all platform/arch combinations, produce checksums and a
   changelog, and publish GitHub releases. Package manager publishing

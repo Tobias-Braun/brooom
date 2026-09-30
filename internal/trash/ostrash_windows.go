@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,8 +24,10 @@ import (
 // Observed behaviour of FOF_WANTNUKEWARNING (a nuke situation must end in an
 // abort with the source intact, not in a deletion): this could not be
 // verified while writing the code, because no Windows machine was available.
-// The pre-flight is the safeguard that does not depend on it, and the loss
-// detector after the call reports what would still slip through.
+// TestNukeSituationKeepsItem exercises it on Windows CI (it shrinks the bin
+// limit of the test volume and calls the shell directly) and logs the observed
+// outcome; the pre-flight is the safeguard that does not depend on it, and the
+// loss detector after the call reports what would still slip through.
 type winTrash struct {
 	now        func() time.Time
 	settings   binSettingsReader
@@ -113,7 +116,7 @@ func shellFailure(path string, code int, aborted bool) error {
 	case isInUseCode(code):
 		return fmt.Errorf("cannot move %s to the Recycle Bin: file is in use by another process: %w", path, syscall.Errno(code))
 	case code == 0 && aborted && statErr == nil:
-		return fmt.Errorf("cannot move %s to the Recycle Bin: file is in use by another process (the operation was aborted): %w", path, syscall.Errno(32))
+		return fmt.Errorf("cannot move %s to the Recycle Bin: file is in use by another process (the operation was aborted): %w", path, syscall.Errno(errorSharingViolation))
 	case code == 0:
 		return fmt.Errorf("cannot move %s to the Recycle Bin: the operation was aborted", path)
 	}
@@ -136,12 +139,18 @@ func withIntegrityNote(err error, path string, before int64) error {
 // last-resort loss detector: when the source is gone and a readable bin has
 // no matching pair, the item was deleted permanently and that is reported as
 // an error. If the bin itself cannot be read, the removal counts as done but
-// is flagged non-restorable; the item is still in the bin for Explorer.
+// is flagged non-restorable; the item is still in the bin for Explorer. A bin
+// directory that does not exist at all is a permanent deletion.
 func (w *winTrash) recordRemoval(rec Record, at time.Time) (Record, error) {
 	if _, err := os.Lstat(rec.OriginalPath); err == nil {
 		return Record{}, fmt.Errorf("the Recycle Bin reported success for %s but it still exists", rec.OriginalPath)
 	}
 	dir, entries, err := listBin(rec.OriginalPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		// The source is gone and the user's bin directory does not exist, so
+		// the shell cannot have put it anywhere: a definite loss.
+		return Record{}, fmt.Errorf("%s was deleted permanently: it is gone and the Recycle Bin directory does not exist", rec.OriginalPath)
+	}
 	if err != nil {
 		return rec, nil //nolint:nilerr // an unreadable bin only means non-restorable, the removal itself succeeded
 	}
@@ -200,9 +209,15 @@ func (w *winTrash) locate(r Record) (stored, info string, err error) {
 	if err := checkBinItemPath(r.StoredPath, "$R", r.OriginalPath); err != nil {
 		return "", "", err
 	}
+	if err := checkBinOwner(r.StoredPath); err != nil {
+		return "", "", err
+	}
 	info = filepath.Join(filepath.Dir(r.StoredPath), infoNameOf(filepath.Base(r.StoredPath)))
 	if r.InfoPath != "" {
 		if err := checkBinItemPath(r.InfoPath, "$I", r.OriginalPath); err != nil {
+			return "", "", err
+		}
+		if err := checkBinInfoPath(r.InfoPath, r.StoredPath); err != nil {
 			return "", "", err
 		}
 		info = r.InfoPath
@@ -211,6 +226,19 @@ func (w *winTrash) locate(r Record) (stored, info string, err error) {
 		return "", "", fmt.Errorf("the Recycle Bin copy %q is gone: %w", r.StoredPath, ErrNotRestorable)
 	}
 	return r.StoredPath, info, nil
+}
+
+// checkBinOwner verifies that the SID directory of a bin path is the current
+// user's: brooom only restores from and deletes in its own user's bin.
+func checkBinOwner(p string) error {
+	sid, err := currentSID()
+	if err != nil {
+		return err
+	}
+	if dir := filepath.Base(filepath.Dir(p)); !strings.EqualFold(dir, sid) {
+		return fmt.Errorf("refusing %q: it is not in the Recycle Bin of the current user", p)
+	}
+	return nil
 }
 
 // search finds the bin item of a record without StoredPath.

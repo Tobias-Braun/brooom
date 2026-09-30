@@ -14,6 +14,8 @@ import (
 	"time"
 	"unsafe"
 
+	"golang.org/x/sys/windows/registry"
+
 	"github.com/Tobias-Braun/brooom/internal/config"
 )
 
@@ -21,13 +23,29 @@ import (
 // Every bin item they create is removed again by cleanupBin, which deletes
 // exactly the $I/$R pair of the record and never touches other bin content.
 
+// newTestTrasher returns a winTrash that calls the real shell but reads
+// injected bin settings (bin enabled, huge limit). A fresh CI image has no
+// BitBucket registry key, and the real reader would then make the pre-flight
+// refuse every item, so no real-shell behaviour would ever be exercised.
 func newTestTrasher(t *testing.T) *winTrash {
 	t.Helper()
 	tr, err := newOSTrasher(Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return tr.(*winTrash)
+	w := tr.(*winTrash)
+	w.settings = fakeSettings{s: binSettings{NukeOnDelete: false, MaxCapacityMB: 1 << 20}}
+	return w
+}
+
+// failOnHint fails the test when err is a pre-flight refusal. With injected
+// settings such a refusal is a regression (for example a volume without GUID
+// or a broken path check) and must never be hidden behind a skip.
+func failOnHint(t *testing.T, err error) {
+	t.Helper()
+	if err != nil && strings.Contains(err.Error(), quarantineHint) {
+		t.Fatalf("unexpected pre-flight refusal: %v", err)
+	}
 }
 
 // cleanupBin removes the bin pair of rec after the test.
@@ -43,15 +61,11 @@ func cleanupBin(t *testing.T, rec Record) {
 	})
 }
 
-// remove trashes path and skips the test when the machine's bin cannot take
-// it by design (for example a CI image without bin settings in the registry).
+// remove trashes path and fails the test on any error.
 func remove(t *testing.T, tr *winTrash, path string) Record {
 	t.Helper()
 	rec, err := tr.Remove(context.Background(), path)
 	if err != nil {
-		if strings.Contains(err.Error(), "--trash-strategy quarantine") {
-			t.Skipf("Recycle Bin unavailable on this machine: %v", err)
-		}
 		t.Fatalf("Remove(%q): %v", path, err)
 	}
 	cleanupBin(t, rec)
@@ -188,9 +202,7 @@ func TestRemoveLockedFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("locked file was removed")
 	}
-	if strings.Contains(err.Error(), "--trash-strategy quarantine") {
-		t.Skipf("Recycle Bin unavailable on this machine: %v", err)
-	}
+	failOnHint(t, err)
 	if !strings.Contains(err.Error(), p) || !strings.Contains(err.Error(), "in use") {
 		t.Errorf("error does not name the file and the lock: %v", err)
 	}
@@ -309,6 +321,12 @@ func TestRestoreConflictAndSearch(t *testing.T) {
 	if err := tr.Restore(context.Background(), rec); !errors.Is(err, ErrRestoreConflict) {
 		t.Fatalf("err = %v, want ErrRestoreConflict", err)
 	}
+	if b, _ := os.ReadFile(p); string(b) != "two" {
+		t.Fatalf("conflicting file was touched, content = %q", b)
+	}
+	if _, err := os.Lstat(rec.StoredPath); err != nil {
+		t.Fatalf("bin item was moved despite the conflict: %v", err)
+	}
 	if err := os.Remove(p); err != nil {
 		t.Fatal(err)
 	}
@@ -320,4 +338,97 @@ func TestRestoreConflictAndSearch(t *testing.T) {
 	if b, _ := os.ReadFile(p); string(b) != "one" {
 		t.Errorf("content = %q", b)
 	}
+}
+
+// TestRealRegistrySettings uses the machine's real registry settings, as the
+// shipped binary does. It may skip: a fresh image has no BitBucket key until
+// the Recycle Bin properties were opened once, and Remove then refuses on
+// purpose. Any other outcome must be a working removal.
+func TestRealRegistrySettings(t *testing.T) {
+	tr, err := newOSTrasher(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "real.txt")
+	if err := os.WriteFile(p, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := tr.Remove(context.Background(), p)
+	if err != nil {
+		if strings.Contains(err.Error(), quarantineHint) {
+			t.Skipf("Recycle Bin settings unavailable on this machine: %v", err)
+		}
+		t.Fatal(err)
+	}
+	cleanupBin(t, rec)
+	checkFileRecord(t, rec, p)
+}
+
+// TestNukeSituationKeepsItem puts the shell into a nuke situation on purpose:
+// the bin limit of the test volume is lowered below the item size and the
+// shell is called directly, bypassing the pre-flight. FOF_WANTNUKEWARNING is
+// meant to make the shell abort with the source intact instead of deleting
+// permanently. The observed outcome is logged; the test fails only when the
+// item is gone from both its place and the bin. It changes the current user's
+// registry, so it runs on CI only, and it restores the value afterwards.
+func TestNukeSituationKeepsItem(t *testing.T) {
+	if os.Getenv("CI") == "" {
+		t.Skip("modifies the Recycle Bin registry settings, runs on CI only")
+	}
+	p := filepath.Join(t.TempDir(), "big.bin")
+	if err := os.WriteFile(p, make([]byte, 3<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	guid, err := volumeGUID(p)
+	if err != nil {
+		t.Skipf("volume has no GUID: %v", err)
+	}
+	setBinCapacity(t, guid, 1)
+
+	from, err := buildFromBuffer([]string{p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now()
+	code, aborted := shellDelete(from)
+	t.Logf("shell result: code=0x%X aborted=%v", code, aborted)
+
+	if _, statErr := os.Lstat(p); statErr == nil {
+		t.Logf("observed: the item was left intact")
+		return
+	}
+	dir, entries, err := listBin(p)
+	if err != nil {
+		t.Fatalf("item is gone and the bin cannot be read: %v", err)
+	}
+	m, ok := chooseRecycled(entries, p, at, matchTolerance)
+	if !ok {
+		t.Fatalf("FOF_WANTNUKEWARNING did not protect the item: it was deleted permanently (code=0x%X aborted=%v)", code, aborted)
+	}
+	cleanupBin(t, Record{StoredPath: filepath.Join(dir, storedName(m.Name)), InfoPath: filepath.Join(dir, m.Name)})
+	t.Logf("observed: the item was moved to the bin in spite of the lowered limit")
+}
+
+// setBinCapacity sets MaxCapacity (MB) of the volume's bin key and restores
+// the previous state at the end of the test, deleting the value again if it
+// did not exist before.
+func setBinCapacity(t *testing.T, guid string, mb uint32) {
+	t.Helper()
+	k, _, err := registry.CreateKey(registry.CURRENT_USER, binVolumeKey+`\`+guid, registry.QUERY_VALUE|registry.SET_VALUE)
+	if err != nil {
+		t.Skipf("cannot open the bin registry key: %v", err)
+	}
+	old, _, getErr := k.GetIntegerValue("MaxCapacity")
+	if err := k.SetDWordValue("MaxCapacity", mb); err != nil {
+		k.Close()
+		t.Skipf("cannot set MaxCapacity: %v", err)
+	}
+	t.Cleanup(func() {
+		defer k.Close()
+		if getErr != nil {
+			_ = k.DeleteValue("MaxCapacity")
+			return
+		}
+		_ = k.SetDWordValue("MaxCapacity", uint32(old))
+	})
 }
