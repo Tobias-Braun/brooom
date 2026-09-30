@@ -135,5 +135,5 @@ func appendScanError(errs []findings.ScanError, unsafeSeen map[string]bool, p pa
 		return errs
 	}
 	unsafeSeen[p.t.Path] = true
-	return append(errs, findings.ScanError{Path: p.t.Path, Message: "skipped: " + unsafe.Error()})
+	return append(errs, findings.ScanError{Path: p.t.Path, Message: findings.SkipPrefix + unsafe.Error()})
 }

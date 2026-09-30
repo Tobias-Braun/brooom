@@ -150,7 +150,7 @@ func TestGitGCPacksLooseObjectsAndMeasures(t *testing.T) {
 			t.Errorf("description %q lacks %q", step.Description, want)
 		}
 	}
-	if !strings.Contains(step.Command, "gc --quiet --prune=now") {
+	if !strings.Contains(step.Command, "gc --quiet "+findings.Quote("--prune=now")) {
 		t.Errorf("command = %q", step.Command)
 	}
 	en, err := act(t, findings.ActionGitGC).Apply(context.Background(), fx.env, step)
@@ -174,7 +174,7 @@ func TestGitGCDefaultsPruneDateFromConfig(t *testing.T) {
 	fx := newMaintFixture(t)
 	f := fx.finding(findings.ActionGitGC, nil)
 	step := mustPlan(t, fx, f)
-	if !strings.Contains(step.Command, "--prune=2.weeks.ago") {
+	if !strings.Contains(step.Command, findings.Quote("--prune=2.weeks.ago")) {
 		t.Errorf("command = %q, want the configured default prune date", step.Command)
 	}
 }

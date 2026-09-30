@@ -17,26 +17,11 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/testutil"
 )
 
-// fakeBinary installs an executable POSIX shell script named name in a fresh
-// directory and returns its path. Tests use it as a stand-in for git or gh
-// where a real process cannot misbehave on demand (hang, stay silent).
-func fakeBinary(t *testing.T, name, body string) string {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a POSIX shell script as the fake binary")
-	}
-	path := filepath.Join(t.TempDir(), name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 // TestRunTimeoutIsReadable used to surface as an *Error with exit -1 and no
 // stderr; now it names the command and the elapsed time and still matches
 // context.DeadlineExceeded.
 func TestRunTimeoutIsReadable(t *testing.T) {
-	r := &gitx.ExecRunner{Path: fakeBinary(t, "git", "exec sleep 30"), Timeout: 300 * time.Millisecond}
+	r := &gitx.ExecRunner{Path: fakeBinary(t, "git", "sleep"), Timeout: 300 * time.Millisecond}
 	_, err := r.Run(context.Background(), t.TempDir(), "gc", "--prune=now")
 	var terr *gitx.TimeoutError
 	if !errors.As(err, &terr) {
@@ -58,7 +43,7 @@ func TestRunTimeoutIsReadable(t *testing.T) {
 
 // TestRunCancelIsNotATimeout keeps Ctrl-C distinguishable from a deadline.
 func TestRunCancelIsNotATimeout(t *testing.T) {
-	r := &gitx.ExecRunner{Path: fakeBinary(t, "git", "exec sleep 30")}
+	r := &gitx.ExecRunner{Path: fakeBinary(t, "git", "sleep")}
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(200*time.Millisecond, cancel)
 	_, err := r.Run(ctx, t.TempDir(), "status")
@@ -71,7 +56,7 @@ func TestRunCancelIsNotATimeout(t *testing.T) {
 // the same slow command fails under the runner default and passes under an
 // explicit or disabled bound.
 func TestWithTimeoutOverridesDefaultBound(t *testing.T) {
-	r := &gitx.ExecRunner{Path: fakeBinary(t, "git", "sleep 1\necho done"), Timeout: 200 * time.Millisecond}
+	r := &gitx.ExecRunner{Path: fakeBinary(t, "git", "sleep-then-done"), Timeout: 200 * time.Millisecond}
 	dir := t.TempDir()
 	if _, err := r.Run(context.Background(), dir, "gc"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("default bound: err = %v, want a timeout", err)
@@ -93,7 +78,7 @@ func TestWithTimeoutOverridesDefaultBound(t *testing.T) {
 // TestPipeHasDefaultTimeout: Pipe used to have no bound of its own, unlike
 // Run, so a hung producer stalled a history scan forever.
 func TestPipeHasDefaultTimeout(t *testing.T) {
-	r := &gitx.ExecRunner{Path: fakeBinary(t, "git", "exec sleep 30"), Timeout: 300 * time.Millisecond}
+	r := &gitx.ExecRunner{Path: fakeBinary(t, "git", "sleep"), Timeout: 300 * time.Millisecond}
 	for name, limit := range map[string]int64{"unlimited": 0, "limited": 1 << 20} {
 		start := time.Now()
 		err := gitx.PipeLimit(context.Background(), r, t.TempDir(), []string{"log"}, []string{"cat-file"}, limit, func(string) {})
@@ -110,8 +95,7 @@ func TestPipeHasDefaultTimeout(t *testing.T) {
 // TestPipeConsumerExitsEarlyWithSilentProducer used to block until the
 // deadline: exec's stdin copy goroutine waited on the silent producer.
 func TestPipeConsumerExitsEarlyWithSilentProducer(t *testing.T) {
-	body := "case \"$3\" in\n  cat-file) exec sleep 30 ;;\n  *) exit 0 ;;\nesac"
-	r := &gitx.ExecRunner{Path: fakeBinary(t, "git", body)}
+	r := &gitx.ExecRunner{Path: fakeBinary(t, "git", "silent-producer")}
 	for name, limit := range map[string]int64{"unlimited": 0, "limited": 1 << 20} {
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		start := time.Now()
@@ -229,11 +213,7 @@ func TestMergedIntoOnlyMapsPartialCloneToNotMerged(t *testing.T) {
 // TestGHRunsWithSanitizedEnvironment: gh spawns git and used to inherit the
 // caller's GIT_DIR through an unsanitized os.Environ().
 func TestGHRunsWithSanitizedEnvironment(t *testing.T) {
-	gh := fakeBinary(t, "gh", `if [ -n "$GIT_DIR" ] || [ -n "$GIT_INDEX_FILE" ]; then
-  echo '[{"headRefName":"leaked"}]'
-else
-  echo '[{"headRefName":"clean"}]'
-fi`)
+	gh := fakeBinary(t, "gh", "gh-env")
 	t.Setenv("PATH", filepath.Dir(gh)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	repo := testutil.NewRepo(t)
 	handle := openRepo(t, execRunner(t), repo.Dir)
@@ -292,6 +272,12 @@ func TestSafeDirectoryCommandQuoting(t *testing.T) {
 		{"linux", "/w/a;rm -rf x", "'/w/a;rm -rf x'"},
 		{"windows", `C:\work\repo`, `C:\work\repo`},
 		{"windows", `C:\my work\repo`, `"C:\my work\repo"`},
+		// cmd.exe expands %VAR% even inside double quotes, so a percent sign
+		// must not stay bare or get double quotes. PowerShell single quotes
+		// keep it literal; a percent sign is an ordinary character on POSIX.
+		{"windows", `C:\%USERPROFILE%\repo`, `'C:\%USERPROFILE%\repo'`},
+		{"windows", `C:\100%\o'neil`, `'C:\100%\o''neil'`},
+		{"linux", "/w/100%", "/w/100%"},
 	}
 	for _, tc := range tests {
 		if got := gitx.SafeDirectoryCommand(tc.dir, tc.goos); got != prefix+tc.want {

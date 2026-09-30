@@ -294,7 +294,7 @@ func purgeRepos(ctx context.Context, res *scanResult, reported map[string]bool, 
 func reportedSkips(errs []findings.ScanError) map[string]bool {
 	seen := map[string]bool{}
 	for _, e := range errs {
-		if e.Detector == "" && strings.HasPrefix(e.Message, "skipped: ") {
+		if e.Detector == "" && strings.HasPrefix(e.Message, findings.SkipPrefix) {
 			seen[e.Path] = true
 		}
 	}
@@ -328,7 +328,7 @@ func skipOpenError(warn io.Writer, reported map[string]bool, path string, err er
 	case errors.Is(err, gitx.ErrUnsafeRepo):
 		if !reported[path] {
 			reported[path] = true
-			fmt.Fprintf(warn, "skipped: %s: %v\n", path, err)
+			fmt.Fprintf(warn, "%s%s: %v\n", findings.SkipPrefix, path, err)
 		}
 		return nil
 	case errors.Is(err, gitx.ErrNotRepo), errors.Is(err, gitx.ErrBareRepo):

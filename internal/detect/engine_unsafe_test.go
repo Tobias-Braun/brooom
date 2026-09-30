@@ -40,7 +40,7 @@ func TestRunReportsDubiousOwnershipOncePerRepository(t *testing.T) {
 	var skipped, other int
 	for _, e := range errs {
 		switch {
-		case strings.HasPrefix(e.Message, "skipped: dubious ownership"):
+		case strings.HasPrefix(e.Message, findings.SkipPrefix+"dubious ownership"):
 			skipped++
 			if !strings.Contains(e.Message, "git config --global --add safe.directory /w/repo") || e.Path != "/w/repo" {
 				t.Errorf("skip line lacks the hint or path: %+v", e)

@@ -3,9 +3,6 @@ package gitx_test
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -129,13 +126,7 @@ func TestPipe(t *testing.T) {
 // are alive and blocked when the deadline hits, so Pipe must kill them and
 // return promptly instead of waiting for them to finish.
 func TestPipeDeadlineKillsRunningProcesses(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("needs a POSIX shell script as fake git")
-	}
-	script := filepath.Join(t.TempDir(), "fakegit")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	script := fakeBinary(t, "git", "sleep")
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	start := time.Now()
