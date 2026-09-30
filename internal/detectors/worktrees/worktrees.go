@@ -21,14 +21,15 @@
 // trash instead of deleting. Locked worktrees are never suggested, also not
 // with --force.
 //
-// # Cache caveat
+// # Freshness
 //
-// The newest modification time comes from walk.DirSize with the scan cache
-// enabled, so it may be stale (it is a lower-bound hint, see internal/walk).
-// That is acceptable because every candidate is checked with Repo.IsDirty,
-// which always runs fresh: modified tracked and untracked files are caught
-// there before a removal is suggested. A stale cached mtime can therefore at
-// worst make a worktree look older, never hide uncommitted work.
+// The newest modification time comes from a Fresh walk.DirSize (the scan cache
+// is refreshed but never trusted, see internal/walk). It feeds the stale rule,
+// LastModified and the informational recently_modified flag (a file changed
+// within recent_days). Repo.IsDirty does not cover this: git status ignores
+// gitignored files, so an in-place edit of build output or an env file is
+// visible only through the file mtime. The remove-worktree action re-checks
+// the newest mtime at apply time.
 package worktrees
 
 import (

@@ -71,6 +71,7 @@ func (s *scan) examine(ctx context.Context, e *entry) (findings.Finding, bool, e
 	if err := s.flagBlocking(ctx, e, &v); err != nil {
 		return findings.Finding{}, false, err
 	}
+	s.flagRecent(e, &v)
 	return s.build(ctx, e, v), true, nil
 }
 
@@ -234,21 +235,36 @@ func (s *scan) staleVerdict(e *entry, ev findings.Evidence) verdict {
 	}
 }
 
-// summarize sizes the worktree once. The newest mtime may come from the scan
-// cache and be stale; that is safe because IsDirty always runs fresh before a
-// removal is suggested (see the package documentation). Sizing failures other
-// than cancellation leave the summary unset: size 0 and never stale.
+// summarize sizes the worktree once with a Fresh walk. The newest mtime feeds
+// the abandoned-checkout rule, LastModified and recently_modified, and git
+// status never lists ignored files (build output, env files, caches), so a
+// cached mtime could hide an in-place edit of one of them. The walk contract
+// (internal/walk, detect.Env.CacheDir) requires Fresh for exactly this. Only
+// candidates are summarized, which bounds the cost. Sizing failures other than
+// cancellation leave the summary unset: size 0 and never stale.
 func (s *scan) summarize(ctx context.Context, e *entry) error {
 	if e.sizeTried {
 		return nil
 	}
 	e.sizeTried = true
-	sum, err := walk.DirSize(ctx, e.path, walk.Options{CacheDir: s.env.CacheDir})
+	sum, err := walk.DirSize(ctx, e.path, walk.Options{CacheDir: s.env.CacheDir, Fresh: true})
 	if err != nil {
 		return ctxErr(ctx)
 	}
 	e.sum, e.sized = sum, true
 	return nil
+}
+
+// flagRecent adds the informational recently_modified flag when any file in
+// the worktree changed within recent_days. It does not change the suggested
+// action; it tells the user that ignored files were touched recently.
+func (s *scan) flagRecent(e *entry, v *verdict) {
+	if !e.sized || e.sum.NewestModTime.IsZero() {
+		return
+	}
+	if s.env.AgeDays(e.sum.NewestModTime) < s.cfg.Thresholds.RecentDays {
+		v.risks = append(v.risks, findings.RiskRecentlyModified)
+	}
 }
 
 // headCommitTime returns the committer time of HEAD once, zero when unknown.
