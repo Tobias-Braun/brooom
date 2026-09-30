@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -96,4 +97,26 @@ func TestItemLineOmitsZeroSize(t *testing.T) {
 	if got := itemLine(s); got != s.Description || strings.Contains(got, "0 B") {
 		t.Errorf("itemLine = %q", got)
 	}
+}
+
+// displayVerb is the leading word of the display command of a strategy on the
+// host OS, so tests asserting on plan commands hold on every platform (the
+// display follows the host shell: PowerShell on Windows, POSIX elsewhere).
+func displayVerb(strategy config.TrashStrategy) string {
+	if runtime.GOOS == "windows" {
+		switch strategy {
+		case config.StrategyDelete:
+			return "Remove-Item "
+		case config.StrategyQuarantine:
+			return "Move-Item "
+		}
+		return "# illustrative"
+	}
+	switch strategy {
+	case config.StrategyDelete:
+		return "rm -rf "
+	case config.StrategyQuarantine:
+		return "mv "
+	}
+	return "trash "
 }

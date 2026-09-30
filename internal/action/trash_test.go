@@ -182,7 +182,7 @@ func planAndApply(t *testing.T, fx *trashFixture, path string) session.Entry {
 	if !strings.Contains(step.Description, "to quarantine") || !strings.Contains(step.Description, filepath.Base(path)) {
 		t.Errorf("Description = %q", step.Description)
 	}
-	if !strings.HasPrefix(step.Command, "mv ") {
+	if !strings.HasPrefix(step.Command, displayVerb(config.StrategyQuarantine)) {
 		t.Errorf("Command = %q", step.Command)
 	}
 	en, err := trashAction{}.Apply(context.Background(), fx.env, step)
@@ -727,7 +727,7 @@ func TestTrashApplyDeleteStrategy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(step.Description, "permanently delete build") || !strings.HasPrefix(step.Command, "rm -rf ") {
+	if !strings.HasPrefix(step.Description, "permanently delete build") || !strings.HasPrefix(step.Command, displayVerb(config.StrategyDelete)) {
 		t.Errorf("step = %+v", step)
 	}
 	en, err := trashAction{}.Apply(context.Background(), fx.env, step)
@@ -858,10 +858,10 @@ func TestDescribeAndDisplayCommand(t *testing.T) {
 		wantDesc string
 		wantCmd  string
 	}{
-		{config.StrategyTrash, nil, "move node_modules to trash", "trash "},
-		{config.StrategyQuarantine, nil, "move node_modules to quarantine", "mv "},
-		{config.StrategyDelete, nil, "permanently delete node_modules", "rm -rf "},
-		{config.StrategyTrash, []string{"tracked files", "open-file check incomplete"}, "move node_modules to trash [tracked files; open-file check incomplete]", "trash "},
+		{config.StrategyTrash, nil, "move node_modules to trash", displayVerb(config.StrategyTrash)},
+		{config.StrategyQuarantine, nil, "move node_modules to quarantine", displayVerb(config.StrategyQuarantine)},
+		{config.StrategyDelete, nil, "permanently delete node_modules", displayVerb(config.StrategyDelete)},
+		{config.StrategyTrash, []string{"tracked files", "open-file check incomplete"}, "move node_modules to trash [tracked files; open-file check incomplete]", displayVerb(config.StrategyTrash)},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.strategy)+strings.Join(tt.notes, ","), func(t *testing.T) {

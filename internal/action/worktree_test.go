@@ -197,7 +197,7 @@ func TestRemoveWorktreeClean(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantContains(t, step.Command, "&& git worktree remove -- ")
+	wantContains(t, step.Command, chainCommands("", "git worktree remove -- "))
 	if strings.Contains(step.Command, "--force") || strings.Contains(step.Command, "prune") {
 		t.Errorf("command = %q", step.Command)
 	}
