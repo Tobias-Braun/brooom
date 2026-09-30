@@ -98,6 +98,30 @@ func (m *ProjectMatcher) Protected(rel string) bool {
 	return false
 }
 
+// ProtectedAnchored reports whether rel itself matches a protect pattern that
+// contains a "/" (a path below the project root such as
+// ".claude/settings.local.json"). Unlike Protected it looks at rel alone and
+// ignores base-name patterns.
+//
+// It exists for callers that walk the contents of a directory they are about
+// to remove: a directory must not go away with a protected config file inside,
+// but base-name patterns such as ".npmrc" or ".gitignore" would match inside
+// almost every dependency directory (node_modules) and make every build
+// directory unremovable. Anchored patterns only match at their documented
+// position below the project root, so they cannot.
+func (m *ProjectMatcher) ProtectedAnchored(rel string) bool {
+	rel, ok := cleanRel(rel)
+	if !ok {
+		return false
+	}
+	for _, pat := range m.protect {
+		if strings.Contains(pat, "/") && GlobMatch(pat, rel, m.fold) {
+			return true
+		}
+	}
+	return false
+}
+
 // cleanRel normalises a project-relative path to forward slashes and rejects
 // the project root itself and anything that escapes it.
 func cleanRel(rel string) (string, bool) {

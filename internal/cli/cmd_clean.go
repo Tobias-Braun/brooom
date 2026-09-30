@@ -25,6 +25,8 @@ type cleanOptions struct {
 	// user enables the user-level tool locations (`brooom ai --user`). It is
 	// never inferred from the file: a findings file cannot widen the scope.
 	user bool
+	// detectors are the validated --detector names; empty selects all.
+	detectors []string
 }
 
 func newCleanCmd(a *app) *cobra.Command {
@@ -48,6 +50,13 @@ locations are only accepted with --user. The action in the file only selects
 which action to run; risk flags, sizes and ages in the file are never trusted,
 and each finding is checked again against the live state before it is applied.
 
+Your configuration applies as in a scan: -d/--detector selects which findings
+are acted on (an unknown detector is a usage error), and findings of a detector
+that is disabled, in the configuration or by a repository's .brooom.json, or
+below an excluded directory are refused. Catalog-protected files such as .env
+and .mcp.json are never removed. Git maintenance findings ignore any expiry
+in the file and use the configured one.
+
 A finding without a suggested action stays untouched, even with --force: scan
 again with --force (export with 'brooom scan --force --format json') to get
 an action for findings blocked by an overridable risk flag.
@@ -70,13 +79,7 @@ Use '--from -' to read the file from stdin. Without --apply this is a dry run.`,
 // accepted ones to the shared executor. It never trusts anything the file
 // says about scope, risk or size.
 func (a *app) runClean(cmd *cobra.Command, opts cleanOptions, af applyFlags) error {
-	if len(a.flags.roots) > 0 && !a.flags.workspaces {
-		return usageError{fmt.Errorf("--root only narrows --workspaces; add --workspaces or drop --root")}
-	}
-	if opts.from == "" {
-		return usageError{fmt.Errorf("--from is required: give a findings file, or '-' for stdin")}
-	}
-	strategy, err := parseTrashStrategy(af.trashStrategy)
+	opts, strategy, err := a.checkCleanUsage(opts, af)
 	if err != nil {
 		return err
 	}
@@ -101,6 +104,23 @@ func (a *app) runClean(cmd *cobra.Command, opts cleanOptions, af applyFlags) err
 	return nil
 }
 
+// checkCleanUsage validates the flags before the file is read (usage errors,
+// exit 2). --detector is checked against the registry exactly like scan does.
+func (a *app) checkCleanUsage(opts cleanOptions, af applyFlags) (cleanOptions, config.TrashStrategy, error) {
+	if len(a.flags.roots) > 0 && !a.flags.workspaces {
+		return opts, "", usageError{fmt.Errorf("--root only narrows --workspaces; add --workspaces or drop --root")}
+	}
+	if opts.from == "" {
+		return opts, "", usageError{fmt.Errorf("--from is required: give a findings file, or '-' for stdin")}
+	}
+	strategy, err := parseTrashStrategy(af.trashStrategy)
+	if err != nil {
+		return opts, "", err
+	}
+	opts.detectors, err = validateDetectorNames(a.flags.detectors)
+	return opts, strategy, err
+}
+
 // prepareClean reads and selects the findings, rebuilds the scope of this
 // invocation and vets every selected finding against it. Nothing is modified.
 func (a *app) prepareClean(ctx context.Context, opts cleanOptions) (*cleanScope, verdict, error) {
@@ -112,6 +132,7 @@ func (a *app) prepareClean(ctx context.Context, opts cleanOptions) (*cleanScope,
 	if err != nil {
 		return nil, verdict{}, err
 	}
+	selected = selectByDetector(selected, opts.detectors)
 	cfg, _, err := a.loadConfig()
 	if err != nil {
 		return nil, verdict{}, err
@@ -205,6 +226,17 @@ func selectByID(all []findings.Finding, wanted []string) ([]findings.Finding, er
 		return nil, fmt.Errorf("unknown finding ID(s) not in the findings file: %s", strings.Join(unknown, ", "))
 	}
 	return slices.DeleteFunc(unique, func(f findings.Finding) bool { return !slices.Contains(wanted, f.ID) }), nil
+}
+
+// selectByDetector drops the findings of detectors that --detector did not
+// select, like a scan that only ran those. They are skipped silently: not
+// selecting them is the user's choice, not a refusal. The comparison uses the
+// finding's own detector field, which only narrows the run.
+func selectByDetector(fs []findings.Finding, detectors []string) []findings.Finding {
+	if len(detectors) == 0 {
+		return fs
+	}
+	return slices.DeleteFunc(fs, func(f findings.Finding) bool { return !slices.Contains(detectors, f.Detector) })
 }
 
 // noteScopeDifference tells, in verbose mode only, that the scopes recorded in

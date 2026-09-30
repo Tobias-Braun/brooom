@@ -41,6 +41,8 @@ type cleanScope struct {
 	repos []string
 	// locations are the resolved project and user locations, for notes.
 	locations []string
+	// targetCfgs memoizes the effective configuration per scan target.
+	targetCfgs map[string]*config.Config
 }
 
 // newCleanScope resolves the scope like the scan command: the repository

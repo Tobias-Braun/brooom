@@ -32,7 +32,7 @@ func TestDeleteBranchTagWithBranchName(t *testing.T) {
 	fx := newBranchFixture(t)
 	fx.featureBranch("rel")
 	fx.repo.Git("tag", "rel", "main")
-	step, err := fx.plan(fx.finding("rel", "merged-branch", verifiedSquash))
+	step, err := fx.plan(fx.finding("rel", "merged-branch", "squash"))
 	if err == nil {
 		_, err = fx.act.Apply(context.Background(), fx.env, step)
 	}

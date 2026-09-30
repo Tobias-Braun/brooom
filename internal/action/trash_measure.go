@@ -34,7 +34,15 @@ type measurement struct {
 	// nestedWhy the skip reason describing it.
 	nestedVCS string
 	nestedWhy string
+	// protected is the smallest relative path of an entry the caller's
+	// check flagged (a protected file inside the directory), or "".
+	protected string
 }
+
+// entryCheck flags an entry inside a directory that is about to be removed.
+// It runs concurrently on every walked entry and must be cheap and
+// side-effect free.
+type entryCheck func(e walk.Entry) bool
 
 // sizeAndNestedVCS measures a target and looks for nested repositories in one
 // pass. Files and symlinks are sized from their own lstat data. A directory is
@@ -52,6 +60,13 @@ type measurement struct {
 // cannot be read completely is an error: an unreadable subtree could hide a
 // repository.
 func sizeAndNestedVCS(ctx context.Context, path string) (measurement, error) {
+	return measureChecked(ctx, path, nil)
+}
+
+// measureChecked is sizeAndNestedVCS that additionally runs check on every
+// entry below a directory, in the same single pass, and records the first
+// flagged one.
+func measureChecked(ctx context.Context, path string, check entryCheck) (measurement, error) {
 	root, err := statRoot(path)
 	if err != nil {
 		return measurement{}, err
@@ -70,7 +85,7 @@ func sizeAndNestedVCS(ctx context.Context, path string) (measurement, error) {
 		}
 		return measurement{size: size, newest: root.ModTime}, nil
 	}
-	return measureTree(ctx, path, root.ModTime)
+	return measureTree(ctx, path, root.ModTime, check)
 }
 
 // newTreeMeter returns an empty meter; ownGit is the relative path of the
@@ -81,6 +96,7 @@ func newTreeMeter(ownGit string) *treeMeter {
 
 // treeMeter accumulates a walk; visit runs concurrently.
 type treeMeter struct {
+	check entryCheck
 	mu    sync.Mutex
 	m     measurement
 	links map[string]struct{}
@@ -113,6 +129,9 @@ func (t *treeMeter) visit(e walk.Entry) walk.Decision {
 		t.shapes[parent] = &walk.DirShape{}
 	}
 	t.shapes[parent].Add(e.Name, e.IsDir(), e.Type.IsRegular())
+	if t.check != nil && t.check(e) && (t.m.protected == "" || e.Rel < t.m.protected) {
+		t.m.protected = e.Rel
+	}
 	t.m.size += t.entrySize(e)
 	return walk.Continue
 }
@@ -178,8 +197,10 @@ func (t *treeMeter) fail(path string, err error) {
 
 // measureTree walks a directory. rootMTime is used when the tree is empty so
 // LastModified never stays unset.
-func measureTree(ctx context.Context, path string, rootMTime time.Time) (measurement, error) {
-	return measureWith(ctx, newTreeMeter(""), path, rootMTime)
+func measureTree(ctx context.Context, path string, rootMTime time.Time, check entryCheck) (measurement, error) {
+	t := newTreeMeter("")
+	t.check = check
+	return measureWith(ctx, t, path, rootMTime)
 }
 
 // measureWorktree is measureTree for a linked worktree directory: its own
@@ -212,8 +233,8 @@ func measureWith(ctx context.Context, t *treeMeter, path string, rootMTime time.
 // refreshFinding returns a copy of f describing the path as it is now: the
 // resolved path, the freshly measured size and the newest mtime. It fails
 // with a skip when the path is gone or holds a git repository.
-func refreshFinding(ctx context.Context, f findings.Finding, path string) (findings.Finding, error) {
-	m, err := sizeAndNestedVCS(ctx, path)
+func refreshFinding(ctx context.Context, f findings.Finding, path string, prot *protection) (findings.Finding, error) {
+	m, err := measureChecked(ctx, path, prot.entryCheck(path))
 	switch {
 	case isGone(err):
 		return f, skipf("already gone")
@@ -221,6 +242,8 @@ func refreshFinding(ctx context.Context, f findings.Finding, path string) (findi
 		return f, skipf("cannot inspect %s: %v", path, err)
 	case m.nestedVCS != "":
 		return f, skipf("%s", m.nestedWhy)
+	case m.protected != "":
+		return f, skipf("contains a protected file (%s); protected files are never removed", m.protected)
 	}
 	f.Path = path
 	f.SizeBytes = m.size

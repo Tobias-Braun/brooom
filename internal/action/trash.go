@@ -58,7 +58,7 @@ func (trashAction) Plan(ctx context.Context, env *Env, f findings.Finding) (Step
 	if err := refuseTarget(env, path); err != nil {
 		return Step{}, err
 	}
-	fresh, err := refreshFinding(ctx, f, path)
+	fresh, err := inspectTarget(ctx, env, f, path)
 	if err != nil {
 		return Step{}, err
 	}
@@ -87,6 +87,20 @@ func (trashAction) Plan(ctx context.Context, env *Env, f findings.Finding) (Step
 		Description: describe(strategy, fresh.SizeBytes, path, notes),
 		Command:     displayCommand(strategy, path),
 	}, nil
+}
+
+// inspectTarget applies the catalog protect rules to the path and to what it
+// contains, then measures it (see refreshFinding). Protection comes first:
+// a protected path is refused before anything is walked.
+func inspectTarget(ctx context.Context, env *Env, f findings.Finding, path string) (findings.Finding, error) {
+	prot, err := newProtection(env, path)
+	if err != nil {
+		return f, fmt.Errorf("trash: load catalog protect rules: %w", err)
+	}
+	if reason := prot.target(path); reason != "" {
+		return f, skipf("%s", reason)
+	}
+	return refreshFinding(ctx, f, path, prot)
 }
 
 func appendNote(notes []string, note string) []string {
@@ -347,7 +361,7 @@ func (trashAction) Apply(ctx context.Context, env *Env, s Step) (session.Entry, 
 // trusting a step, and the walk is only needed for the nested .git check
 // here, its size result is discarded.
 func recheckStep(ctx context.Context, env *Env, f findings.Finding, path string) error {
-	if _, err := refreshFinding(ctx, f, path); err != nil {
+	if _, err := inspectTarget(ctx, env, f, path); err != nil {
 		return err
 	}
 	if _, err := checkOpen(ctx, path); err != nil {
