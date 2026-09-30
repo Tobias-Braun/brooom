@@ -17,8 +17,13 @@ import (
 type Repo struct {
 	t   testing.TB
 	Dir string
+	// Origin is the path of the bare origin repository; empty unless the
+	// repository was created with NewRepoWithRemote.
+	Origin string
 	// home isolates git from the developer's global config.
 	home string
+	// wtRoot is the lazily created directory linked worktrees live in.
+	wtRoot string
 }
 
 // BaseTime is the fixed reference time commits default to.

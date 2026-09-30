@@ -55,7 +55,7 @@ packages and the same findings schema.
 | `internal/config` | Config types, `Default()`, load/save/validate, per-root overrides, tighten-only `.brooom.json`, `~/.brooom` layout (`BROOOM_HOME` overrides). |
 | `internal/scope` | Repo detection, workspace discovery (`[]Target`), `Guard` path validation (symlinks, `..`, case-insensitive filesystems, Windows drive letters/UNC). |
 | `internal/walk` | Parallel walker with skip lists, `DirSize` with mtime-invalidated cache in `~/.brooom/cache`. |
-| `internal/gitx` | Read-only-safe git runner (`GIT_OPTIONAL_LOCKS=0`, C locale, no prompts) and git helpers (branches, merge detection, worktrees, count-objects). |
+| `internal/gitx` | Read-only-safe git runner (`GIT_OPTIONAL_LOCKS=0`, C locale, no prompts) and git helpers behind a per-repo `Repo` handle (branches and upstreams, base detection, merge detection incl. squash/rebase via patch-id, remote containment, worktrees, dirty check, open PRs via `gh`); `Cache` shares memoized handles per scan (`detect.Env.Repos`), uncached `Open` is for actions. Count-objects helpers are added later. |
 | `internal/findings` | **The findings schema** (see [findings.md](findings.md)): `Finding`, `Report`, IDs, risk flags, totals. Stable contract. |
 | `internal/detect` | `Detector` interface, registry, `Env`, parallel `Run` engine. |
 | `internal/detectors/<name>` | One package per detector, self-registering via `init()`. `internal/detectors/all` blank-imports them. |
