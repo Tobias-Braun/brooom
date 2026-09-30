@@ -78,6 +78,9 @@ func (f *cleanupFixture) mergedAndSquashed() {
 	f.feature("feat/merged")
 	f.mergeCommit("feat/merged")
 	f.feature("feat/squash")
+	// The squash branch is on the remote: delete-branch never trusts the
+	// patch-id heuristic alone for commits that exist nowhere else.
+	f.repo.Git("push", "-q", "origin", "feat/squash")
 	f.repo.SquashMerge("feat/squash", "squashed", f.at())
 	f.publish()
 }

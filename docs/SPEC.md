@@ -41,8 +41,9 @@ cleanup safe, fast and reviewable.
    configurable, and always have a dry-run mode.
 4. **Reversible by default.** Removed files go to a configurable trash
    strategy; branches are deleted with `git branch -d`; `-D` is used only
-   when the merge (squash/rebase/base ancestry) or remote containment is
-   re-verified at apply time, or with `--force`; worktrees are
+   when base ancestry or remote containment is re-verified at apply time
+   (a squash/rebase merge counts only with the commits on a remote), or with
+   `--force`; worktrees are
    removed with `git worktree remove` and pruned; git history pruning uses a
    conservative expiry. Every applied session writes a manifest so
    `brooom undo` can restore what is restorable.
@@ -100,9 +101,10 @@ cleanup safe, fast and reviewable.
 - `delete`: immediate permanent deletion (requires explicit config or flag,
   and a warning on first use).
 
-Branches are deleted with `git branch -d`; `-D` is used only when the merge
-(squash/rebase/base ancestry) or remote containment is re-verified at apply
-time, or with `--force`. It is never used for protected, base or checked-out
+Branches are deleted with `git branch -d`; `-D` is used only when base ancestry
+or remote containment is re-verified at apply time, or with `--force`; a merge
+found only by squash/rebase detection counts when the commits are also on a
+remote, otherwise it needs `--force`. It is never used for protected, base or checked-out
 branches.
 
 Branch deletion is recoverable for a limited time only. Git deletes a branch's

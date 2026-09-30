@@ -168,3 +168,33 @@ func TestCleanReflogFindingCannotShortenExpiry(t *testing.T) {
 		t.Errorf("HEAD reflog is gone: %v", err)
 	}
 }
+
+// TestCleanDisabledDetectorCheckIsCourtesy pins the documented limit of the
+// disabled-detector refusal: it is keyed on the Detector field of the file,
+// which an edited file can rename, so it only protects against stale or
+// honest files. The path-based guards (exclude, catalog protection, the
+// action's own checks) do not depend on that field and still refuse.
+func TestCleanDisabledDetectorCheckIsCourtesy(t *testing.T) {
+	t.Run("forged detector name skips the disabled check", func(t *testing.T) {
+		f := newCleanupFixture(t, nil)
+		testutil.WriteFile(t, f.repo.Dir, ".brooom.json", `{"disable": ["build-artifacts"]}`)
+		dir, file := junkDir(t, f.repo.Dir, "node_modules")
+		forged := trashFinding(f.repo.Dir, dir)
+		forged.Detector = "renamed-detector"
+		code, out, _ := clean(t, "", "--from", writeReportFile(t, forged), "--apply", "--yes")
+		if code != ExitOK || strings.Contains(out, "refused") || exists(file) {
+			t.Fatalf("code %d, file kept %v:\n%s", code, exists(file), out)
+		}
+	})
+	t.Run("forged detector name does not skip the exclude check", func(t *testing.T) {
+		f := newCleanupFixture(t, nil)
+		testutil.WriteFile(t, f.repo.Dir, ".brooom.json", `{"exclude": ["node_modules"]}`)
+		dir, file := junkDir(t, f.repo.Dir, "node_modules")
+		forged := trashFinding(f.repo.Dir, dir)
+		forged.Detector = "renamed-detector"
+		code, out, _ := clean(t, "", "--from", writeReportFile(t, forged), "--apply", "--yes")
+		if code != ExitError || !strings.Contains(out, "excluded") || !exists(file) {
+			t.Fatalf("code %d, file kept %v:\n%s", code, exists(file), out)
+		}
+	})
+}

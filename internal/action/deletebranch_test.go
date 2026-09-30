@@ -209,6 +209,8 @@ func TestDeleteBranchMergedWhileOtherBranchCheckedOut(t *testing.T) {
 func TestDeleteBranchSquash(t *testing.T) {
 	fx := newBranchFixture(t)
 	fx.featureBranch("feat/sq")
+	// The branch commits sit on a remote: the heuristic alone would not do.
+	fx.repo.Git("push", "-q", "origin", "feat/sq")
 	fx.repo.SquashMerge("feat/sq", "squash", testutil.BaseTime.Add(2*time.Hour))
 	fx.repo.Push("main")
 	f := fx.finding("feat/sq", "merged-branch", "squash")

@@ -63,6 +63,9 @@ type scan struct {
 	hasBase bool
 	pr      gitx.PRInfo
 	prCheck string
+	// mergedFail aggregates failed merged checks: on a broken repository every
+	// branch fails the same way, and one error per repository says it once.
+	mergedFail mergedFailure
 }
 
 // Detect implements detect.Detector.
@@ -97,6 +100,9 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 		if ok {
 			emit(f)
 		}
+	}
+	if err := s.mergedFail.error(s.base.Ref); err != nil {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }
@@ -158,18 +164,51 @@ func (s *scan) isCandidate(b gitx.Branch) bool {
 	return !gitx.IsProtected(s.cfg.Git.ProtectedBranches, b.Name)
 }
 
+// mergedFailure remembers the first failed merged check and how many branches
+// failed, so Detect can return a single error for the repository.
+type mergedFailure struct {
+	count int
+	first string
+	err   error
+}
+
+// record notes one failed check.
+func (m *mergedFailure) record(branch string, err error) {
+	if m.count == 0 {
+		m.first, m.err = branch, err
+	}
+	m.count++
+}
+
+// error renders the aggregate, or nil when no check failed. The first branch
+// is named with its cause; the others only counted, since their cause is the
+// same in practice.
+func (m *mergedFailure) error(base string) error {
+	if m.count == 0 {
+		return nil
+	}
+	more := ""
+	if m.count > 1 {
+		more = fmt.Sprintf(" (and %d more branches)", m.count-1)
+	}
+	return fmt.Errorf("stale-branch: check whether branch %q is merged into %s failed%s: %w", m.first, base, more, m.err)
+}
+
 // mergedSkip reports whether merged-branch owns the branch. It uses the same
-// MergedInto call and mode as that detector so the two never disagree. An
-// error means unknown, which is never treated as merged; it is returned so the
-// caller can surface it.
-func (s *scan) mergedSkip(ctx context.Context, name string) (bool, error) {
+// MergedInto call and mode as that detector so the two never disagree. A
+// failure means unknown, which is never treated as merged; it is recorded in
+// s.mergedFail and surfaced once per repository by Detect.
+func (s *scan) mergedSkip(ctx context.Context, name string) bool {
 	if !s.hasBase {
-		return false, nil
+		return false
 	}
 	squash := s.cfg.Detectors.MergedBranch.Mode == config.MergeAncestorSquash
 	res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/heads/"+name, squash)
 	if err != nil {
-		return false, fmt.Errorf("stale-branch: check whether branch %q is merged into %s: %w", name, s.base.Ref, err)
+		if ctx.Err() == nil {
+			s.mergedFail.record(name, err)
+		}
+		return false
 	}
-	return res.Merged, nil
+	return res.Merged
 }

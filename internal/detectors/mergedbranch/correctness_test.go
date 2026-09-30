@@ -73,7 +73,55 @@ func TestGitErrorsAreSurfaced(t *testing.T) {
 	}
 }
 
-// TestReflogErrorIsSurfacedAndConservative: a failing reflog read keeps the
+// cancelRunner cancels the scan context on the first git call that mentions
+// the trigger, and fails ancestry queries that mention neither, so a scan can
+// be interrupted after it already collected a per-branch error.
+type cancelRunner struct {
+	gitx.Runner
+	cancel  context.CancelFunc
+	trigger string
+}
+
+func (r cancelRunner) Run(ctx context.Context, dir string, args ...string) (string, error) {
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, r.trigger) {
+		r.cancel()
+		return "", ctx.Err()
+	}
+	ancestry := args[0] == "merge-base" && slices.Contains(args, "--is-ancestor")
+	batch := args[0] == "for-each-ref" && strings.Contains(joined, "--merged=")
+	if ancestry || batch {
+		return "", errors.New("simulated git failure")
+	}
+	return r.Runner.Run(ctx, dir, args...)
+}
+
+// TestCollectedErrorsSurviveEarlyReturn: when the scan stops early (here: the
+// context is cancelled while classifying the second branch), the per-branch
+// errors already collected are returned together with the reason, instead of
+// being discarded.
+func TestCollectedErrorsSurviveEarlyReturn(t *testing.T) {
+	f := newFixture(t)
+	f.feature("feat/a", "a.txt")
+	f.feature("feat/b", "b.txt")
+	f.publish()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.env.Git = cancelRunner{Runner: f.env.Git, cancel: cancel, trigger: "refs/heads/feat/b"}
+
+	err := f.det.Detect(ctx, f.env, f.target(f.repo.Dir), func(findings.Finding) {})
+	if err == nil {
+		t.Fatal("no error")
+	}
+	if !strings.Contains(err.Error(), "simulated git failure") || !strings.Contains(err.Error(), `"feat/a"`) {
+		t.Errorf("error = %v, want the collected error for feat/a to be kept", err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want it to wrap context.Canceled", err)
+	}
+}
+
+// TestReflogErrorIsSurfacedAndConservative:a failing reflog read keeps the
 // branch hidden (it might be fresh) but is not silent.
 func TestReflogErrorIsSurfacedAndConservative(t *testing.T) {
 	f := newFixture(t)

@@ -19,6 +19,14 @@ import (
 // file. Configuration is derived from the resolved path, never from the
 // scope the file claims.
 //
+// The disabled-detector refusal is a courtesy check, not a safety boundary:
+// it is keyed on f.Detector, a field of the untrusted file, so a renamed
+// detector bypasses it. Deriving the detector from the finding kind would not
+// help, since one kind (dir, file, branch) is produced by several detectors.
+// What actually protects the user does not read that field: the scope guard,
+// the exclude patterns below, the catalog protection and the re-validation in
+// the actions.
+//
 // User-level findings only see the global configuration: there is no project
 // for a .brooom.json or an exclude list to belong to.
 func (sc *cleanScope) checkConfig(f findings.Finding, resolved string) string {

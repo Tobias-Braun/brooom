@@ -2,7 +2,6 @@ package stalebranch
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -68,20 +67,19 @@ func (s *scan) assess(ctx context.Context, b gitx.Branch) (findings.Finding, boo
 	if !s.isCandidate(b) {
 		return findings.Finding{}, false, nil
 	}
-	merged, merr := s.mergedSkip(ctx, b.Name)
-	if merged {
+	if s.mergedSkip(ctx, b.Name) {
 		return findings.Finding{}, false, nil
 	}
 	st, err := s.assessRemote(ctx, b)
 	if err != nil {
-		return findings.Finding{}, false, errors.Join(merr, fmt.Errorf("stale-branch: assess branch %q: %w", b.Name, err))
+		return findings.Finding{}, false, fmt.Errorf("stale-branch: assess branch %q: %w", b.Name, err)
 	}
 	if st.unpushed > 0 && !s.cfg.Detectors.StaleBranch.IncludeUnpushed {
-		return findings.Finding{}, false, merr
+		return findings.Finding{}, false, nil
 	}
 	// A failed merged check is unknown, never merged: the branch is still
-	// assessed and reported, and the failure is surfaced next to it.
-	return s.build(b, st), true, merr
+	// assessed and reported, and the failure is surfaced once by Detect.
+	return s.build(b, st), true, nil
 }
 
 // build assembles the finding for an assessed branch.
@@ -228,7 +226,7 @@ func blockedReason(b gitx.Branch, st remoteState, blocking []findings.RiskFlag, 
 	for _, f := range blocking {
 		switch f {
 		case findings.RiskUnpushedCommits:
-			parts = append(parts, gitx.OnlyOnBranchPhrase(st.unique)+"; "+unpushedConsequence(st.unique)+" (re-run with --force to override)")
+			parts = append(parts, gitx.OnlyOnBranchPhrase(st.unique)+"; "+unpushedConsequence(st.unique)+forceHint(st.unique))
 		case findings.RiskHasOpenPR:
 			parts = append(parts, "an open pull request uses this branch (re-run with --force to override)")
 		case findings.RiskCurrentBranch:
@@ -240,6 +238,16 @@ func blockedReason(b gitx.Branch, st remoteState, blocking []findings.RiskFlag, 
 		}
 	}
 	return strings.Join(parts, "; ")
+}
+
+// forceHint is the trailing override hint. It is parenthesized unless the
+// phrase before it already ends in a parenthesis (no unique commits), where a
+// second one would read as "((...)"; a semicolon is used then.
+func forceHint(unique int) string {
+	if unique == 0 {
+		return "; re-run with --force to override"
+	}
+	return " (re-run with --force to override)"
 }
 
 // unpushedConsequence states what the unpushed block protects: commits that

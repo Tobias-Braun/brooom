@@ -16,6 +16,18 @@ func TestLocalBranchNamedLikeRemoteBaseIsNotMerged(t *testing.T) {
 	}
 }
 
+// TestRenamedFreshBranchStaysHidden: renaming a freshly created branch adds a
+// reflog entry, which must not make it look like used, merged work.
+func TestRenamedFreshBranchStaysHidden(t *testing.T) {
+	f := newFixture(t)
+	f.publish()
+	f.repo.Branch("scratch")
+	f.repo.Git("branch", "-m", "scratch", "renamed")
+	if x := byRef(f.detect(), "renamed"); x != nil {
+		t.Fatalf("renamed fresh branch reported as merged: %+v", *x)
+	}
+}
+
 // TestBranchWithTagOfSameNameIsNotMerged covers #88: git resolves tags before
 // branches, so a tag on a merged commit must not make the branch look merged.
 func TestBranchWithTagOfSameNameIsNotMerged(t *testing.T) {
