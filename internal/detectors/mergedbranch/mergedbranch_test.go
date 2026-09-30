@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -708,7 +709,8 @@ func TestTargetOutsideGuardIsAnError(t *testing.T) {
 	if !errors.Is(err, scope.ErrOutsideScope) {
 		t.Errorf("error does not wrap ErrOutsideScope: %v", err)
 	}
-	if !strings.Contains(err.Error(), f.repo.Dir) {
+	// The detector quotes paths with %q, which doubles Windows backslashes.
+	if !strings.Contains(err.Error(), strconv.Quote(f.repo.Dir)) {
 		t.Errorf("error does not name the paths: %v", err)
 	}
 	if len(got) != 0 {
