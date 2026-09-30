@@ -383,13 +383,13 @@ func (d decision) verifiedWhy(ctx context.Context) (string, bool) {
 // mergedWhy checks ancestry of the tip in the base and, for a finding that
 // claimed a squash merge, the patch-id based squash/rebase detection.
 func (d decision) mergedWhy(ctx context.Context, base gitx.Base) (string, bool) {
-	if ok, err := d.repo.IsAncestor(ctx, d.tip, base.Ref); err == nil && ok {
+	if ok, err := d.repo.IsAncestor(ctx, d.tip, base.FullRef); err == nil && ok {
 		return "merged into " + base.Ref, true
 	}
 	if d.verified != verifiedSquash {
 		return "", false
 	}
-	res, err := d.repo.MergedInto(ctx, base.Ref, "refs/heads/"+d.name, true)
+	res, err := d.repo.MergedInto(ctx, base.FullRef, "refs/heads/"+d.name, true)
 	if err != nil || !res.Merged {
 		return "", false
 	}

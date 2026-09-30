@@ -116,7 +116,7 @@ func TestMergedCheckErrorIsSurfaced(t *testing.T) {
 	f := newFixture(t, true)
 	f.pushed("feat/x", f.daysAgo(100))
 	got, err := f.detectFailing(func(args []string) bool {
-		return args[0] == "merge-base" && slices.Contains(args, "--is-ancestor") && args[len(args)-1] == "origin/main"
+		return args[0] == "merge-base" && slices.Contains(args, "--is-ancestor") && args[len(args)-1] == "refs/remotes/origin/main"
 	})
 	if err == nil || !strings.Contains(err.Error(), `"feat/x"`) {
 		t.Fatalf("error = %v, want one naming the branch", err)

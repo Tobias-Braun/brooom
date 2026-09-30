@@ -110,14 +110,14 @@ func TestMergedInto(t *testing.T) {
 			tc.setup(repo)
 			handle := openRepo(t, r, repo.Dir)
 
-			got, err := handle.MergedInto(ctx, "main", "feat", true)
+			got, err := handle.MergedInto(ctx, "refs/heads/main", "refs/heads/feat", true)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if got.Merged != tc.wantMerged || got.Method != tc.wantMethod {
 				t.Errorf("MergedInto(squash) = %+v, want merged=%v method=%q", got, tc.wantMerged, tc.wantMethod)
 			}
-			plain, err := handle.MergedInto(ctx, "main", "feat", false)
+			plain, err := handle.MergedInto(ctx, "refs/heads/main", "refs/heads/feat", false)
 			if err != nil || plain.Merged != tc.withoutSquash {
 				t.Errorf("MergedInto(no squash) = %+v, %v; want merged=%v", plain, err, tc.withoutSquash)
 			}
@@ -131,14 +131,14 @@ func TestIsAncestor(t *testing.T) {
 	featWithTwoCommits(repo)
 	handle := openRepo(t, execRunner(t), repo.Dir)
 
-	if ok, err := handle.IsAncestor(ctx, "main", "feat"); err != nil || !ok {
+	if ok, err := handle.IsAncestor(ctx, "refs/heads/main", "refs/heads/feat"); err != nil || !ok {
 		t.Errorf("main is an ancestor of feat: %v, %v", ok, err)
 	}
-	if ok, err := handle.IsAncestor(ctx, "feat", "main"); err != nil || ok {
+	if ok, err := handle.IsAncestor(ctx, "refs/heads/feat", "refs/heads/main"); err != nil || ok {
 		t.Errorf("feat is not an ancestor of main: %v, %v", ok, err)
 	}
 	// A bad ref is an error (exit 128), never silently "false".
-	if ok, err := handle.IsAncestor(ctx, "no-such-ref", "main"); err == nil || ok {
+	if ok, err := handle.IsAncestor(ctx, "refs/heads/no-such-ref", "refs/heads/main"); err == nil || ok {
 		t.Errorf("bad ref: %v, %v; want an error", ok, err)
 	}
 }
@@ -150,7 +150,7 @@ func TestSquashMergedIsReadOnly(t *testing.T) {
 	repo.SquashMerge("feat", "squash feat", at(3))
 	before := repo.Git("for-each-ref") + repo.Git("count-objects", "-v")
 
-	res, err := openRepo(t, execRunner(t), repo.Dir).SquashMerged(ctx, "main", "feat")
+	res, err := openRepo(t, execRunner(t), repo.Dir).SquashMerged(ctx, "refs/heads/main", "refs/heads/feat")
 	if err != nil || res.Method != gitx.MethodSquash {
 		t.Fatalf("SquashMerged = %+v, %v", res, err)
 	}
@@ -168,7 +168,7 @@ func TestSquashMergedUnknownWithoutInput(t *testing.T) {
 	repo.SquashMerge("feat", "squash feat", at(3))
 	handle := openRepo(t, noInput{execRunner(t)}, repo.Dir)
 
-	res, err := handle.MergedInto(context.Background(), "main", "feat", true)
+	res, err := handle.MergedInto(context.Background(), "refs/heads/main", "refs/heads/feat", true)
 	if err != nil || res.Merged {
 		t.Errorf("without stdin support the answer must be not merged, got %+v, %v", res, err)
 	}
@@ -177,7 +177,7 @@ func TestSquashMergedUnknownWithoutInput(t *testing.T) {
 func TestSquashMergedRefusesUnknownRefs(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	handle := openRepo(t, execRunner(t), repo.Dir)
-	res, err := handle.SquashMerged(context.Background(), "main", "no-such-branch")
+	res, err := handle.SquashMerged(context.Background(), "refs/heads/main", "refs/heads/no-such-branch")
 	if err == nil || res.Merged {
 		t.Errorf("got %+v, %v; want error and not merged", res, err)
 	}
@@ -188,7 +188,7 @@ func TestSquashMergedUnrelatedHistories(t *testing.T) {
 	repo.Git("checkout", "-q", "--orphan", "orphan")
 	repo.Commit("o.txt", "o", "orphan root", at(1))
 	repo.Checkout("main")
-	res, err := openRepo(t, execRunner(t), repo.Dir).MergedInto(context.Background(), "main", "orphan", true)
+	res, err := openRepo(t, execRunner(t), repo.Dir).MergedInto(context.Background(), "refs/heads/main", "refs/heads/orphan", true)
 	if err != nil || res.Merged {
 		t.Errorf("unrelated histories: %+v, %v; want not merged", res, err)
 	}
@@ -210,7 +210,7 @@ func TestSquashMergedFakeRunnerFailure(t *testing.T) {
 		}
 	})}
 	repo := &gitx.Repo{Runner: fake, Dir: "."}
-	got, err := repo.SquashMerged(context.Background(), "main", "feat")
+	got, err := repo.SquashMerged(context.Background(), "refs/heads/main", "refs/heads/feat")
 	if err == nil || got.Merged {
 		t.Errorf("patch-id failure: %+v, %v; want error and not merged", got, err)
 	}

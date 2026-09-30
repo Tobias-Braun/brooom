@@ -148,7 +148,7 @@ func TestRepoConcurrentUse(t *testing.T) {
 			_, _ = shared.ListRemoteBranches(ctx)
 			_, _ = shared.DefaultBase(ctx, []string{"main"})
 			_, _ = shared.RemoteContaining(ctx, "main")
-			_, _ = shared.MergedInto(ctx, "main", "feat", true)
+			_, _ = shared.MergedInto(ctx, "refs/heads/main", "refs/heads/feat", true)
 			_ = shared.OpenPRBranches(ctx, repo.Dir, gitx.PROptions{GH: failingGH})
 		}()
 	}
@@ -156,7 +156,7 @@ func TestRepoConcurrentUse(t *testing.T) {
 
 	before := cr.n.Load()
 	_, _ = shared.ListBranches(ctx)
-	_, _ = shared.MergedInto(ctx, "main", "feat", true)
+	_, _ = shared.MergedInto(ctx, "refs/heads/main", "refs/heads/feat", true)
 	if cr.n.Load() != before {
 		t.Error("memoized calls must not start git processes")
 	}

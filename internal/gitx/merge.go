@@ -3,6 +3,7 @@ package gitx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -50,10 +51,14 @@ type mergeKey struct {
 	squash       bool
 }
 
-// IsAncestor reports whether ancestor is reachable from descendant. Exit
+// IsAncestor reports whether ancestor is reachable from descendant. Both must
+// be fully qualified refs, "HEAD" or commit SHAs (see requireQualified). Exit
 // status 0 is true, 1 is false and anything else (bad ref, crash) an error
 // that is never mapped to false.
 func (r *Repo) IsAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	if err := requireQualified(ancestor, descendant); err != nil {
+		return false, err
+	}
 	_, err := r.run(ctx, "merge-base", "--is-ancestor", ancestor, descendant)
 	if err == nil {
 		return true, nil
@@ -65,11 +70,45 @@ func (r *Repo) IsAncestor(ctx context.Context, ancestor, descendant string) (boo
 	return false, err
 }
 
+// ErrUnqualifiedRef is returned when a merge query is given a short ref name.
+var ErrUnqualifiedRef = errors.New("gitx: ref is not fully qualified")
+
+// requireQualified rejects short names such as "origin/main" or "rel". Git
+// resolves refs/tags and refs/heads before refs/remotes, so a same-named
+// branch or tag would silently answer for the intended ref and could make
+// unmerged work look merged. Fully qualified refs, HEAD and commit SHAs are
+// unambiguous.
+func requireQualified(refs ...string) error {
+	for _, ref := range refs {
+		if strings.HasPrefix(ref, "refs/") || ref == "HEAD" || isSHA(ref) {
+			continue
+		}
+		return fmt.Errorf("%w: %q", ErrUnqualifiedRef, ref)
+	}
+	return nil
+}
+
+// isSHA reports whether s is a full SHA-1 or SHA-256 object id.
+func isSHA(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // MergedInto is the single entry point for "is branch merged into base": an
 // ancestor check first, then, when includeSquash is set, squash and rebase
 // detection. Results are memoized per (base, branch, includeSquash) on cached
 // handles. An error means unknown and must be treated as not merged.
 func (r *Repo) MergedInto(ctx context.Context, base, branch string, includeSquash bool) (MergeResult, error) {
+	if err := requireQualified(base, branch); err != nil {
+		return MergeResult{}, err
+	}
 	return cached(r, &r.merged, mergeKey{base, branch, includeSquash}, func() (MergeResult, error) {
 		res, err := r.mergedInto(ctx, base, branch, includeSquash)
 		if isMissingObject(err) {
@@ -125,6 +164,9 @@ func isMissingObject(err error) bool {
 // failure reports not merged with Truncated set where applicable. Callers
 // normally use MergedInto, which checks ancestry first.
 func (r *Repo) SquashMerged(ctx context.Context, base, branch string) (MergeResult, error) {
+	if err := requireQualified(base, branch); err != nil {
+		return MergeResult{}, err
+	}
 	baseSHA, err := r.resolveCommit(ctx, base)
 	if err != nil {
 		return MergeResult{}, err

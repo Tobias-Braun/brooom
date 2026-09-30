@@ -14,7 +14,7 @@ type Branch struct {
 	Name string
 	// Tip is the full SHA of the branch tip.
 	Tip string
-	// Upstream is the configured upstream in short form ("origin/feat/x"),
+	// Upstream is the configured upstream for display ("origin/feat/x"),
 	// empty if none is configured.
 	Upstream string
 	// UpstreamRef is the full ref of the configured upstream, e.g.
@@ -51,7 +51,7 @@ type RemoteBranch struct {
 // in ref names or paths and a newline cannot occur in ref names.
 const (
 	fieldSep  = "\x00"
-	branchFmt = "%(refname)%00%(objectname)%00%(upstream:short)%00%(upstream)%00%(upstream:track)%00%(committerdate:unix)%00%(worktreepath)"
+	branchFmt = "%(refname)%00%(objectname)%00%(upstream)%00%(upstream:track)%00%(committerdate:unix)%00%(worktreepath)"
 	remoteFmt = "%(refname)%00%(objectname)%00%(committerdate:unix)%00%(symref)"
 )
 
@@ -72,24 +72,35 @@ func parseBranches(out string) ([]Branch, error) {
 	var branches []Branch
 	for _, line := range Lines(out) {
 		f := strings.Split(line, fieldSep)
-		if len(f) != 7 {
+		if len(f) != 6 {
 			return nil, fmt.Errorf("gitx: unexpected for-each-ref record %q", line)
 		}
 		b := Branch{
 			Name:         strings.TrimPrefix(f[0], "refs/heads/"),
 			Tip:          f[1],
-			Upstream:     f[2],
-			UpstreamRef:  f[3],
-			UpstreamGone: strings.Contains(f[4], "gone"),
-			Track:        f[4],
-			Date:         parseUnix(f[5]),
+			Upstream:     shortUpstream(f[2]),
+			UpstreamRef:  f[2],
+			UpstreamGone: strings.Contains(f[3], "gone"),
+			Track:        f[3],
+			Date:         parseUnix(f[4]),
 		}
-		if f[6] != "" {
-			b.WorktreePath = NormalizePath(f[6])
+		if f[5] != "" {
+			b.WorktreePath = NormalizePath(f[5])
 		}
 		branches = append(branches, b)
 	}
 	return branches, nil
+}
+
+// shortUpstream turns the fully qualified upstream of %(upstream) into the
+// display form itself instead of asking for %(upstream:short), which git
+// makes ambiguous ("remotes/origin/main") when a same-named branch or tag
+// exists.
+func shortUpstream(full string) string {
+	if s, ok := strings.CutPrefix(full, "refs/remotes/"); ok {
+		return s
+	}
+	return strings.TrimPrefix(full, "refs/heads/")
 }
 
 // parseUnix parses a unix timestamp; malformed input yields the zero time.
