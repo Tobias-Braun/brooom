@@ -32,8 +32,9 @@ const (
 // ghBreaker is the scan-wide circuit breaker for gh. Until the first
 // conclusive attempt, calls are serialized so one hanging gh costs a single
 // timeout instead of one per repository running in parallel; after gh
-// answered, calls run concurrently; after a ghDown verdict every call
-// returns immediately with unknown information.
+// answered, calls run concurrently, and a ghDown verdict from any of them
+// still opens the breaker; once open every call returns immediately with
+// unknown information.
 type ghBreaker struct {
 	mu    sync.Mutex
 	state ghVerdict // ghNeutral means "not known yet"
@@ -52,7 +53,14 @@ func (b *ghBreaker) do(f func() (PRInfo, ghVerdict)) PRInfo {
 		return PRInfo{}
 	case ghHealthy:
 		b.mu.Unlock()
-		info, _ := f()
+		info, v := f()
+		if v == ghDown {
+			// gh answered before but hangs or lost the network now; without
+			// opening here every remaining repository would cost a timeout.
+			b.mu.Lock()
+			b.state = ghDown
+			b.mu.Unlock()
+		}
 		return info
 	}
 	defer b.mu.Unlock()

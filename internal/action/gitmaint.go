@@ -234,7 +234,9 @@ func checkIdle(ctx context.Context, env *Env, repo *gitx.Repo) error {
 // gc is a skip quoting git, everything else names the repository (on Windows
 // a running git gc holding files ends up here).
 func runMaint(ctx context.Context, env *Env, repo *gitx.Repo, args ...string) error {
-	_, err := env.Git.Run(ctx, repo.Dir, args...)
+	// gc on a large repository outlasts the scan timeout, so maintenance gets
+	// its own, much longer bound (a caller's deadline still wins).
+	_, err := env.Git.Run(gitx.WithTimeout(ctx, gitx.MaintenanceTimeout), repo.Dir, args...)
 	if err == nil {
 		return nil
 	}

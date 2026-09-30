@@ -79,6 +79,65 @@ func (r *ExecRunner) timeout() time.Duration {
 	return r.Timeout
 }
 
+// MaintenanceTimeout bounds maintenance commands (gc, prune, reflog expire).
+// Repacking a very large repository legitimately takes far longer than the
+// scan bound of DefaultTimeout, and killing gc half way only wastes the work,
+// but a maintenance command that never ends must still not hang Brooom.
+const MaintenanceTimeout = 6 * time.Hour
+
+// TimeoutError is returned when a command was killed because its deadline
+// passed. errors.Is(err, context.DeadlineExceeded) is true, so callers that
+// test for a deadline keep working, while the message says what timed out
+// instead of the bare "signal: killed" exit status.
+type TimeoutError struct {
+	Args []string
+	Dir  string
+	// After is how long the command ran before it was killed.
+	After time.Duration
+}
+
+func (e *TimeoutError) Error() string {
+	return fmt.Sprintf("git %s (in %s) timed out after %s", strings.Join(e.Args, " "), e.Dir, e.After)
+}
+
+// Is makes errors.Is(err, context.DeadlineExceeded) true.
+func (e *TimeoutError) Is(target error) bool { return target == context.DeadlineExceeded }
+
+// roundElapsed trims a duration for display: sub-second values to 10ms, the
+// rest to 100ms, so "timed out after 5m0s" is not "5m0.000731s".
+func roundElapsed(d time.Duration) time.Duration {
+	if d < time.Second {
+		return d.Round(10 * time.Millisecond)
+	}
+	return d.Round(100 * time.Millisecond)
+}
+
+type callTimeoutKey struct{}
+
+// WithTimeout returns a context that makes gitx use d instead of the runner's
+// default bound for calls whose context has no deadline. A negative d disables
+// the bound. Maintenance actions use it because gc may run for hours. A
+// deadline already on the context always wins.
+func WithTimeout(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, callTimeoutKey{}, d)
+}
+
+// bound applies the default timeout def to ctx unless it already has a
+// deadline or WithTimeout overrode the bound. The returned context reports
+// context.DeadlineExceeded when the bound (or the caller's deadline) passed.
+func bound(ctx context.Context, def time.Duration) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	if d, ok := ctx.Value(callTimeoutKey{}).(time.Duration); ok {
+		def = d
+	}
+	if def <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, def)
+}
+
 // NewExecRunner returns a runner for the git binary on PATH.
 func NewExecRunner() (*ExecRunner, error) {
 	p, err := exec.LookPath("git")
@@ -96,13 +155,14 @@ func (r *ExecRunner) Run(ctx context.Context, dir string, args ...string) (strin
 // run is the single code path behind Run and RunInput so both use the same
 // environment, error type and output trimming.
 func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args []string) (string, error) {
+	start := time.Now()
+	ctx, cancelTimeout := bound(ctx, r.timeout())
+	defer cancelTimeout()
+	// The deadline state is read from this context before the cancel wrapper
+	// below, whose cancellation (output limit) must not look like a timeout.
+	deadlineCtx := ctx
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if _, ok := ctx.Deadline(); !ok && r.timeout() > 0 {
-		var cancelTimeout context.CancelFunc
-		ctx, cancelTimeout = context.WithTimeout(ctx, r.timeout())
-		defer cancelTimeout()
-	}
 	full := append([]string{"-C", dir}, args...)
 	cmd := exec.CommandContext(ctx, r.Path, full...)
 	cmd.Env = Env(os.Environ())
@@ -121,6 +181,9 @@ func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args 
 	if err := cmd.Run(); err != nil {
 		if stdout.exceeded {
 			return "", fmt.Errorf("git %s (in %s): %w", strings.Join(args, " "), dir, ErrOutputLimit)
+		}
+		if errors.Is(deadlineCtx.Err(), context.DeadlineExceeded) {
+			return "", &TimeoutError{Args: args, Dir: dir, After: roundElapsed(time.Since(start))}
 		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -167,9 +230,13 @@ var strippedEnvKeys = map[string]bool{
 }
 
 // stripped reports whether the environment entry must not reach git.
-func stripped(entry string) bool {
+func stripped(entry string) bool { return strippedOS(entry, runtime.GOOS) }
+
+// strippedOS is stripped for a given OS: Windows environment names are case
+// insensitive, so "git_dir" reaches git as GIT_DIR there and must be dropped.
+func strippedOS(entry, goos string) bool {
 	key, _, _ := strings.Cut(entry, "=")
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		key = strings.ToUpper(key)
 	}
 	return strippedEnvKeys[key] ||

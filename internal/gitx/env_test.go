@@ -103,7 +103,9 @@ func TestIsMissingObject(t *testing.T) {
 	}{
 		{"nil", nil, false},
 		{"plain error", os.ErrNotExist, false},
-		{"unable to read", &gitx.Error{Stderr: "fatal: unable to read 1234"}, true},
+		{"unable to read is corruption", &gitx.Error{Stderr: "fatal: unable to read 1234"}, false},
+		{"bad object is corruption", &gitx.Error{Stderr: "fatal: bad object HEAD"}, false},
+		{"lazy fetch disabled", &gitx.Error{Stderr: "fatal: lazy fetching disabled; some objects may not be available"}, true},
 		{"promisor", &gitx.Error{Stderr: "fatal: could not fetch abc from promisor remote"}, true},
 		{"bad ref", &gitx.Error{Stderr: "fatal: Not a valid object name nope"}, false},
 	} {

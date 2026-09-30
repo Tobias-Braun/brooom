@@ -96,7 +96,10 @@ func execGH(ctx context.Context, dir string, env []string, args ...string) ([]by
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
+	// gh spawns git, which would inherit GIT_DIR, GIT_INDEX_FILE and friends
+	// from a hook or direnv and read another repository; use the same
+	// sanitized environment as the git calls.
+	cmd.Env = append(Env(os.Environ()), env...)
 	// A grandchild (gh spawns helpers) may hold the output pipe past the
 	// deadline; WaitDelay force-closes it so the timeout is real.
 	cmd.WaitDelay = waitDelay

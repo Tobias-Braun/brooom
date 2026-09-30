@@ -128,16 +128,20 @@ func (r *Repo) mergedInto(ctx context.Context, base, branch string, includeSquas
 	return r.SquashMerged(ctx, base, branch)
 }
 
-// isMissingObject reports whether err is git complaining about an object that
-// is absent from the object store, as happens in a partial clone once lazy
-// fetching is disabled. The wording is stable across git versions.
+// isMissingObject reports whether err is git refusing to fetch an object from
+// a promisor remote, which is what a partial clone reports once lazy fetching
+// is disabled ("lazy fetching disabled" since git 2.44, "promisor remote" in
+// older versions). Only these messages mean "absent by design". Generic
+// "unable to read", "bad object" or "missing blob" also appear on genuine
+// corruption, which must surface as an error rather than be cached as "not
+// merged".
 func isMissingObject(err error) bool {
 	var gerr *Error
 	if !errors.As(err, &gerr) {
 		return false
 	}
 	s := strings.ToLower(gerr.Stderr)
-	for _, marker := range []string{"unable to read", "bad object", "missing blob", "missing tree", "missing commit", "promisor"} {
+	for _, marker := range []string{"promisor", "lazy fetching disabled"} {
 		if strings.Contains(s, marker) {
 			return true
 		}
@@ -337,12 +341,6 @@ func (r *Repo) diffPatchPairs(ctx context.Context, stdin io.Reader, args []strin
 
 // streamPatchPairs is the streaming variant of diffPatchPairs.
 func (r *Repo) streamPatchPairs(ctx context.Context, stdin io.Reader, args []string) ([]patchPair, bool, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		// Pipe has no default timeout of its own, unlike ExecRunner.Run.
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, DefaultTimeout)
-		defer cancel()
-	}
 	var pairs []patchPair
 	err := pipeLimitInput(ctx, r.Runner, r.Dir, stdin, args, []string{"patch-id", "--stable"}, r.limit(), func(line string) {
 		pairs = append(pairs, parsePatchPairs(line)...)
