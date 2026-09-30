@@ -51,6 +51,10 @@ type treeMeter struct {
 	m     measurement
 	links map[string]struct{}
 	errs  []error
+	// ownGit is the relative path of a .git entry that belongs to the target
+	// itself (the link file of a linked worktree) and is therefore not a
+	// nested repository.
+	ownGit string
 }
 
 func (t *treeMeter) visit(e walk.Entry) walk.Decision {
@@ -59,7 +63,7 @@ func (t *treeMeter) visit(e walk.Entry) walk.Decision {
 	if e.ModTime.After(t.m.newest) {
 		t.m.newest = e.ModTime
 	}
-	if isGitName(e.Name) && (t.m.nestedGit == "" || e.Rel < t.m.nestedGit) {
+	if isGitName(e.Name) && e.Rel != t.ownGit && (t.m.nestedGit == "" || e.Rel < t.m.nestedGit) {
 		t.m.nestedGit = e.Rel
 	}
 	t.m.size += t.entrySize(e)
@@ -93,7 +97,22 @@ func (t *treeMeter) fail(path string, err error) {
 // measureTree walks a directory. rootMTime is used when the tree is empty so
 // LastModified never stays unset.
 func measureTree(ctx context.Context, path string, rootMTime time.Time) (measurement, error) {
-	t := &treeMeter{links: map[string]struct{}{}}
+	return measureWith(ctx, &treeMeter{links: map[string]struct{}{}}, path, rootMTime)
+}
+
+// measureWorktree is measureTree for a linked worktree directory: its own
+// top-level .git link file is not reported as a nested repository, everything
+// deeper is.
+func measureWorktree(ctx context.Context, path string) (measurement, error) {
+	root, err := walk.Stat(path)
+	if err != nil {
+		return measurement{}, err
+	}
+	t := &treeMeter{links: map[string]struct{}{}, ownGit: ".git"}
+	return measureWith(ctx, t, path, root.ModTime)
+}
+
+func measureWith(ctx context.Context, t *treeMeter, path string, rootMTime time.Time) (measurement, error) {
 	err := walk.Walk(ctx, path, walk.Options{Fresh: true}, t.visit, t.fail)
 	if err != nil {
 		return measurement{}, err

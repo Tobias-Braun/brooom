@@ -107,6 +107,24 @@ func (r *Repo) IsDirty(ctx context.Context, dir string) (bool, error) {
 	return out != "", nil
 }
 
+// IgnoredEntries lists what git ignores below the worktree at dir, as
+// slash-separated paths with fully ignored directories collapsed to one entry
+// (trailing slash). Status never reports these, but they can hold the only
+// copy of local configuration, credentials or agent state.
+func (r *Repo) IgnoredEntries(ctx context.Context, dir string) ([]string, error) {
+	out, err := r.Runner.Run(ctx, dir, "--no-optional-locks", "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
+	if err != nil {
+		return nil, err
+	}
+	var entries []string
+	for _, e := range strings.Split(out, "\x00") {
+		if e != "" {
+			entries = append(entries, e)
+		}
+	}
+	return entries, nil
+}
+
 // cleanNative converts forward slashes to the native separator and cleans.
 func cleanNative(p string) string {
 	return filepath.Clean(filepath.FromSlash(p))

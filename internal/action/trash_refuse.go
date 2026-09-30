@@ -96,6 +96,13 @@ func brooomStateDirs() []string {
 // removing a scan root, a repository, git metadata, Brooom's own state, a
 // filesystem root or the user's home. The returned error wraps ErrSkipped.
 func refuseTarget(env *Env, path string) error {
+	return refusePath(env, path, true)
+}
+
+// refusePath is refuseTarget with the repository-root refusal optional: a
+// linked worktree root looks like a repository root (it has a .git link file)
+// but is exactly what the worktree actions remove.
+func refusePath(env *Env, path string, refuseRepoRoot bool) error {
 	switch {
 	case isVolumeRoot(path):
 		return skipf("refusing to remove a filesystem root")
@@ -103,7 +110,7 @@ func refuseTarget(env *Env, path string) error {
 		return skipf("refusing to remove an allowed root")
 	case insideGitDir(path):
 		return skipf("refusing to remove .git or anything inside it")
-	case isRepoRoot(path):
+	case refuseRepoRoot && isRepoRoot(path):
 		return skipf("refusing to remove a repository root")
 	}
 	for p, why := range protectedPaths() {

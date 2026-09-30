@@ -197,24 +197,158 @@ func TestRemoveWorktreeClean(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(step.Command, "git worktree remove --") || strings.Contains(step.Command, "--force") {
+	wantContains(t, step.Command, "&& git worktree remove -- ")
+	if strings.Contains(step.Command, "--force") || strings.Contains(step.Command, "prune") {
 		t.Errorf("command = %q", step.Command)
 	}
 	en, err := act.Apply(context.Background(), fx.env, step)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := session.Entry{Status: session.StatusApplied, Restorable: true, Path: path, Ref: "feat", SizeBytes: 100}
-	if en.Status != want.Status || en.Restorable != want.Restorable || en.Trash != nil ||
-		en.Path != want.Path || en.Ref != want.Ref || en.SizeBytes != want.SizeBytes {
+	if en.Status != session.StatusApplied || !en.Restorable || en.Trash == nil ||
+		en.Path != path || en.Ref != "feat" || en.SizeBytes != en.Trash.SizeBytes {
 		t.Errorf("entry = %+v", en)
 	}
 	wantMap(t, en.Undo, map[string]string{"repo": fx.repo.Dir, "worktree": path, "branch": "feat", "head": f.Meta["head"]})
-	wantContains(t, en.RecoveryHint, "git worktree add", "feat", "ignored by git")
+	wantContains(t, en.RecoveryHint, "git worktree add", "feat", "trash record")
 	if exists(path) || fx.registered(path) {
 		t.Error("worktree still present")
 	}
 	fx.gitOut(fx.repo.Dir, "branch", "-d", "feat")
+
+	if err := act.Undo(context.Background(), fx.env, en); err != nil {
+		t.Fatalf("Undo: %v", err)
+	}
+	if !fx.registered(path) || !exists(filepath.Join(path, "README.md")) {
+		t.Error("clean worktree not restored")
+	}
+}
+
+// ignoredFixture builds a worktree holding ignored local content that git
+// worktree remove would delete for good: a .env, an agent settings file and a
+// build directory.
+func ignoredFixture(t *testing.T) (*wtFixture, string) {
+	fx := newWTFixture(t)
+	fx.repo.WriteFile(".gitignore", ".env\n.claude/settings.local.json\nbuild/\n")
+	fx.repo.CommitAll("ignore local files", testutil.BaseTime)
+	path := fx.add("wt", "feat")
+	testutil.WriteFile(t, path, ".env", "SECRET=1\n")
+	testutil.WriteFile(t, path, ".claude/settings.local.json", "{}\n")
+	testutil.WriteFile(t, path, "build/out.bin", "artifact")
+	return fx, path
+}
+
+func TestRemoveWorktreeIgnoredContentReachesQuarantine(t *testing.T) {
+	fx, path := ignoredFixture(t)
+	act := removeWorktree{}
+	step, err := fx.plan(act, fx.removeFinding(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantContains(t, step.Description, "ignored files", ".env")
+
+	en, err := act.Apply(context.Background(), fx.env, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if en.Status != session.StatusApplied || en.Trash == nil || !en.Restorable {
+		t.Fatalf("entry = %+v", en)
+	}
+	if en.Trash.Strategy != config.StrategyQuarantine {
+		t.Errorf("strategy = %s", en.Trash.Strategy)
+	}
+	if exists(path) || fx.registered(path) {
+		t.Fatal("worktree still present")
+	}
+	kept, err := os.ReadFile(filepath.Join(en.Trash.StoredPath, ".env"))
+	if err != nil || string(kept) != "SECRET=1\n" {
+		t.Fatalf("quarantined .env = %q, %v", kept, err)
+	}
+
+	if err := act.Undo(context.Background(), fx.env, en); err != nil {
+		t.Fatalf("Undo: %v", err)
+	}
+	for _, rel := range []string{".env", ".claude/settings.local.json", "build/out.bin"} {
+		if !exists(filepath.Join(path, filepath.FromSlash(rel))) {
+			t.Errorf("%s not restored", rel)
+		}
+	}
+	if !fx.registered(path) {
+		t.Error("not registered after undo")
+	}
+	if out := fx.gitOut(path, "status", "--porcelain"); out != "" {
+		t.Errorf("restored worktree is dirty: %q", out)
+	}
+}
+
+func TestRemoveWorktreeNestedRepositoryRefused(t *testing.T) {
+	fx := newWTFixture(t)
+	fx.repo.WriteFile(".gitignore", "nested/\n")
+	fx.repo.CommitAll("ignore nested", testutil.BaseTime)
+	path := fx.add("wt", "feat")
+	testutil.WriteFile(t, path, "nested/data.txt", "only copy")
+	nested := filepath.Join(path, "nested")
+	fx.gitOut(nested, "init", "-q")
+	fx.gitOut(nested, "add", "-A")
+	fx.gitOut(nested, "-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "-m", "one")
+
+	for _, force := range []bool{false, true} {
+		fx.env.Force = force
+		f := fx.removeFinding(path)
+		_, err := fx.plan(removeWorktree{}, f)
+		wantSkip(t, err, "contains a git repository")
+		en, err := removeWorktree{}.Apply(context.Background(), fx.env, Step{Finding: f})
+		if err != nil || en.Status != session.StatusSkipped {
+			t.Fatalf("Apply = %+v, %v", en, err)
+		}
+	}
+	if !exists(filepath.Join(nested, "data.txt")) || !fx.registered(path) {
+		t.Error("worktree with a nested repository was touched")
+	}
+}
+
+func TestRemoveWorktreeDeleteStrategy(t *testing.T) {
+	t.Run("ignored files are refused", func(t *testing.T) {
+		fx, path := ignoredFixture(t)
+		fx.strategy = config.StrategyDelete
+		for _, force := range []bool{false, true} {
+			fx.env.Force = force
+			_, err := fx.plan(removeWorktree{}, fx.removeFinding(path))
+			wantSkip(t, err, "refusing to permanently delete files ignored by git")
+		}
+		if !exists(filepath.Join(path, ".env")) {
+			t.Fatal(".env was touched")
+		}
+	})
+
+	t.Run("nothing to lose uses git worktree remove", func(t *testing.T) {
+		fx := newWTFixture(t)
+		fx.strategy = config.StrategyDelete
+		path := fx.add("wt", "feat")
+		en, err := fx.apply(removeWorktree{}, fx.removeFinding(path))
+		if err != nil || en.Status != session.StatusApplied || en.Trash != nil || !en.Restorable {
+			t.Fatalf("entry = %+v, err = %v", en, err)
+		}
+		if exists(path) || fx.registered(path) {
+			t.Error("worktree still present")
+		}
+	})
+}
+
+func TestRemoveWorktreeOnlyDropsOwnRegistration(t *testing.T) {
+	fx := newWTFixture(t)
+	path := fx.add("wt", "feat")
+	other := fx.add("gone", "other")
+	if err := os.RemoveAll(other); err != nil {
+		t.Fatal(err)
+	}
+	en, err := fx.apply(removeWorktree{}, fx.removeFinding(path))
+	if err != nil || en.Status != session.StatusApplied {
+		t.Fatalf("entry = %+v, err = %v", en, err)
+	}
+	if !fx.registered(other) {
+		t.Error("registration of an unrelated missing worktree was pruned")
+	}
 }
 
 func TestRemoveWorktreeUndoClean(t *testing.T) {
@@ -434,10 +568,10 @@ func TestRemoveWorktreeDirty(t *testing.T) {
 		fx.wantRestoredDirty(path)
 	})
 
-	t.Run("prune failure keeps the trash record", func(t *testing.T) {
+	t.Run("registration removal failure keeps the trash record", func(t *testing.T) {
 		fx, path := setup(t)
 		fx.env.Force = true
-		fx.env.Git = failingRunner{Runner: fx.git, fail: "prune"}
+		fx.env.Git = failingRunner{Runner: fx.git, fail: "remove"}
 		step, err := fx.plan(removeWorktree{}, fx.removeFinding(path))
 		if err != nil {
 			t.Fatal(err)
@@ -477,6 +611,7 @@ func (r failingRunner) Run(ctx context.Context, dir string, args ...string) (str
 
 func TestRemoveWorktreeGitRefusalIsFailure(t *testing.T) {
 	fx := newWTFixture(t)
+	fx.strategy = config.StrategyDelete
 	path := fx.add("feat", "feat")
 	step, err := fx.plan(removeWorktree{}, fx.removeFinding(path))
 	if err != nil {
