@@ -300,9 +300,9 @@ func TestTrashPlanSkips(t *testing.T) {
 		}, "file is open by a process"},
 		{"blocking flag", false, func(fx *trashFixture) findings.Finding {
 			f := trashFinding(fx.write("proj/a.log", "x"))
-			f.RiskFlags = []findings.RiskFlag{findings.RiskUncommittedChanges}
+			f.RiskFlags = []findings.RiskFlag{findings.RiskWorktreeDirty}
 			return f
-		}, "uncommitted_changes"},
+		}, "worktree_dirty"},
 		{"non-overridable flag with force", true, func(fx *trashFixture) findings.Finding {
 			f := trashFinding(fx.write("proj/a.log", "x"))
 			f.RiskFlags = []findings.RiskFlag{findings.RiskFileOpen}
@@ -418,7 +418,7 @@ func TestTrashOpenFileChecks(t *testing.T) {
 func TestTrashRiskFlagsWithForce(t *testing.T) {
 	fx := newTrashFixture(t)
 	f := trashFinding(fx.write("proj/a.log", "x"))
-	f.RiskFlags = []findings.RiskFlag{findings.RiskUncommittedChanges}
+	f.RiskFlags = []findings.RiskFlag{findings.RiskWorktreeDirty}
 	fx.env.Force = true
 	if _, err := (trashAction{}).Plan(context.Background(), fx.env, f); err != nil {
 		t.Fatalf("Plan with force: %v", err)

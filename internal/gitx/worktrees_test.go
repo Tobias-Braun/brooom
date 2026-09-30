@@ -157,6 +157,21 @@ func TestIsDirty(t *testing.T) {
 		}, true},
 		{"deleted", func(repo *testutil.Repo) { _ = os.Remove(filepath.Join(repo.Dir, "README.md")) }, true},
 		{"untracked", func(repo *testutil.Repo) { repo.WriteFile("untracked.txt", "u") }, true},
+		{"skip-worktree edit", func(repo *testutil.Repo) {
+			repo.Git("update-index", "--skip-worktree", "README.md")
+			repo.WriteFile("README.md", "local override\n")
+		}, true},
+		{"assume-unchanged edit", func(repo *testutil.Repo) {
+			repo.Git("update-index", "--assume-unchanged", "README.md")
+			repo.WriteFile("README.md", "local override\n")
+		}, true},
+		{"assume-unchanged untouched", func(repo *testutil.Repo) {
+			repo.Git("update-index", "--assume-unchanged", "README.md")
+		}, false},
+		{"sparse-absent skip-worktree", func(repo *testutil.Repo) {
+			repo.Git("update-index", "--skip-worktree", "README.md")
+			_ = os.Remove(filepath.Join(repo.Dir, "README.md"))
+		}, false},
 		{"ignored only", func(repo *testutil.Repo) {
 			repo.Commit(".gitignore", "*.log\n", "ignore logs", at(1))
 			repo.WriteFile("debug.log", "noise")
@@ -171,6 +186,21 @@ func TestIsDirty(t *testing.T) {
 				t.Errorf("IsDirty = %v, %v; want %v", got, err, tc.want)
 			}
 		})
+	}
+}
+
+// TestHiddenEditsCounted checks that UncommittedEntries counts the edits git
+// status hides, one entry per file.
+func TestHiddenEditsCounted(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Commit("cfg.local", "a\n", "add cfg", at(1))
+	repo.Git("update-index", "--skip-worktree", "cfg.local")
+	repo.WriteFile("cfg.local", "edited\n")
+	repo.Git("update-index", "--assume-unchanged", "README.md")
+	repo.WriteFile("README.md", "edited\n")
+	n, err := openRepo(t, execRunner(t), repo.Dir).UncommittedEntries(context.Background(), repo.Dir)
+	if err != nil || n != 2 {
+		t.Errorf("UncommittedEntries = %d, %v; want 2", n, err)
 	}
 }
 

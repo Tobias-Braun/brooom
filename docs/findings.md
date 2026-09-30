@@ -70,7 +70,6 @@ on them without `--force`. `--force` never overrides `file_open_by_process`,
 | Flag | Blocking | Meaning |
 | --- | --- | --- |
 | `unpushed_commits` | yes | Branch has commits on no remote. |
-| `uncommitted_changes` | yes | Modified/untracked non-ignored files inside the path. |
 | `file_open_by_process` | yes | A process has the file open (e.g. log still written) or stands in the directory (Linux: cwd, root, exe; a worktree containing the current directory is flagged the same way). |
 | `worktree_dirty` | yes | Worktree has uncommitted changes. |
 | `worktree_locked` | yes | Worktree is locked. |

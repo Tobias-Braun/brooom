@@ -62,7 +62,10 @@ directory itself changed within `thresholds.recent_days`. Further evidence:
 `matches_catalog`, `ecosystem`, `marker`, `last_commit`, `tracked_files`,
 `gitignored` and `not_gitignored` (a hint that `git status` shows the
 directory). A `gitignored` directory also carries the informational risk flag
-of the same name.
+of the same name. `not_gitignored` is evidence only and never a risk flag:
+the artifact directories are regenerable by definition and the default
+strategies (`trash`, `quarantine`) are reversible. Only the permanent
+`delete` strategy refuses directories that hold untracked, non-ignored files.
 
 ## Tracked files and Force
 

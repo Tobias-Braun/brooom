@@ -14,9 +14,9 @@
 // `trash` (recoverable) and marked with Meta["user_data_risk"]="untracked" so
 // that presets can exclude it from the safe set and the trash action can
 // refuse the permanent `delete` strategy for it. Untracked files are
-// deliberately NOT flagged uncommitted_changes: that blocking flag would turn
-// the suggestion into `none` and defeat the purpose of the detector; the low
-// confidence and the untracked_file evidence carry the warning instead.
+// deliberately not given a blocking flag: it would turn the suggestion into
+// `none` and defeat the purpose of the detector; the low confidence and the
+// untracked_file evidence carry the warning instead.
 // Ignored entries are more likely regenerable and get medium confidence and
 // the gitignored flag.
 //

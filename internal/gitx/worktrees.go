@@ -108,18 +108,24 @@ func applyWorktreeField(w *Worktree, key, val string) {
 }
 
 // IsDirty reports whether the worktree at dir has modified, staged, deleted
-// or untracked (non-ignored) files. `--no-optional-locks` and the runner's
+// or untracked (non-ignored) files, or edits hidden by skip-worktree or
+// assume-unchanged (see HiddenEdits). `--no-optional-locks` and the runner's
 // GIT_OPTIONAL_LOCKS=0 keep status from refreshing the index on disk.
 func (r *Repo) IsDirty(ctx context.Context, dir string) (bool, error) {
 	out, err := r.Runner.Run(ctx, dir, "--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=normal")
 	if err != nil {
 		return false, err
 	}
-	return out != "", nil
+	if out != "" {
+		return true, nil
+	}
+	hidden, err := r.HiddenEdits(ctx, dir)
+	return len(hidden) > 0, err
 }
 
 // UncommittedEntries counts what IsDirty detects: the status entries of the
-// worktree at dir. In the NUL-separated porcelain format a rename or copy
+// worktree at dir plus the hidden edits (see
+// HiddenEdits). In the NUL-separated porcelain format a rename or copy
 // (status letter R or C in the index column) is followed by a second token
 // with the original path, which belongs to the same entry. The runner trims
 // the output, which can strip the leading space of the first token, but never
@@ -140,7 +146,8 @@ func (r *Repo) UncommittedEntries(ctx context.Context, dir string) (int, error) 
 			skipNext = tok[0] == 'R' || tok[0] == 'C'
 		}
 	}
-	return n, nil
+	hidden, err := r.HiddenEdits(ctx, dir)
+	return n + len(hidden), err
 }
 
 // IgnoredEntries lists what git ignores below the worktree at dir, as
