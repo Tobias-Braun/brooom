@@ -56,7 +56,7 @@ func (f *freedesktop) Remove(ctx context.Context, path string) (Record, error) {
 	}
 	// A size we cannot fully measure (unreadable subdirectory) must not
 	// prevent trashing; the partial sum is still informative.
-	size, _ := treeSize(real)
+	size, _ := sizeOf(ctx, real)
 	now := f.now()
 	recorded := real
 	if loc.topdir != "" {

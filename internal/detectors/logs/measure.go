@@ -101,7 +101,7 @@ func measureFile(it *item) bool {
 	if err != nil {
 		return false
 	}
-	it.size, it.mod = fi.Size(), fi.ModTime()
+	it.size, it.mod = walk.LeafSize(fi), fi.ModTime()
 	return true
 }
 

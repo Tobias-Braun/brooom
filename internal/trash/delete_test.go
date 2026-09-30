@@ -34,7 +34,7 @@ func TestDeleteRemovesItems(t *testing.T) {
 		size  int64
 		isDir bool
 	}{
-		{"file", 5, false},
+		{"file", 0, false},
 		{"tree", 3, true},
 		{"empty", 0, true},
 	}
@@ -42,6 +42,7 @@ func TestDeleteRemovesItems(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := filepath.Join(root, tt.name)
+			wantSize := refSize(t, p)
 			rec, err := tr.Remove(context.Background(), p)
 			if err != nil {
 				t.Fatal(err)
@@ -50,7 +51,7 @@ func TestDeleteRemovesItems(t *testing.T) {
 				t.Error("path still exists")
 			}
 			if rec.Strategy != config.StrategyDelete || rec.Restorable || rec.StoredPath != "" ||
-				rec.OriginalPath != p || rec.SizeBytes != tt.size || rec.IsDir != tt.isDir ||
+				rec.OriginalPath != p || rec.SizeBytes != wantSize || rec.IsDir != tt.isDir ||
 				rec.RemovedAt.IsZero() || rec.RemovedAt.Location() != time.UTC {
 				t.Errorf("unexpected record %+v", rec)
 			}

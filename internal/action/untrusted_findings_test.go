@@ -200,7 +200,7 @@ func TestDeleteBranchDerivesVerificationLive(t *testing.T) {
 		fx.repo.SquashMerge("feat/sq", "squash", testutil.BaseTime.Add(2*time.Hour))
 		fx.repo.Push("main")
 		step, _ := fx.mustApply(fx.finding("feat/sq", "stale-branch", ""))
-		if step.Command != "git branch -D feat/sq" || !strings.Contains(step.Description, "re-verified") {
+		if step.Command != "git branch -D -- feat/sq" || !strings.Contains(step.Description, "re-verified") {
 			t.Fatalf("step = %+v", step)
 		}
 	})
@@ -210,7 +210,7 @@ func TestDeleteBranchDerivesVerificationLive(t *testing.T) {
 		fx.repo.Git("push", "-q", "origin", "feat/r")
 		fx.repo.Fetch()
 		step, _ := fx.mustApply(fx.finding("feat/r", "merged-branch", ""))
-		if step.Command != "git branch -D feat/r" || !strings.Contains(step.Description, "contained in remote") {
+		if step.Command != "git branch -D -- feat/r" || !strings.Contains(step.Description, "contained in remote") {
 			t.Fatalf("step = %+v", step)
 		}
 	})

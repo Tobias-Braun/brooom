@@ -172,17 +172,3 @@ func memoized[T any](r *gitx.Repo, key string, f func() (T, error)) (T, error) {
 	}
 	return v.(T), nil
 }
-
-// humanBytes formats n for evidence messages.
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit && exp < 4; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTP"[exp])
-}

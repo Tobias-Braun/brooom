@@ -29,6 +29,13 @@ func allocatedSize(fi fs.FileInfo) int64 {
 	return fi.Size()
 }
 
+// AllocatedSize is the one sizing rule of Brooom: the bytes a file occupies on
+// disk (allocated blocks, so sparse files count what they use and small files
+// count a whole block), or the logical size on Windows where the allocation is
+// not cheaply available. Every detector, DirSize and the trash measurement
+// size regular files through it, so plan, scan and reclaimed numbers agree.
+func AllocatedSize(fi fs.FileInfo) int64 { return allocatedSize(fi) }
+
 // fileIDOf extracts device, inode and link count.
 func fileIDOf(fi fs.FileInfo) fileID {
 	st, ok := fi.Sys().(*syscall.Stat_t)

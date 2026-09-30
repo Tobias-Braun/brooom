@@ -12,6 +12,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
+	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
@@ -81,7 +82,7 @@ func (d *Detector) reflogFinding(ctx context.Context, env *detect.Env, info *rep
 	f.SizeBytes = u.size
 	setTime(env, &f, u.mtime)
 	f.Evidence = append(f.Evidence,
-		findings.Evidence{Code: "reflog_size_bytes", Message: fmt.Sprintf("reflogs use %s (threshold %s)", humanBytes(u.size), humanBytes(info.cfg.ReflogThresholdBytes)), Value: u.size},
+		findings.Evidence{Code: "reflog_size_bytes", Message: fmt.Sprintf("reflogs use %s (threshold %s)", output.FormatSize(u.size), output.FormatSize(info.cfg.ReflogThresholdBytes)), Value: u.size},
 		findings.Evidence{Code: "upper_bound", Message: "the saving is an upper bound: the size of entries older than " + info.cfg.ReflogExpire + " is not known without expiring", Value: true},
 	)
 	expire := info.cfg.ReflogExpire

@@ -24,10 +24,12 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/testutil"
 )
 
-// minSize is the threshold tests run with so that files of a few KB count.
+// minSize is the threshold tests run with. Sizes are allocations, so a tiny
+// file already counts a whole block (typically 4 KiB); the threshold sits well
+// above that and "big" files well above the threshold.
 const (
-	minSize = 2048
-	bigSize = 4096
+	minSize = 1 << 20
+	bigSize = 2 << 20
 )
 
 // now is the scan time; files written by tests carry real mtimes, which lie
@@ -149,7 +151,7 @@ func TestUntrackedFile(t *testing.T) {
 	fs := h.run()
 	h.want(fs, "data/model.ckpt")
 	f := fs[0]
-	if f.Kind != findings.KindFile || f.SizeBytes != bigSize || f.Detector != "large-untracked" {
+	if f.Kind != findings.KindFile || f.SizeBytes != allocated(t, f.Path) || f.Detector != "large-untracked" {
 		t.Errorf("unexpected finding: %+v", f)
 	}
 	if f.ID != findings.NewID("large-untracked", findings.KindFile, f.Path, "") {
@@ -187,7 +189,7 @@ func checkUntrackedEvidence(t *testing.T, f findings.Finding) {
 			t.Errorf("missing evidence %s", code)
 		}
 	}
-	if e, _ := evidence(f, "size_over_threshold"); e.Value != int64(bigSize) {
+	if e, _ := evidence(f, "size_over_threshold"); e.Value != allocated(t, f.Path) {
 		t.Errorf("size_over_threshold value = %v", e.Value)
 	}
 }
@@ -210,7 +212,7 @@ func TestEveryUntrackedFindingCarriesUserDataRisk(t *testing.T) {
 func TestThresholdBoundary(t *testing.T) {
 	h := newHarness(t)
 	h.repo.WriteFile("exact.bin", strings.Repeat("x", minSize))
-	h.repo.WriteFile("below.bin", strings.Repeat("x", minSize-1))
+	h.repo.WriteFile("below.bin", strings.Repeat("x", minSize-64<<10))
 	h.want(h.run(), "exact.bin")
 }
 
@@ -475,7 +477,10 @@ func TestManyUntrackedFiles(t *testing.T) {
 	for i := range 1500 {
 		h.repo.WriteFile(fmt.Sprintf("many/d%d/f%d.txt", i%20, i), "s")
 	}
-	h.big("many/d3/big.bin")
+	// 1500 one-block files add up to several MiB per directory, so this test
+	// runs with a threshold above that and a file above the threshold.
+	h.cfg().MinSizeBytes = 16 << 20
+	h.repo.WriteFile("many/d3/big.bin", strings.Repeat("x", 17<<20))
 	h.want(h.run(), "many/d3/big.bin")
 }
 

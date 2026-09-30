@@ -17,8 +17,9 @@ const (
 	// cacheVersion is bumped whenever the record layout changes; files of
 	// another version are ignored and rebuilt. Version 2 added HasGit, version 3
 	// Incomplete, version 4 renamed HasGit to HasVCS and widened it (other VCS
-	// metadata, bare repository shape), so older records are rebuilt.
-	cacheVersion = 4
+	// metadata, bare repository shape), version 5 counted the blocks of the
+	// directories themselves in DirectBytes; older records are rebuilt.
+	cacheVersion = 5
 	// maxCacheDirs caps the number of directory records persisted per
 	// queried path; huge trees are recomputed instead of cached.
 	maxCacheDirs = 250_000

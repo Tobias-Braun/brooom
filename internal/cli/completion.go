@@ -226,5 +226,5 @@ func sessionSummary(m *session.Manifest) string {
 	// value/description protocol.
 	command := strings.Join(strings.Fields(m.Command), " ")
 	return fmt.Sprintf("%s %s, %d applied, %s",
-		m.StartedAt.Local().Format("2006-01-02 15:04"), command, c.Applied, humanBytes(m.ReclaimedBytes))
+		m.StartedAt.Local().Format("2006-01-02 15:04"), command, c.Applied, output.FormatSize(m.ReclaimedBytes))
 }

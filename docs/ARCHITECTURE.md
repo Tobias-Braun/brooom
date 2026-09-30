@@ -635,6 +635,40 @@ counts; `(deleted)` targets and `/` are ignored), `lsof` on macOS, Restart
 Manager on Windows. `gitx.CwdWithin` additionally answers on every OS whether
 this process's own working directory is inside a path.
 
+### Sizes and suggested commands
+
+One sizing rule serves every number Brooom shows: allocated bytes
+(`Stat_t.Blocks*512`, logical size on Windows) including the blocks of the
+directories themselves, hard links counted once, symlinks as their own length
+and never followed. `walk.DirSize` implements it for trees (cache version 5),
+`walk.AllocatedSize` / `walk.LeafSize` for single items. The detectors
+(`large-untracked`, `log-and-runtime-files`, `ai-artifacts`) size files with
+`LeafSize`, so a sparse file counts what it occupies and `min_size_bytes` is
+compared against that. `trash.treeSize` is `DirSize` too, and `Apply` passes the
+size of its re-validating walk to the trasher through `trash.WithSizeHint`
+(exact path only, accounting only; the Windows Recycle Bin trasher always
+measures itself because its capacity check needs the live size). Plan,
+manifest entry and "reclaimed" therefore agree. Every size is printed with
+`output.FormatSize` (decimal SI); a test rejects other formatters.
+
+Step descriptions carry no size: plans and prompts append the finding's size
+once (`itemLine`), and omit it when it is 0 (branches, git maintenance).
+
+`Finding.SuggestedAction.Command` and `Step.Command` are display-only, but they
+are copied and pasted, so every value in them goes through
+`findings.ShellQuote` (POSIX single quotes) and names follow `--`
+(`git branch -d -- <name>`). The trash step's display command follows the host
+shell (`internal/action/display.go`): POSIX on unix, PowerShell on Windows (the
+Recycle Bin has no cmdlet, so that variant is a labelled, illustrative
+comment). A quarantine move shows the real destination pattern
+`<quarantine>/<session-id>/<n>/`, since the session id only exists once the run
+starts.
+
+`delete-branch` names the reference that justified `-d` ("fully merged into
+upstream origin/x" or "HEAD"). Its recovery hint warns about unreachable objects
+only when no branch, remote-tracking branch or tag still holds the deleted tip
+(`for-each-ref --contains`); otherwise it names the ref that keeps the commits.
+
 ### Output (`internal/output`)
 
 `Formatter.Write(w, *findings.Report, Options)`. `json` is the `Report` as

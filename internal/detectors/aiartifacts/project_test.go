@@ -15,7 +15,19 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/testutil"
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
+
+// fileAllocation is what a detector must report as the size of a file: the
+// bytes it occupies on disk (one block for a small file), not its length.
+func fileAllocation(t *testing.T, path string) int64 {
+	t.Helper()
+	fi, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return walk.LeafSize(fi)
+}
 
 func TestRegistration(t *testing.T) {
 	d, ok := detect.Get("ai-artifacts")
@@ -62,7 +74,7 @@ func TestProjectTree(t *testing.T) {
 	}
 
 	checkDirFinding(t, byRel(t, got, repo.Dir, ".aider.tags.cache.v3"), repo.Dir)
-	if file := byRel(t, got, repo.Dir, ".aider.input.history"); file.Kind != findings.KindFile || file.SizeBytes != int64(len("data\n")) {
+	if file := byRel(t, got, repo.Dir, ".aider.input.history"); file.Kind != findings.KindFile || file.SizeBytes != fileAllocation(t, file.Path) {
 		t.Errorf("file finding %+v", file)
 	}
 }

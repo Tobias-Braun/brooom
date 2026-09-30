@@ -121,7 +121,7 @@ func (s *sizer) process(rel string, submit func(string)) {
 	rec := s.old[rel]
 	reread := rec == nil || rec.Racy || rec.MtimeUnixNano != mtime || rec.ID != id
 	if reread {
-		rec = s.scan(path, mtime, id)
+		rec = s.scan(path, mtime, id, allocatedSize(fi))
 	}
 	s.mu.Lock()
 	s.recs[rel] = rec
@@ -134,11 +134,13 @@ func (s *sizer) process(rel string, submit func(string)) {
 	}
 }
 
-// scan reads one directory into a fresh record.
-func (s *sizer) scan(path string, mtime int64, id string) *dirRecord {
+// scan reads one directory into a fresh record. own is the directory's own
+// allocation, which counts towards the tree like du counts directory blocks.
+func (s *sizer) scan(path string, mtime int64, id string, own int64) *dirRecord {
 	rec := &dirRecord{
 		MtimeUnixNano: mtime,
 		ID:            id,
+		DirectBytes:   own,
 		Racy:          mtime >= s.start.Add(-racyWindow).UnixNano(),
 		Subdirs:       []string{},
 	}

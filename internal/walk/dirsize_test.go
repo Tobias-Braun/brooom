@@ -117,8 +117,10 @@ func TestDirSizeSpecialPaths(t *testing.T) {
 	})
 	t.Run("empty directory", func(t *testing.T) {
 		got := mustSize(t, filepath.Join(root, "e"), Options{})
-		if got.SizeBytes != 0 || got.Files != 0 || !got.NewestModTime.IsZero() {
-			t.Errorf("got %+v", got)
+		// An empty directory still occupies its own block(s).
+		e, _ := Stat(filepath.Join(root, "e"))
+		if got.SizeBytes != e.Allocated || got.Files != 0 || !got.NewestModTime.IsZero() {
+			t.Errorf("got %+v, want %d bytes of directory blocks", got, e.Allocated)
 		}
 	})
 }
@@ -154,6 +156,11 @@ func TestDirSizeCountsHardLinksOnce(t *testing.T) {
 	f, _ := Stat(filepath.Join(root, "one", "f"))
 	o, _ := Stat(filepath.Join(root, "two", "other"))
 	want := f.Allocated + o.Allocated
+	// The root and its two subdirectories count their blocks as well.
+	for _, d := range []string{root, filepath.Join(root, "one"), filepath.Join(root, "two")} {
+		de, _ := Stat(d)
+		want += de.Allocated
+	}
 
 	opts := Options{CacheDir: t.TempDir()}
 	ageTree(t, root)
