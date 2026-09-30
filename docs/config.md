@@ -64,9 +64,6 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `trash.per_detector` | | Strategy per detector name. |
 | `trash.quarantine_retention_days` | `14` | Quarantined sessions older than this are purged. **`0` means never purge**; negative is invalid. |
 | `trash.allow_delete` | `false` | Must be `true` for any use of `delete` (default or per detector). |
-
-**Quarantine and volumes (Windows).** Quarantine lives in `<home>\quarantine`, by default below `%USERPROFILE%`. A project on another volume (say `D:\`) cannot be renamed into it, so it is copied, verified and then removed, which is slow, needs free space on the home volume and is refused for trees holding junctions (pnpm/npm workspaces) or files that a process has open. Set `BROOOM_HOME` to a directory on the same volume as your projects (for example `D:\.brooom`) and quarantine moves become plain renames. Brooom has no per-volume quarantine directory: one home keeps `undo`, `purge` and the retention notice simple.
-
 | `output.format` | `table` | `table`, `tree`, `json`, `ndjson`, `plain`, `summary`. |
 | `output.color` | `auto` | `auto`, `always`, `never`. |
 | `scan.concurrency` | `0` | Parallel walkers (0 = number of CPUs). |
@@ -78,6 +75,8 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `agent.api_key_env` | | Name of the environment variable holding the key (`[A-Za-z_][A-Za-z0-9_]*`); keys are never stored. |
 | `sweep.preset` | `safe` | Preset of `brooom sweep` when `--preset` is not given: `safe`, `standard` or `aggressive`. |
 | `update_check` | `false` | Opt-in update check. |
+
+**Quarantine and volumes (Windows).** Quarantine lives in `<home>\quarantine`, by default below `%USERPROFILE%`. A project on another volume (say `D:\`) cannot be renamed into it, so it is copied, verified and then removed, which is slow, needs free space on the home volume and is refused for trees holding junctions (pnpm/npm workspaces) or files that a process has open. Set `BROOOM_HOME` to a directory on the same volume as your projects (for example `D:\.brooom`) and quarantine moves become plain renames. Brooom has no per-volume quarantine directory: one home keeps `undo`, `purge` and the retention notice simple.
 
 ### Catalog `extra` entries
 

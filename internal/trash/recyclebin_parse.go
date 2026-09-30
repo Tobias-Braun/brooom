@@ -495,6 +495,13 @@ func callBounded(ctx context.Context, timeout time.Duration, call func() (int, b
 	}()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
+	// select picks randomly when several cases are ready, so a call that has
+	// already finished could be reported as abandoned; prefer its result.
+	select {
+	case r := <-done:
+		return r.code, r.aborted, nil
+	default:
+	}
 	select {
 	case r := <-done:
 		return r.code, r.aborted, nil
@@ -508,8 +515,10 @@ func callBounded(ctx context.Context, timeout time.Duration, call func() (int, b
 // infoCache remembers parsed $I files by name for the lifetime of a trasher.
 // A batch of N removals lists the bin N times; without the cache every
 // listing re-reads and re-parses all M existing $I files (N x M reads). A $I
-// file is written once by the shell and never modified, so its name identifies
-// its contents.
+// file is written once by the shell and never modified, so its bin directory
+// plus its name identify its contents. The directory is part of the key
+// because one trasher spans several volumes, each with its own bin, and the
+// random names of two bins may coincide.
 type infoCache struct {
 	mu sync.Mutex
 	m  map[string]cachedInfo
@@ -526,10 +535,10 @@ type cachedInfo struct {
 // reports whether it is usable and whether that verdict may be remembered
 // (a $I whose $R is not there yet must be looked at again). A nil cache reads
 // everything.
-func collectEntries(names []string, cache *infoCache, read func(name string) (rec infoRecord, ok, cacheable bool)) []binEntry {
+func collectEntries(dir string, names []string, cache *infoCache, read func(name string) (rec infoRecord, ok, cacheable bool)) []binEntry {
 	var out []binEntry
 	for _, n := range names {
-		if rec, ok, hit := cache.get(n); hit {
+		if rec, ok, hit := cache.get(dir, n); hit {
 			if ok {
 				out = append(out, binEntry{Name: n, Info: rec})
 			}
@@ -537,7 +546,7 @@ func collectEntries(names []string, cache *infoCache, read func(name string) (re
 		}
 		rec, ok, cacheable := read(n)
 		if cacheable {
-			cache.put(n, rec, ok)
+			cache.put(dir, n, rec, ok)
 		}
 		if ok {
 			out = append(out, binEntry{Name: n, Info: rec})
@@ -546,19 +555,25 @@ func collectEntries(names []string, cache *infoCache, read func(name string) (re
 	return out
 }
 
+// cacheKey builds the cache key of a $I file. Windows paths are case
+// insensitive, so both parts are case-folded; the NUL cannot occur in either.
+func cacheKey(dir, name string) string {
+	return strings.ToLower(dir) + "\x00" + strings.ToLower(name)
+}
+
 // get returns the remembered result for name; a nil cache never hits.
-func (c *infoCache) get(name string) (rec infoRecord, ok, hit bool) {
+func (c *infoCache) get(dir, name string) (rec infoRecord, ok, hit bool) {
 	if c == nil {
 		return infoRecord{}, false, false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ci, hit := c.m[name]
+	ci, hit := c.m[cacheKey(dir, name)]
 	return ci.rec, ci.ok, hit
 }
 
 // put remembers a result; a nil cache ignores it.
-func (c *infoCache) put(name string, rec infoRecord, ok bool) {
+func (c *infoCache) put(dir, name string, rec infoRecord, ok bool) {
 	if c == nil {
 		return
 	}
@@ -567,7 +582,7 @@ func (c *infoCache) put(name string, rec infoRecord, ok bool) {
 	if c.m == nil {
 		c.m = map[string]cachedInfo{}
 	}
-	c.m[name] = cachedInfo{rec: rec, ok: ok}
+	c.m[cacheKey(dir, name)] = cachedInfo{rec: rec, ok: ok}
 }
 
 // shellErrorTable maps the legacy DE_* codes SHFileOperation returns (they

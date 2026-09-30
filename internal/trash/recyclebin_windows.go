@@ -239,7 +239,7 @@ func listBin(path string, cache *infoCache) (string, []binEntry, error) {
 			names = append(names, de.Name())
 		}
 	}
-	return dir, collectEntries(names, cache, func(name string) (infoRecord, bool, bool) {
+	return dir, collectEntries(dir, names, cache, func(name string) (infoRecord, bool, bool) {
 		return readBinInfo(dir, name)
 	}), nil
 }

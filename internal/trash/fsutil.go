@@ -184,7 +184,7 @@ func checkCrossDevice(ctx context.Context, src string) error {
 func checkCopyable(src string) error {
 	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			return fmt.Errorf("cannot move %q across volumes: %w", src, err)
 		}
 		if t := d.Type(); t.IsDir() || t.IsRegular() || t&fs.ModeSymlink != 0 {
 			return nil
@@ -206,9 +206,9 @@ func annotateLocked(err error, locked func(error) bool) error {
 	if errors.As(err, &pe) {
 		// Plain quotes, not %q, which would double the backslashes of a
 		// Windows path and break copy-pasting it.
-		return fmt.Errorf(`"%s" is in use by another process: %w`, pe.Path, err)
+		return fmt.Errorf(`"%s" is in use or not permitted: %w`, pe.Path, err)
 	}
-	return fmt.Errorf("a file is in use by another process: %w", err)
+	return fmt.Errorf("a file is in use or not permitted: %w", err)
 }
 
 // checkNotInUse refuses a cross-device move of an item that a process has
@@ -221,7 +221,7 @@ func checkNotInUse(ctx context.Context, src string, openFiles func(context.Conte
 	if err != nil && len(open) == 0 {
 		return nil //nolint:nilerr // unknown means allowed; the copy and the source removal report real locks
 	}
-	if open[src] {
+	if open[filepath.Clean(src)] {
 		return fmt.Errorf("cannot move %q across volumes: it is in use by another process (a file inside it is open); close it and try again", src)
 	}
 	return nil

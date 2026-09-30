@@ -140,7 +140,7 @@ func TestCollectEntriesReadsEachInfoOnce(t *testing.T) {
 	names := []string{"$Ia", "$Ib", "$Ibad"}
 	var cache infoCache
 	for i := 0; i < 5; i++ {
-		got := collectEntries(names, &cache, read)
+		got := collectEntries(`C:\$Recycle.Bin\S-1`, names, &cache, read)
 		if len(got) != 2 || got[0].Info.Path != `C:\x\$Ia` {
 			t.Fatalf("listing %d = %+v", i, got)
 		}
@@ -151,7 +151,7 @@ func TestCollectEntriesReadsEachInfoOnce(t *testing.T) {
 	}
 	reads.Store(0)
 	for i := 0; i < 3; i++ {
-		collectEntries(names, nil, read)
+		collectEntries(`C:\$Recycle.Bin\S-1`, names, nil, read)
 	}
 	if reads.Load() != 9 {
 		t.Errorf("without a cache reads = %d, want 9", reads.Load())
@@ -167,7 +167,7 @@ func TestAnnotateLocked(t *testing.T) {
 	never := func(error) bool { return false }
 
 	got := annotateLocked(pe, always)
-	if !strings.Contains(got.Error(), `"D:\proj\a.lock" is in use by another process`) || !errors.Is(got, base) {
+	if !strings.Contains(got.Error(), `"D:\proj\a.lock" is in use or not permitted`) || !errors.Is(got, base) {
 		t.Errorf("annotated = %v", got)
 	}
 	if !errors.Is(annotateLocked(pe, never), pe) {
@@ -176,7 +176,7 @@ func TestAnnotateLocked(t *testing.T) {
 	if annotateLocked(nil, always) != nil {
 		t.Error("nil was annotated")
 	}
-	if got := annotateLocked(base, always); !strings.Contains(got.Error(), "in use by another process") {
+	if got := annotateLocked(base, always); !strings.Contains(got.Error(), "in use or not permitted") {
 		t.Errorf("bare error = %v", got)
 	}
 }
@@ -255,5 +255,28 @@ func TestCheckCopyableAcceptsPlainTrees(t *testing.T) {
 	symlinkOrSkip(t, "a", filepath.Join(root, "link"))
 	if err := checkCopyable(root); err != nil {
 		t.Fatalf("plain tree refused: %v", err)
+	}
+}
+
+// TestInfoCacheKeyedByBinDir covers a trasher that spans volumes: two bins
+// holding the same $I name with different content must not share a result.
+func TestInfoCacheKeyedByBinDir(t *testing.T) {
+	read := func(dir string) func(string) (infoRecord, bool, bool) {
+		return func(name string) (infoRecord, bool, bool) {
+			return infoRecord{Path: dir + `\` + name}, true, true
+		}
+	}
+	const c, d = `C:\$Recycle.Bin\S-1`, `D:\$Recycle.Bin\S-1`
+	var cache infoCache
+	names := []string{"$IABC123.txt"}
+	gotC := collectEntries(c, names, &cache, read("c"))
+	gotD := collectEntries(d, names, &cache, read("d"))
+	if len(gotC) != 1 || len(gotD) != 1 || gotC[0].Info.Path != `c\$IABC123.txt` || gotD[0].Info.Path != `d\$IABC123.txt` {
+		t.Fatalf("shared cache entry: C = %+v, D = %+v", gotC, gotD)
+	}
+	// The same directory in another case is the same bin and hits the cache.
+	again := collectEntries(strings.ToLower(c), []string{"$iabc123.TXT"}, &cache, read("x"))
+	if len(again) != 1 || again[0].Info.Path != `c\$IABC123.txt` {
+		t.Errorf("case-folded lookup = %+v", again)
 	}
 }
