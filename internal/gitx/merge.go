@@ -71,18 +71,45 @@ func (r *Repo) IsAncestor(ctx context.Context, ancestor, descendant string) (boo
 // handles. An error means unknown and must be treated as not merged.
 func (r *Repo) MergedInto(ctx context.Context, base, branch string, includeSquash bool) (MergeResult, error) {
 	return cached(r, &r.merged, mergeKey{base, branch, includeSquash}, func() (MergeResult, error) {
-		ok, err := r.IsAncestor(ctx, branch, base)
-		if err != nil {
-			return MergeResult{}, err
-		}
-		if ok {
-			return MergeResult{Merged: true, Method: MethodAncestor}, nil
-		}
-		if !includeSquash {
+		res, err := r.mergedInto(ctx, base, branch, includeSquash)
+		if isMissingObject(err) {
+			// A partial clone lacks objects and lazy fetching is off, so the
+			// answer is unknown, which callers treat as not merged.
 			return MergeResult{}, nil
 		}
-		return r.SquashMerged(ctx, base, branch)
+		return res, err
 	})
+}
+
+func (r *Repo) mergedInto(ctx context.Context, base, branch string, includeSquash bool) (MergeResult, error) {
+	ok, err := r.IsAncestor(ctx, branch, base)
+	if err != nil {
+		return MergeResult{}, err
+	}
+	if ok {
+		return MergeResult{Merged: true, Method: MethodAncestor}, nil
+	}
+	if !includeSquash {
+		return MergeResult{}, nil
+	}
+	return r.SquashMerged(ctx, base, branch)
+}
+
+// isMissingObject reports whether err is git complaining about an object that
+// is absent from the object store, as happens in a partial clone once lazy
+// fetching is disabled. The wording is stable across git versions.
+func isMissingObject(err error) bool {
+	var gerr *Error
+	if !errors.As(err, &gerr) {
+		return false
+	}
+	s := strings.ToLower(gerr.Stderr)
+	for _, marker := range []string{"unable to read", "bad object", "missing blob", "missing tree", "missing commit", "promisor"} {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // SquashMerged detects squash and rebase merges read-only with

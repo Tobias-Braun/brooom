@@ -18,7 +18,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
+	"time"
 )
 
 // ErrGitNotFound is returned when no git binary is on PATH.
@@ -51,6 +53,21 @@ func (e *Error) Error() string {
 type ExecRunner struct {
 	// Path is the git executable; empty means look up "git" on PATH.
 	Path string
+	// Timeout bounds every call whose context has no deadline of its own, so
+	// a hung git (slow remote, stuck hook) cannot stall a scan forever. Zero
+	// means DefaultTimeout, negative disables the bound.
+	Timeout time.Duration
+}
+
+// DefaultTimeout is generous enough for gc on very large repositories while
+// still ending a truly hung command.
+const DefaultTimeout = 10 * time.Minute
+
+func (r *ExecRunner) timeout() time.Duration {
+	if r.Timeout == 0 {
+		return DefaultTimeout
+	}
+	return r.Timeout
 }
 
 // NewExecRunner returns a runner for the git binary on PATH.
@@ -70,9 +87,17 @@ func (r *ExecRunner) Run(ctx context.Context, dir string, args ...string) (strin
 // run is the single code path behind Run and RunInput so both use the same
 // environment, error type and output trimming.
 func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args []string) (string, error) {
+	if _, ok := ctx.Deadline(); !ok && r.timeout() > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.timeout())
+		defer cancel()
+	}
 	full := append([]string{"-C", dir}, args...)
 	cmd := exec.CommandContext(ctx, r.Path, full...)
 	cmd.Env = Env(os.Environ())
+	// A killed git can leave a child (hook, alias) holding the output pipes;
+	// without a delay Wait would block until that child exits too.
+	cmd.WaitDelay = 2 * time.Second
 	// Only set Stdin when input was given: an unset Stdin reads the null
 	// device, so git can never block waiting on the terminal.
 	if stdin != nil {
@@ -91,11 +116,55 @@ func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args 
 	return strings.TrimRight(stdout.String(), "\r\n"), nil
 }
 
-// Env returns base with the variables Brooom forces for every git call
-// appended (later entries win in os/exec).
+// strippedEnvKeys are the exact variables that select or reconfigure the
+// repository git operates on. They are dropped because tools that run inside
+// hooks or direnv/dotfile setups export them (git itself sets GIT_DIR and
+// GIT_INDEX_FILE for hooks), and with one pointing at another repository every
+// command would silently read that repository's index and refs.
+var strippedEnvKeys = map[string]bool{
+	"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true,
+	"GIT_COMMON_DIR": true, "GIT_OBJECT_DIRECTORY": true,
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true, "GIT_NAMESPACE": true,
+	"GIT_PREFIX": true, "GIT_CEILING_DIRECTORIES": true,
+	"GIT_DISCOVERY_ACROSS_FILESYSTEM": true,
+	"GIT_GLOB_PATHSPECS":              true, "GIT_NOGLOB_PATHSPECS": true,
+	"GIT_LITERAL_PATHSPECS": true, "GIT_ICASE_PATHSPECS": true,
+	"GIT_CONFIG_PARAMETERS": true, "GIT_CONFIG_COUNT": true,
+}
+
+// stripped reports whether the environment entry must not reach git.
+func stripped(entry string) bool {
+	key, _, _ := strings.Cut(entry, "=")
+	if runtime.GOOS == "windows" {
+		key = strings.ToUpper(key)
+	}
+	return strippedEnvKeys[key] ||
+		strings.HasPrefix(key, "GIT_CONFIG_KEY_") || strings.HasPrefix(key, "GIT_CONFIG_VALUE_")
+}
+
+// Env returns base without the repository-selecting and config-injecting GIT_*
+// variables, followed by the variables Brooom forces for every git call (later
+// entries win in os/exec).
+//
+// GIT_NO_LAZY_FETCH=1 keeps read-only commands from fetching missing objects
+// from a promisor remote (git 2.44 or newer; older versions ignore it and a
+// partial clone may still fetch). core.fsmonitor=false, passed through
+// GIT_CONFIG_COUNT/KEY/VALUE, stops git from running a repository-configured
+// fsmonitor hook during status. Inherited GIT_CONFIG_* entries are stripped
+// first, so the forced pair is the only one and needs no merging.
 func Env(base []string) []string {
-	return append(append([]string(nil), base...),
+	env := make([]string, 0, len(base)+10)
+	for _, e := range base {
+		if !stripped(e) {
+			env = append(env, e)
+		}
+	}
+	return append(env,
 		"GIT_OPTIONAL_LOCKS=0",
+		"GIT_NO_LAZY_FETCH=1",
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=core.fsmonitor",
+		"GIT_CONFIG_VALUE_0=false",
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_PAGER=cat",
 		"PAGER=cat",

@@ -142,7 +142,7 @@ func checkTracked(ctx context.Context, env *Env, path string) (bool, error) {
 	if env.Git == nil {
 		return unknownTracked(env, "no git runner to check for tracked files")
 	}
-	out, err := env.Git.Run(ctx, root, "ls-files", "-z", "--", path)
+	out, err := env.Git.Run(ctx, root, "ls-files", "-z", "--", ":(literal)"+path)
 	if err != nil {
 		return unknownTracked(env, fmt.Sprintf("cannot list tracked files: %v", err))
 	}

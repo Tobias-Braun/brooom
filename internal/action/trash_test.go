@@ -408,6 +408,47 @@ func (failingGit) Run(context.Context, string, ...string) (string, error) {
 	return "", errors.New("git exploded")
 }
 
+// TestTrashTrackedFilesForeignGitDir checks the apply-time tracked check
+// against an environment whose GIT_DIR points at another repository.
+func TestTrashTrackedFilesForeignGitDir(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.WriteFile("src/a.go", "package a\n")
+	repo.CommitAll("add src", testutil.BaseTime)
+	foreign := testutil.NewRepo(t)
+	t.Setenv("GIT_DIR", filepath.Join(foreign.Dir, ".git"))
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(foreign.Dir, ".git", "index"))
+	fx := newTrashFixture(t)
+	guard, err := scope.NewGuard(filepath.Dir(repo.Dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx.env.Guard = guard
+	_, err = trashAction{}.Plan(context.Background(), fx.env, trashFinding(filepath.Join(repo.Dir, "src", "a.go")))
+	wantSkip(t, err, "contains files tracked by git")
+}
+
+// TestTrashTrackedLiteralPathspec checks that a path with pathspec magic
+// characters is matched literally: a glob-like directory must not report
+// files tracked elsewhere as its own.
+func TestTrashTrackedLiteralPathspec(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows file names cannot contain an asterisk")
+	}
+	repo := testutil.NewRepo(t)
+	repo.WriteFile("a.txt", "tracked\n")
+	repo.CommitAll("add", testutil.BaseTime)
+	repo.WriteFile("*.txt", "untracked\n")
+	fx := newTrashFixture(t)
+	guard, err := scope.NewGuard(filepath.Dir(repo.Dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx.env.Guard = guard
+	if _, err := (trashAction{}).Plan(context.Background(), fx.env, trashFinding(filepath.Join(repo.Dir, "*.txt"))); err != nil {
+		t.Fatalf("literal glob-named file must not match tracked a.txt: %v", err)
+	}
+}
+
 func TestTrashTrackedFiles(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	repo.WriteFile("src/a.go", "package a\n")
