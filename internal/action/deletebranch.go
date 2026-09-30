@@ -418,6 +418,13 @@ func (deleteBranch) Undo(ctx context.Context, env *Env, e session.Entry) error {
 	if err != nil {
 		return fmt.Errorf("undo delete-branch: %s is not a git repository: %w", path, err)
 	}
+	// The manifest path may be any directory inside a scan root, while git
+	// operates on the enclosing repository, which can lie outside every
+	// allowed root (a forged path below a checkout in a scan root nested in
+	// a larger repo). Writing a ref there is refused.
+	if _, err := env.Guard.Resolve(repo.Dir); err != nil {
+		return fmt.Errorf("undo delete-branch: repository %s lies outside the allowed roots: %w", repo.Dir, err)
+	}
 	if err := checkRefFormat(ctx, env, repo.Dir, name); err != nil {
 		return fmt.Errorf("undo delete-branch: %w", err)
 	}

@@ -690,15 +690,18 @@ func TestTrashApplyFailures(t *testing.T) {
 	})
 }
 
+// TestTrashApplyDeleteStrategy deletes ignored build output inside a
+// repository: permanent deletion is only allowed when git shows that nothing
+// untracked and unignored is lost.
 func TestTrashApplyDeleteStrategy(t *testing.T) {
-	fx := newTrashFixture(t)
+	fx, repo := forgedRepoFixture(t, false)
 	fx.strategy = config.StrategyDelete
-	p := fx.write("proj/out/a.bin", "data")
-	step, err := trashAction{}.Plan(context.Background(), fx.env, trashFinding(fx.path("proj/out")))
+	p := filepath.Join(repo.Dir, "build", "out.bin")
+	step, err := trashAction{}.Plan(context.Background(), fx.env, trashFinding(filepath.Join(repo.Dir, "build")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(step.Description, "permanently delete out") || !strings.HasPrefix(step.Command, "rm -rf ") {
+	if !strings.HasPrefix(step.Description, "permanently delete build") || !strings.HasPrefix(step.Command, "rm -rf ") {
 		t.Errorf("step = %+v", step)
 	}
 	en, err := trashAction{}.Apply(context.Background(), fx.env, step)
