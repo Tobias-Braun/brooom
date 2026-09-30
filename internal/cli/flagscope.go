@@ -9,12 +9,18 @@ import (
 
 // scopeCommands are the commands that build a scan scope and select
 // detectors, and that render findings; they are the only ones for which -w,
-// --root and -d mean anything and all of them read --format.
+// --root and -d mean anything and all of them read --format. `undo` builds a
+// scope too but has no detectors and no report, see scopeOnlyCommands.
 var scopeCommands = map[string]bool{
 	"brooom": true, "brooom scan": true, "brooom sweep": true, "brooom branches": true,
 	"brooom worktrees": true, "brooom logs": true, "brooom artifacts": true, "brooom ai": true,
-	"brooom clean": true, "brooom git purge": true, "brooom undo": true,
+	"brooom clean": true, "brooom git purge": true,
 }
+
+// scopeOnlyCommands build a scope (-w, --root) but neither select detectors nor
+// render findings: `undo` restores what a manifest names, so -d and -f would
+// be accepted and ignored.
+var scopeOnlyCommands = map[string]bool{"brooom undo": true}
 
 // formatCommands are the commands outside scopeCommands that read --format,
 // each with its own small set of formats.
@@ -37,6 +43,9 @@ var scanOnlyFlags = map[string]bool{
 func unsupportedScanFlag(path, flag string) string {
 	scopeOnly, ok := scanOnlyFlags[flag]
 	if !ok || scopeCommands[path] || (!scopeOnly && formatCommands[path]) {
+		return ""
+	}
+	if scopeOnlyCommands[path] && (flag == "workspaces" || flag == "root") {
 		return ""
 	}
 	return fmt.Sprintf("--%s has no effect on '%s' and is not supported there", flag, strings.TrimPrefix(path, "brooom "))

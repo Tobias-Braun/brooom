@@ -60,9 +60,9 @@ func (s *scan) lastModified(ctx context.Context, e *entry) time.Time {
 func (s *scan) command(e *entry, a findings.ActionType) string {
 	switch a {
 	case findings.ActionPruneWorktrees:
-		return "git worktree remove --force -- " + findings.ShellQuote(e.wt.Path)
+		return "git worktree remove --force -- " + findings.Quote(e.wt.Path)
 	case findings.ActionRemoveWorktree:
-		return "git worktree remove -- " + findings.ShellQuote(e.path)
+		return "git worktree remove -- " + findings.Quote(e.path)
 	}
 	return ""
 }

@@ -466,9 +466,9 @@ func (ev *removeEval) deregister(ctx context.Context, env *Env) error {
 
 // readdHint is the manual git command that recreates the worktree.
 func readdHint(undo map[string]string) string {
-	path := findings.ShellQuote(undo[undoWT])
+	path := findings.Quote(undo[undoWT])
 	if b := undo[undoBranch]; b != "" {
-		return "git worktree add " + path + " " + findings.ShellQuote(b)
+		return "git worktree add " + path + " " + findings.Quote(b)
 	}
 	return "git worktree add --detach " + path + " " + undo[undoHead]
 }

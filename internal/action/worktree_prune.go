@@ -89,7 +89,7 @@ func (pruneWorktrees) Plan(ctx context.Context, env *Env, f findings.Finding) (S
 	return Step{
 		Finding:     f,
 		Description: fmt.Sprintf("prune git metadata of missing worktree %s", filepath.Base(f.Path)),
-		Command:     "git worktree remove --force -- " + findings.ShellQuote(f.Path),
+		Command:     "git worktree remove --force -- " + findings.Quote(f.Path),
 	}, nil
 }
 

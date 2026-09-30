@@ -134,7 +134,7 @@ func requireDryRunChangesNothing(t *testing.T, f *cleanupFixture, path string) {
 	if code != ExitOK {
 		t.Fatalf("dry run: code %d, stderr %q", code, errOut)
 	}
-	if !strings.Contains(out, "dry run: nothing was changed") || !strings.Contains(out, "re-run 'brooom clean --from "+path+" --trash-strategy quarantine --apply'") {
+	if !strings.Contains(out, "dry run: nothing was changed") || !strings.Contains(out, "re-run 'brooom clean --from "+findings.Quote(path)+" --trash-strategy quarantine --apply'") {
 		t.Errorf("dry run output:\n%s", out)
 	}
 	if !f.hasBranch("feat/merged") || !f.hasBranch("feat/squash") || len(f.sessions()) != 0 {

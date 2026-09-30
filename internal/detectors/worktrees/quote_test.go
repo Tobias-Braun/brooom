@@ -1,6 +1,7 @@
 package worktrees
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -33,24 +34,26 @@ func TestMtimeSourceMeta(t *testing.T) {
 // TestCommandQuotesPaths: a worktree path with spaces or shell
 // metacharacters must stay one word in the suggested command.
 func TestCommandQuotesPaths(t *testing.T) {
-	tests := []struct {
-		path       string
-		wantRemove string
-		wantPrune  string
-	}{
-		{"/w/plain", "git worktree remove -- /w/plain", "git worktree remove --force -- /w/plain"},
-		{"/w/my tree", "git worktree remove -- '/w/my tree'", "git worktree remove --force -- '/w/my tree'"},
-		{"/w/a;rm -rf ~", "git worktree remove -- '/w/a;rm -rf ~'", "git worktree remove --force -- '/w/a;rm -rf ~'"},
-		{"/w/it's$HOME", `git worktree remove -- '/w/it'\''s$HOME'`, `git worktree remove --force -- '/w/it'\''s$HOME'`},
-	}
+	// The commands quote in the host shell's dialect (POSIX on unix,
+	// cmd.exe/PowerShell on Windows), so the expected word comes from the
+	// same host-aware helper; the dialects themselves are pinned by the
+	// findings package tests.
+	paths := []string{"/w/plain", "/w/my tree", "/w/a;rm -rf ~", "/w/it's$HOME"}
 	s := &scan{}
-	for _, tt := range tests {
-		e := &entry{path: tt.path, wt: gitx.Worktree{Path: tt.path}}
-		if got := s.command(e, findings.ActionRemoveWorktree); got != tt.wantRemove {
-			t.Errorf("remove command = %q, want %q", got, tt.wantRemove)
+	for _, p := range paths {
+		e := &entry{path: p, wt: gitx.Worktree{Path: p}}
+		wantRemove := "git worktree remove -- " + findings.Quote(p)
+		wantPrune := "git worktree remove --force -- " + findings.Quote(p)
+		if got := s.command(e, findings.ActionRemoveWorktree); got != wantRemove {
+			t.Errorf("remove command = %q, want %q", got, wantRemove)
 		}
-		if got := s.command(e, findings.ActionPruneWorktrees); got != tt.wantPrune {
-			t.Errorf("prune command = %q, want %q", got, tt.wantPrune)
+		if got := s.command(e, findings.ActionPruneWorktrees); got != wantPrune {
+			t.Errorf("prune command = %q, want %q", got, wantPrune)
 		}
+	}
+	// A path with spaces must never appear bare, whatever the dialect.
+	e := &entry{path: "/w/my tree", wt: gitx.Worktree{Path: "/w/my tree"}}
+	if got := s.command(e, findings.ActionRemoveWorktree); strings.HasSuffix(got, "-- /w/my tree") {
+		t.Errorf("path with a space left unquoted: %q", got)
 	}
 }

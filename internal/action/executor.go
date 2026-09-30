@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/session"
@@ -242,6 +243,7 @@ func failedEntry(s Skip) session.Entry {
 
 // apply confirms and executes a non-empty plan.
 func (e *Executor) apply(ctx context.Context, plan *Plan, res *Result) (*Result, error) {
+	e.warnBeforeDelete(plan)
 	if e.opts.Yes {
 		plan.setConfirmed(true)
 	} else {
@@ -413,4 +415,29 @@ func (rs *runState) record(en session.Entry) error {
 		return fmt.Errorf("save session manifest %s after %s: %w", rs.m.ID, entryLabel(en.Path, en.Ref), err)
 	}
 	return nil
+}
+
+// warnBeforeDelete shows the one-time permanence warning of the delete
+// strategy before anything asks for confirmation: a warning that only appears
+// once the user has said yes cannot inform that decision. It runs in apply
+// only, so dry runs (whose output may be piped away) never consume it, and the
+// trash action still calls BeforeDelete right before a removal as a backstop
+// for steps that reach it without a plan.
+func (e *Executor) warnBeforeDelete(plan *Plan) {
+	env := e.opts.Env
+	if env == nil || env.BeforeDelete == nil || env.Trasher == nil {
+		return
+	}
+	for _, g := range plan.Groups {
+		if g.Action != findings.ActionTrash && g.Action != findings.ActionRemoveWorktree {
+			continue
+		}
+		// An error here surfaces again when the step itself is applied.
+		if tr, err := env.Trasher(g.Detector); err == nil && tr.Strategy() == config.StrategyDelete {
+			env.BeforeDelete()
+			// Returning after the first delete-strategy group is intended:
+			// the permanence warning is shown once per run, not per group.
+			return
+		}
+	}
 }

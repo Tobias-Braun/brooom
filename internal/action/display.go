@@ -78,7 +78,7 @@ func displayQuote(s string) string {
 	if runtime.GOOS == "windows" {
 		return psQuote(s)
 	}
-	return findings.ShellQuote(s)
+	return findings.Quote(s)
 }
 
 // chainCommands joins two display commands so the second only runs when the

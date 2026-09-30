@@ -1048,8 +1048,10 @@ func TestWorktreeHelpers(t *testing.T) {
 	if got := refLabel(""); got != "detached" {
 		t.Errorf("refLabel = %q", got)
 	}
+	// The hint is quoted for the host shell, so the expectation uses the same
+	// quoting (POSIX single quotes on unix, double quotes on Windows).
 	hint := readdHint(map[string]string{"worktree": "/a b/wt", "head": "abc"})
-	if hint != "git worktree add --detach '/a b/wt' abc" {
+	if hint != "git worktree add --detach "+findings.Quote("/a b/wt")+" abc" {
 		t.Errorf("detached hint = %q", hint)
 	}
 	hint = readdHint(map[string]string{"worktree": "/wt", "branch": "feat/x", "head": "abc"})

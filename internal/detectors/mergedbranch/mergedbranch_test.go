@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -760,6 +761,9 @@ func TestDetectorDoesNotModifyRepository(t *testing.T) {
 }
 
 func TestQuotedCommandForOddBranchNames(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the expected command uses POSIX quoting; Windows quoting is covered in findings")
+	}
 	f := newFixture(t)
 	name := "feat/it's"
 	f.feature(name, "q.txt")

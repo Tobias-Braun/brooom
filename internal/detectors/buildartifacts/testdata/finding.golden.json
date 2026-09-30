@@ -36,7 +36,7 @@
   ],
   "suggested_action": {
     "type": "trash",
-    "command": "trash <root>/node_modules",
+    "command": "trash -- <root>/node_modules",
     "reason": "Installed npm, Yarn or pnpm dependencies; restored by the next install"
   },
   "risk_flags": []

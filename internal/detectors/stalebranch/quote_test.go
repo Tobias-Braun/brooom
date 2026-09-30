@@ -1,6 +1,7 @@
 package stalebranch
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/Tobias-Braun/brooom/internal/detect"
@@ -22,6 +23,9 @@ var oddBranchNames = []struct{ name, quoted string }{
 // users, so a branch called `fix;touch${IFS}pwned` must stay one shell word
 // and every name must follow `--`.
 func TestSuggestedCommandsQuoteBranchNames(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the expected commands use POSIX quoting; Windows quoting is covered in findings")
+	}
 	for _, tt := range oddBranchNames {
 		t.Run(tt.name, func(t *testing.T) {
 			b := gitx.Branch{Name: tt.name, Upstream: "origin/x"}

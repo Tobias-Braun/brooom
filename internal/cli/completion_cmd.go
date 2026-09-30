@@ -82,6 +82,10 @@ func customizeCompletionCmd(root *cobra.Command) {
 			continue
 		}
 		c.Long = completionLong
+		// Without an argument check and a RunE cobra treats the group as
+		// help-only and exits 0 for `brooom completion bogus`.
+		c.Args = cobra.NoArgs
+		c.RunE = groupRunE
 		c.Example = completionExamples[""]
 		for _, sub := range c.Commands() {
 			sub.Example = completionExamples[sub.Name()]

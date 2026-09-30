@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -74,6 +75,9 @@ type app struct {
 	// args are the command-line arguments of this invocation (without the
 	// program name); the session manifest records them.
 	args []string
+	// goos overrides runtime.GOOS for the dialect of quoted commands; only
+	// tests set it, so both dialects are covered on every OS.
+	goos string
 
 	// postRunHooks run in order after a successful command. Append to it;
 	// never assign a command's PersistentPostRun (see postRunHook).
@@ -216,8 +220,9 @@ Without flags Brooom only looks at the git repository you are in. Use
 		newVersionCmd(a),
 		newUpdateCheckCmd(a),
 	)
-	markArgErrorsAsUsage(root)
+	root.SetHelpCommand(newHelpCmd())
 	customizeCompletionCmd(root)
+	markArgErrorsAsUsage(root)
 	registerCompletions(root, a)
 	return root
 }
@@ -237,6 +242,26 @@ func markArgErrorsAsUsage(cmd *cobra.Command) {
 	}
 	for _, c := range cmd.Commands() {
 		markArgErrorsAsUsage(c)
+	}
+}
+
+// newHelpCmd replaces cobra's help command, which prints the root help and
+// exits 0 for a topic that does not exist (`brooom help foo`). An unknown topic
+// is a usage error like any other unknown command.
+func newHelpCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "help [command]",
+		Short:   "Help about any command",
+		Example: "  brooom help sweep\n  brooom help config show",
+		Long: `Print the help of any command.
+An unknown command is a usage error (exit status 2).`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			target, rest, err := cmd.Root().Find(args)
+			if err != nil || target == nil || len(rest) > 0 {
+				return usageError{fmt.Errorf("unknown help topic %q", strings.Join(args, " "))}
+			}
+			return target.Help()
+		},
 	}
 }
 
