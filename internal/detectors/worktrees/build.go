@@ -30,7 +30,7 @@ func (s *scan) build(ctx context.Context, e *entry, v verdict) findings.Finding 
 		SuggestedAction: findings.SuggestedAction{
 			Type:    v.action,
 			Command: s.command(e, v.action),
-			Reason:  v.reason,
+			Reason:  s.reason(v.action, v.reason),
 		},
 		Meta: s.meta(e),
 	}
@@ -57,14 +57,27 @@ func (s *scan) lastModified(ctx context.Context, e *entry) time.Time {
 	return t
 }
 
+// command is the shell equivalent of the suggested action, where one exists.
+// Pruning a missing directory really is `git worktree remove --force`, since
+// there are no files to lose. Removing an existing worktree has none: the
+// action moves the directory to the trash first, whereas a bare `git worktree
+// remove` permanently deletes ignored files (.env, agent settings) with no
+// trash copy, and agents and scripts read this field. It stays empty and
+// reason points at `brooom worktrees --apply` instead.
 func (s *scan) command(e *entry, a findings.ActionType) string {
-	switch a {
-	case findings.ActionPruneWorktrees:
+	if a == findings.ActionPruneWorktrees {
 		return "git worktree remove --force -- " + findings.Quote(e.wt.Path)
-	case findings.ActionRemoveWorktree:
-		return "git worktree remove -- " + findings.Quote(e.path)
 	}
 	return ""
+}
+
+// reason completes the verdict's reason with the pointer that replaces the
+// missing command for remove-worktree.
+func (s *scan) reason(a findings.ActionType, reason string) string {
+	if a != findings.ActionRemoveWorktree {
+		return reason
+	}
+	return reason + "; run 'brooom worktrees --apply' to remove it (the directory is trashed first, a plain git worktree remove would permanently delete ignored files)"
 }
 
 func (s *scan) meta(e *entry) map[string]string {

@@ -424,7 +424,7 @@ func (ev *removeEval) applyTrashed(ctx context.Context, env *Env, en session.Ent
 	en.Trash = &rec
 	en.Restorable = rec.Restorable
 	en.SizeBytes = rec.SizeBytes
-	en.RecoveryHint = "restore the directory from the trash record (brooom undo does it), then " + readdHint(en.Undo)
+	en.RecoveryHint = trashedRecoveryHint(en.Undo)
 	if ev.dirty {
 		en.RecoveryHint += "; the staged/unstaged split of the uncommitted work is not restored, all changes reappear as unstaged"
 	}
@@ -496,7 +496,72 @@ func deregisterMissing(ctx context.Context, env *Env, repo *gitx.Repo, path stri
 	return nil
 }
 
-// readdHint is the manual git command that recreates the worktree.
+// restoredPlaceholder stands for the temporary directory the user restores the
+// trashed worktree to in the manual recovery hint.
+const restoredPlaceholder = "<restored>"
+
+// recoveryStep is one step of the manual recovery of a trashed worktree:
+// either a git invocation (git, run through git -C dir) or, when git is nil,
+// the prose instruction to move the files back.
+type recoveryStep struct {
+	dir  string
+	git  []string
+	text string
+}
+
+// trashedRecoverySteps is the sequence that brings a trashed worktree back by
+// hand when brooom undo cannot run (for example macOS denying access to
+// ~/.Trash). Restoring the directory to its old path and running
+// `git worktree add` fails ("already exists"), because deregistering removed
+// the administrative directory but the restored directory always holds at
+// least a .git file, and `git worktree repair` cannot recreate a missing
+// administrative directory. It mirrors undoTrashed instead: add the worktree
+// without checkout at a free path, move the restored files over it while
+// keeping the new .git file, repair the links and rebuild the index (which
+// drops the staged/unstaged split).
+func trashedRecoverySteps(undo map[string]string) []recoveryStep {
+	path, repo := undo[undoWT], undo[undoRepo]
+	add := []string{"worktree", "add", "--no-checkout", "--"}
+	if b := undo[undoBranch]; b != "" {
+		add = append(add, path, b)
+	} else {
+		add = []string{"worktree", "add", "--no-checkout", "--detach", "--", path, undo[undoHead]}
+	}
+	return []recoveryStep{
+		{dir: repo, git: add},
+		{text: "move everything from " + restoredPlaceholder + " into " + findings.Quote(path) + " except its .git file (keep the new one)"},
+		{dir: repo, git: []string{"worktree", "repair", path}},
+		{dir: path, git: []string{"reset", "-q"}},
+	}
+}
+
+// trashedRecoveryHint renders trashedRecoverySteps as one line. Every git
+// command carries its directory with -C so it works from any current
+// directory.
+func trashedRecoveryHint(undo map[string]string) string {
+	var parts []string
+	for _, st := range trashedRecoverySteps(undo) {
+		if st.git == nil {
+			parts = append(parts, st.text)
+			continue
+		}
+		cmd := "git"
+		if st.dir != "" {
+			cmd += " -C " + findings.Quote(st.dir)
+		}
+		for _, a := range st.git {
+			cmd += " " + findings.Quote(a)
+		}
+		parts = append(parts, cmd)
+	}
+	return "restore the directory from the trash record to a temporary location " + restoredPlaceholder +
+		" (brooom undo does all of this; do not restore it to the original path, git worktree add refuses an existing directory), then: " +
+		strings.Join(parts, "; ")
+}
+
+// readdHint is the manual git command that recreates a worktree whose
+// directory is gone for good (a plain removal or a prune of missing metadata).
+// A trashed worktree needs trashedRecoveryHint instead.
 func readdHint(undo map[string]string) string {
 	path := findings.Quote(undo[undoWT])
 	if b := undo[undoBranch]; b != "" {

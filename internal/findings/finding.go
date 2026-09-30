@@ -151,7 +151,9 @@ const (
 	ActionTrash ActionType = "trash"
 	// ActionDeleteBranch deletes a local branch (git branch -d, -D with --force).
 	ActionDeleteBranch ActionType = "delete-branch"
-	// ActionRemoveWorktree removes a worktree (git worktree remove) and prunes.
+	// ActionRemoveWorktree trashes a worktree directory and then
+	// deregisters it from git (the finding carries no shell Command: a bare
+	// git worktree remove would permanently delete ignored files).
 	ActionRemoveWorktree ActionType = "remove-worktree"
 	// ActionPruneWorktrees prunes worktree metadata whose directory is missing.
 	ActionPruneWorktrees ActionType = "prune-worktrees"
