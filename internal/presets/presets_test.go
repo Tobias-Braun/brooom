@@ -199,15 +199,29 @@ func TestApplyDoesNotMutateInput(t *testing.T) {
 	}
 }
 
+// TestPresetsKeepWorktreeAgeAtZero: agent runs leave fresh worktrees that
+// must be removable at once, so no preset may introduce or raise a worktree
+// age threshold (#255).
+func TestPresetsKeepWorktreeAgeAtZero(t *testing.T) {
+	if config.Default().Detectors.Worktrees.MinAgeDays != 0 {
+		t.Fatal("default detectors.worktrees.min_age_days must be 0")
+	}
+	for _, name := range []string{Safe, Standard, Aggressive} {
+		got := Apply(config.Default(), mustGet(t, name))
+		if got.Detectors.Worktrees.MinAgeDays != 0 {
+			t.Errorf("%s: worktrees.min_age_days = %d, want 0", name, got.Detectors.Worktrees.MinAgeDays)
+		}
+	}
+}
+
 func TestAggressiveLowersAgesToTable(t *testing.T) {
 	got := Apply(config.Default(), mustGet(t, Aggressive))
 	if got.Detectors.StaleBranch.MinAgeDays != AggressiveAges.StaleBranchDays ||
-		got.Detectors.Worktrees.MinAgeDays != AggressiveAges.WorktreeDays ||
 		got.Thresholds.MinAgeDays != AggressiveAges.MinAgeDays ||
 		got.Detectors.BuildArtifacts.InactiveDays != AggressiveAges.InactiveDays {
 		t.Errorf("thresholds do not match the table: %+v", got.Detectors)
 	}
-	if got.Detectors.StaleBranch.MinAgeDays != 30 || got.Detectors.Worktrees.MinAgeDays != 14 ||
+	if got.Detectors.StaleBranch.MinAgeDays != 30 || got.Detectors.Worktrees.MinAgeDays != 0 ||
 		got.Thresholds.MinAgeDays != 7 || got.Detectors.BuildArtifacts.InactiveDays != 30 {
 		t.Errorf("documented defaults changed: %+v %+v", got.Thresholds, got.Detectors)
 	}

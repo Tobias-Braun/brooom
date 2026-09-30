@@ -27,12 +27,13 @@ func editInPlace(t *testing.T, path string, when time.Time) {
 // mtime of a Fresh walk keeps the abandoned-checkout rule from firing.
 func TestInPlaceEditOfIgnoredFileKeepsWorktreeAlive(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	wt := repo.AddWorktree("stale", "feat-stale")
+	wt := repo.AddStartedWorktree("stale", "feat-stale")
 	testutil.WriteFile(t, wt, ".gitignore", "cache.bin\n")
 	commitIn(t, repo, wt, "old.txt")
 	ignored := testutil.WriteFile(t, wt, "cache.bin", "old")
 	ageTree(t, wt, testutil.BaseTime)
 	h := wtHarness(t, repo, wt)
+	h.env.Config.Detectors.Worktrees.MinAgeDays = 30
 	h.env.CacheDir = filepath.Join(t.TempDir(), "cache")
 
 	// The warm-up run fills the cache and must see the abandoned checkout.
@@ -58,7 +59,7 @@ func TestRecentlyModifiedFlag(t *testing.T) {
 			repo := testutil.NewRepo(t)
 			repo.WriteFile(".gitignore", "cache.bin\n")
 			repo.CommitAll("ignore cache", testutil.BaseTime)
-			wt := repo.AddWorktree("merged", "feat-merged")
+			wt := repo.AddStartedWorktree("merged", "feat-merged")
 			ignored := testutil.WriteFile(t, wt, "cache.bin", "old")
 			ageTree(t, wt, testutil.BaseTime)
 			h := wtHarness(t, repo, wt)

@@ -284,28 +284,15 @@ func (s *scan) belowAgeFloor(date time.Time) bool {
 	return floor > 0 && !date.IsZero() && s.env.AgeDays(date) < floor
 }
 
-// unstarted reports a freshly created branch that was never pushed, still
-// sits on the base tip and whose reflog shows nothing but its creation: not
-// clutter, deleting it would only annoy. The reflog is what tells it apart
-// from an agent branch that was committed on and then fast-forward merged,
-// which also sits on the base tip and was never pushed under its own name.
-// Failing checks are recorded and count as unstarted, the conservative side.
+// unstarted delegates to the shared gitx.Unstarted so merged-branch and
+// worktrees agree. Failing checks are returned wrapped and count as
+// unstarted, the conservative side.
 func (s *scan) unstarted(ctx context.Context, b gitx.Branch) (bool, error) {
-	if s.baseTip == "" || b.Tip != s.baseTip {
-		return false, nil
-	}
-	never, err := s.repo.NeverPushed(ctx, b)
+	unstarted, err := s.repo.Unstarted(ctx, b, s.baseTip)
 	if err != nil {
-		return true, s.wrap(ctx, fmt.Sprintf("check pushes of branch %q in %q", b.Name, s.target.Path), err)
+		return true, s.wrap(ctx, fmt.Sprintf("check whether branch %q is unstarted in %q", b.Name, s.target.Path), err)
 	}
-	if !never {
-		return false, nil
-	}
-	created, err := s.repo.BranchCreatedOnly(ctx, b.Name)
-	if err != nil {
-		return true, s.wrap(ctx, fmt.Sprintf("read reflog of branch %q in %q", b.Name, s.target.Path), err)
-	}
-	return created, nil
+	return unstarted, nil
 }
 
 func (s *scan) newFinding(ref, tip string, date time.Time, base gitx.Base) findings.Finding {

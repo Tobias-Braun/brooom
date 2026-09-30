@@ -959,7 +959,7 @@ Presets:
       detectors: merged-branch, worktrees, log-and-runtime-files, build-artifacts, stale-branch, ai-artifacts, large-untracked, git-bloat
       minimum confidence: medium
       - everything in standard
-      - lower age thresholds: stale branches 30 days, worktrees 14 days, minimum age 7 days, inactive projects 30 days (never raised above your own values)
+      - lower age thresholds: stale branches 30 days, minimum age 7 days, inactive projects 30 days (never raised above your own values)
       - large untracked and ignored files
       - git gc, reflog expiry and pruning; expiries longer than 90.days.ago are shortened to it, shorter ones are kept
 
@@ -1088,16 +1088,25 @@ brooom worktrees [flags]
 ```
 
 ```text
-Report worktrees whose branch is merged, stale or deleted, and worktree
-metadata whose directory is gone. Dirty or locked worktrees are reported but
-never suggested for removal. Linked worktrees outside the scanned scope (for
-example ../repo-wt) are listed as informational findings with the hint to run
-'brooom roots add <parent>' or use --workspaces; they are never examined or
-removed. The plain format is a bare path list for pipes and omits these
-informational findings; use another format to see them. With --apply, a worktree directory is moved to the trash (so ignored
-files such as .env stay recoverable) and then deregistered from git; metadata
-of a missing directory is dropped without touching other entries. Do not run
-'git worktree remove' by hand instead: it deletes ignored files permanently.
+Report worktrees whose branch is merged, worktrees whose branch ref is missing
+(reported without an action) and worktree metadata whose directory is gone.
+Worktrees are removable whatever their age, so the command can run right
+after a large agent run: clean merged worktrees and detached worktrees whose
+commits all landed on the base under other ids (rebased or squashed) are
+removed, and worktrees left at a not yet started branch are kept. Dirty or
+locked worktrees are reported but not suggested for removal (--force lifts
+the dirty protection), and a worktree in use is never removed. Recent
+activity is shown as an informational flag only. Abandoned worktrees are
+reported only when detectors.worktrees.min_age_days is set above 0.
+Linked worktrees outside the scanned scope (for example ../repo-wt) are
+listed as informational findings with the hint to run 'brooom roots add
+<parent>' or use --workspaces; they are never examined or removed.
+The plain format is a bare path list for pipes and omits these informational
+findings; use another format to see them. With --apply, a worktree directory
+is moved to the trash (so ignored files such as .env stay recoverable) and
+then deregistered from git; metadata of a missing directory is dropped without
+touching other entries. Do not run 'git worktree remove' by hand instead: it
+deletes ignored files permanently.
 ```
 
 **Examples**

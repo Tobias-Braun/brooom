@@ -169,7 +169,11 @@ type Worktrees struct {
 	// IncludeStale also reports worktrees whose branch is stale (not only
 	// merged or deleted).
 	IncludeStale bool `json:"include_stale"`
-	// MinAgeDays is the stale threshold for worktree branches.
+	// MinAgeDays is the abandonment threshold of the stale rule only; merged
+	// and other removable worktrees are never withheld for their age. The
+	// default 0 means no age threshold, so the stale rule stays off until a
+	// positive value is configured (agent runs leave fresh worktrees that
+	// must be removable at once).
 	MinAgeDays int `json:"min_age_days"`
 }
 

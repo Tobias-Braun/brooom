@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -326,6 +327,135 @@ func TestWorktreesCleanup(t *testing.T) {
 	}
 	if list := f.repo.Git("worktree", "list", "--porcelain"); strings.Contains(list, "gone") {
 		t.Errorf("missing-directory worktree was not pruned:\n%s", list)
+	}
+}
+
+// detachedWorktree adds a worktree detached at the tip of a fresh feature
+// branch, the way an agent leaves it behind. With landed, the branch commit is
+// then rebase-merged into main under a new id and the branch deleted, so the
+// worktree HEAD is reachable from no ref but patch-equivalent to the base.
+func (f *cleanupFixture) detachedWorktree(name string, landed bool) string {
+	f.t.Helper()
+	branch := "feat/" + name
+	f.feature(branch)
+	p := filepath.Join(f.repo.Dir, ".worktrees", name)
+	f.repo.Git("worktree", "add", "-q", "--detach", p, branch)
+	if landed {
+		f.repo.RebaseMerge(branch, f.at())
+	}
+	f.repo.Git("branch", "-D", branch)
+	return p
+}
+
+// TestWorktreesApplyAfterAgentRun covers issue #255: right after a large agent
+// run every worktree is seconds old, and the cleanup must still remove the
+// clean merged ones and the detached ones whose commits already landed under
+// other ids, while dirty worktrees and detached ones with unique commits stay.
+// undo brings the removed ones back.
+func TestWorktreesApplyAfterAgentRun(t *testing.T) {
+	f := newCleanupFixture(t, nil)
+	removed := map[string]bool{}
+	kept := map[string]bool{}
+	for i := 0; i < 7; i++ {
+		name := "clean" + strconv.Itoa(i)
+		f.feature("feat/" + name)
+		removed[f.worktreeInRepo(name, "feat/"+name)] = true
+		f.mergeCommit("feat/" + name)
+	}
+	for i := 0; i < 5; i++ {
+		name := "dirty" + strconv.Itoa(i)
+		f.feature("feat/" + name)
+		p := f.worktreeInRepo(name, "feat/"+name)
+		f.mergeCommit("feat/" + name)
+		testutil.WriteFile(t, p, "scratch.txt", "uncommitted\n")
+		kept[p] = true
+	}
+	// An edit hidden from git status by skip-worktree is still uncommitted work.
+	f.feature("feat/hidden")
+	hidden := f.worktreeInRepo("hidden", "feat/hidden")
+	f.mergeCommit("feat/hidden")
+	f.repo.Git("-C", hidden, "update-index", "--skip-worktree", "feat_hidden.txt")
+	testutil.WriteFile(t, hidden, "feat_hidden.txt", "local override\n")
+	kept[hidden] = true
+	for i := 0; i < 5; i++ {
+		removed[f.detachedWorktree("rebased"+strconv.Itoa(i), true)] = true
+	}
+	for i := 0; i < 3; i++ {
+		kept[f.detachedWorktree("unique"+strconv.Itoa(i), false)] = true
+	}
+	f.publish()
+
+	code, out, errOut := brooom(t, "", append([]string{"worktrees", "--apply", "--yes"}, quarantine...)...)
+	if code != ExitOK {
+		t.Fatalf("apply: code %d, stderr %q\n%s", code, errOut, out)
+	}
+	for p := range removed {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s should be removed (%v)", filepath.Base(p), err)
+		}
+	}
+	for p := range kept {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s must stay: %v", filepath.Base(p), err)
+		}
+	}
+
+	code, out, errOut = brooom(t, "", "undo", "--apply", "--yes")
+	if code != ExitOK {
+		t.Fatalf("undo: code %d, stderr %q\n%s", code, errOut, out)
+	}
+	list := f.repo.Git("worktree", "list", "--porcelain")
+	for p := range removed {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s not restored: %v", filepath.Base(p), err)
+		}
+		if !listsWorktree(list, p) {
+			t.Errorf("%s is not a registered worktree again", filepath.Base(p))
+		}
+	}
+}
+
+// listsWorktree reports whether the porcelain worktree list names path. git
+// prints registered paths with forward slashes and long names, so the
+// comparison uses the resolved, slash-normalised form (Windows uses
+// backslashes and may hand out 8.3 short temp directory names).
+func listsWorktree(list, path string) bool {
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		real = path
+	}
+	return strings.Contains(filepath.ToSlash(list), filepath.ToSlash(real))
+}
+
+// TestSweepPresetsTreatPatchEquivalentWorktrees pins the confidence split of
+// detached worktrees: one whose commits landed under other ids is a medium
+// confidence finding, so the safe preset (high only) keeps it while standard
+// removes it. A merged branch worktree is high confidence and goes with safe.
+func TestSweepPresetsTreatPatchEquivalentWorktrees(t *testing.T) {
+	f := newCleanupFixture(t, nil)
+	f.feature("feat/merged")
+	merged := f.worktreeInRepo("merged", "feat/merged")
+	f.mergeCommit("feat/merged")
+	rebased := f.detachedWorktree("rebased", true)
+	f.publish()
+
+	code, out, errOut := brooom(t, "", append([]string{"sweep", "--preset", "safe", "--apply", "--yes"}, quarantine...)...)
+	if code != ExitOK {
+		t.Fatalf("safe: code %d, stderr %q\n%s", code, errOut, out)
+	}
+	if _, err := os.Stat(merged); !os.IsNotExist(err) {
+		t.Errorf("the merged worktree should be removed by safe (%v)", err)
+	}
+	if _, err := os.Stat(rebased); err != nil {
+		t.Fatalf("safe must keep the medium confidence patch-equivalent worktree: %v", err)
+	}
+
+	code, out, errOut = brooom(t, "", append([]string{"sweep", "--preset", "standard", "--apply", "--yes"}, quarantine...)...)
+	if code != ExitOK {
+		t.Fatalf("standard: code %d, stderr %q\n%s", code, errOut, out)
+	}
+	if _, err := os.Stat(rebased); !os.IsNotExist(err) {
+		t.Errorf("standard should remove the patch-equivalent worktree (%v)", err)
 	}
 }
 

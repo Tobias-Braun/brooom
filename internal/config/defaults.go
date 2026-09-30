@@ -33,7 +33,7 @@ func Default() *Config {
 			Worktrees: Worktrees{
 				Enabled:      true,
 				IncludeStale: true,
-				MinAgeDays:   30,
+				MinAgeDays:   0,
 			},
 			GitBloat: GitBloat{
 				Enabled:               true,
