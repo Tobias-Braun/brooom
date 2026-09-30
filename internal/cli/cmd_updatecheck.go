@@ -36,6 +36,8 @@ func newUpdateCheckCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "update-check",
 		Short: "Check GitHub for a newer release (opt-in, contacts api.github.com)",
+		Example: `  brooom update-check
+  brooom update-check --format json`,
 		Long: `Ask GitHub once whether a newer Brooom release exists. Running this command
 is your consent to that single request: it is unauthenticated and sends no
 data about you. Brooom never checks on its own unless you set

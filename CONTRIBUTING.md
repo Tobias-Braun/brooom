@@ -24,6 +24,10 @@ conventions every change follows.
 - `go vet ./...`, `golangci-lint run ./...` and `go test ./...` must pass.
   CI runs the tests on Linux, macOS and Windows and cross-builds all release
   targets.
+- Changed a command, flag or help text? Regenerate the CLI reference with
+  `go run ./internal/tools/gendocs` and commit `docs/cli.md`; a test fails
+  while it is out of date. Every command needs a `Short` (no trailing period)
+  and an `Example` whose flags exist.
 - Anything that can modify or delete data needs tests for the refusal paths
   (outside scope, symlinks, dirty state, open files), not only the happy path.
 

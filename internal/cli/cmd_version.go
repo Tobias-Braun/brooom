@@ -13,7 +13,9 @@ func newVersionCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version information",
-		Args:  cobra.NoArgs,
+		Example: `  brooom version
+  brooom version --format json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			info := buildinfo.Get()
 			switch a.flags.format {

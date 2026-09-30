@@ -36,7 +36,9 @@ func newGitCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "git",
 		Short: "Git history maintenance",
-		Args:  cobra.NoArgs,
+		Example: `  brooom git purge
+  brooom git purge --gc --apply`,
+		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(newGitPurgeCmd(a))
 	return cmd
@@ -60,6 +62,9 @@ func newGitPurgeCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "purge",
 		Short: "Report git bloat and run gc, prune and reflog expiry (each opt-in)",
+		Example: `  brooom git purge
+  brooom git purge --gc --apply
+  brooom git purge --reflog-expire 90.days.ago --prune 2.weeks.ago --apply`,
 		Long: `Report loose objects, pack count, reflog size and large blobs, and run the
 selected maintenance operations. Without a flag nothing but the report is
 produced. Each operation is opt-in and independent, none can be undone, and

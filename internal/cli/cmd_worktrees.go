@@ -11,6 +11,9 @@ func newWorktreesCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "worktrees",
 		Short: "Find (and remove) leftover git worktrees",
+		Example: `  brooom worktrees
+  brooom worktrees --apply
+  brooom worktrees --workspaces --format tree`,
 		Long: `Report worktrees whose branch is merged, stale or deleted, and worktree
 metadata whose directory is gone. Dirty or locked worktrees are reported but
 never suggested for removal. With --apply, worktrees are removed with

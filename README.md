@@ -91,6 +91,11 @@ brooom scan -w -f json      # all workspace roots, machine-readable
 brooom undo                 # restore the last session
 ```
 
+Every command, flag and example is listed in the [CLI reference](docs/cli.md)
+(generated from the command tree). Shell completions for bash, zsh, fish and
+PowerShell come with the binary, for example `source <(brooom completion bash)`;
+`brooom completion --help` shows how to install them for each shell.
+
 ### Sweep presets
 
 `brooom sweep [--preset safe|standard|aggressive]` runs a fixed detector set
