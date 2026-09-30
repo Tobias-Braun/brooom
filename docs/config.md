@@ -58,8 +58,8 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `detectors.git-bloat` | enabled, thresholds, `reflog_expire` `90.days.ago`, `prune_expire` `2.weeks.ago` | The two expiry values are passed to git as option values: they must be non-empty, contain no whitespace or control characters and must not start with `-`. |
 | `detectors.large-untracked` | enabled, `min_size_bytes` 100 MiB, `include_ignored` | Large untracked files. |
 | `detectors.ai-artifacts` | enabled, `user_locations` false | Optional `tools`, `extra[]` catalog entries, `min_age_days`. |
-| `detectors.log-and-runtime-files` | enabled | Optional `categories`, `extra[]`, `min_age_days`. |
 | `detectors.build-artifacts` | enabled, `inactive_days` 30 | Optional `dirs`, `extra_dirs`, both lists of `name` or `name:marker1,marker2` (see below). |
+| `detectors.log-and-runtime-files` | enabled, `user_locations` false | Optional `categories`, `extra[]`, `min_age_days`. `user_locations` scans the user-level caches and logs (`brooom logs --user` enables it for one run). |
 | `trash.strategy` | `trash` | `trash`, `quarantine` or `delete`. |
 | `trash.per_detector` | | Strategy per detector name. |
 | `trash.quarantine_retention_days` | `14` | Quarantined sessions older than this are purged. **`0` means never purge**; negative is invalid. |

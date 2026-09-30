@@ -28,7 +28,7 @@ type cleanupSelection struct {
 	// detectors are the detector names the command works on; the global
 	// --detector flag can narrow but never widen them.
 	detectors []string
-	// userLocations scans the user-level tool locations (`brooom ai --user`).
+	// userLocations scans the user-level tool locations (`brooom ai --user`, `brooom logs --user`).
 	userLocations bool
 	// label names the command in messages, e.g. "branches".
 	label string

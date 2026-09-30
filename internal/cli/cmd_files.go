@@ -8,6 +8,7 @@ import (
 
 func newLogsCmd(a *app) *cobra.Command {
 	var af applyFlags
+	var user bool
 	cmd := &cobra.Command{
 		Use:   "logs",
 		Short: "Find (and trash) logs, caches and runtime leftovers of dev tools",
@@ -17,9 +18,10 @@ logs, pip/poetry/uv caches, Jest/Vitest/pytest caches, coverage output,
 that are currently open by a process are flagged, never suggested.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runCleanup(cmd, cleanupSelection{detectors: []string{config.DetectorLogs}, label: "logs"}, af)
+			return a.runCleanup(cmd, cleanupSelection{detectors: []string{config.DetectorLogs}, userLocations: user, label: "logs"}, af)
 		},
 	}
+	cmd.Flags().BoolVar(&user, "user", false, "also scan user-level tool locations (pip, npm, Go caches and logs)")
 	addApplyFlags(cmd, &af)
 	return cmd
 }
