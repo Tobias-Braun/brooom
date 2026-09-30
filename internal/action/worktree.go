@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
@@ -88,14 +89,18 @@ func findWorktree(list []gitx.Worktree, path string) (gitx.Worktree, bool) {
 	return gitx.Worktree{}, false
 }
 
-// removeWorktree deletes a leftover linked worktree.
+// removeWorktree removes a leftover linked worktree.
 //
-// A worktree that git considers clean is removed with `git worktree remove`
-// (git's own --force is never passed). Files ignored by git, such as build
-// output, are deleted together with the directory and undo does not bring
-// them back; they are reproducible. A dirty worktree is only touched with
-// Brooom's --force, and then only by moving the directory to the trash so
-// nothing is lost. A locked worktree is never touched.
+// The directory always goes through the configured trasher, so files git
+// ignores (.env, agent settings, logs, build output) reach the trash or
+// quarantine and undo brings them back; `git worktree remove` would delete
+// them permanently because git treats ignored files as disposable. A nested
+// git repository anywhere below the worktree refuses the removal, as it does
+// for the trash action. Afterwards only this worktree's registration is
+// dropped. A dirty worktree additionally needs Brooom's --force. The delete
+// strategy never removes a worktree holding uncommitted or ignored files; a
+// worktree with neither is removed with plain `git worktree remove`, which
+// loses nothing. A locked worktree is never touched.
 type removeWorktree struct{}
 
 // Type implements Action.
@@ -107,7 +112,10 @@ type removeEval struct {
 	wt    gitx.Worktree
 	path  string
 	dirty bool
-	// trasher is set only for dirty worktrees.
+	// ignored lists what git ignores in the worktree (see gitx.IgnoredEntries).
+	ignored []string
+	// trasher moves the directory; nil only for a worktree that holds nothing
+	// to lose under the delete strategy, which git removes itself.
 	trasher trash.Trasher
 	// note says why the open-file check could not vouch for the worktree
 	// (unavailable, incomplete); empty when it ran completely.
@@ -117,7 +125,8 @@ type removeEval struct {
 // evaluateRemove is shared by Plan and Apply so both re-validate everything
 // from the live repository state. Order: scope, registration, main/bare,
 // lock, existence, drift since the scan, in-use (current directory, open
-// files), dirtiness, risk flags. The lock, the in-use and the
+// files), static path refusals, nested repositories, dirtiness and ignored
+// content, risk flags. The lock, in-use, path, nested repository and
 // permanent-deletion refusals ignore --force.
 func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeEval, error) {
 	repo, err := openWorktreeRepo(ctx, env, f)
@@ -143,11 +152,8 @@ func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeE
 		return nil, err
 	}
 	ev := &removeEval{repo: repo, wt: wt, path: path}
-	if ev.note, err = checkWorktreeInUse(ctx, path); err != nil {
+	if err := ev.inspect(ctx, env); err != nil {
 		return nil, err
-	}
-	if ev.dirty, err = repo.IsDirty(ctx, path); err != nil {
-		return nil, fmt.Errorf("worktree: check %s for uncommitted changes: %w", path, err)
 	}
 	if err := ev.checkDirty(env, f); err != nil {
 		return nil, err
@@ -230,13 +236,41 @@ func refLabel(branch string) string {
 	return branch
 }
 
-// checkDirty applies the dirty rules: without --force a dirty worktree is
-// skipped; with --force it needs a trasher that is not the delete strategy.
-func (ev *removeEval) checkDirty(env *Env, f findings.Finding) error {
-	if !ev.dirty {
-		return nil
+// inspect runs the trash action's static path refusals (minus the repository
+// root one, a worktree root is one by design), refuses nested repositories
+// and reads the uncommitted and ignored content of the live directory.
+func (ev *removeEval) inspect(ctx context.Context, env *Env) error {
+	var err error
+	// In-use is checked first and is not overridable by --force.
+	if ev.note, err = checkWorktreeInUse(ctx, ev.path); err != nil {
+		return err
 	}
-	if !env.Force {
+	if err := refusePath(env, ev.path, false); err != nil {
+		return err
+	}
+	m, err := measureWorktree(ctx, ev.path)
+	switch {
+	case isGone(err):
+		return skipf("directory is missing; prune-worktrees handles missing directories")
+	case err != nil:
+		return skipf("cannot inspect %s: %v", ev.path, err)
+	case m.nestedGit != "":
+		return skipf("contains a git repository (.git at %s)", m.nestedGit)
+	}
+	if ev.dirty, err = ev.repo.IsDirty(ctx, ev.path); err != nil {
+		return fmt.Errorf("worktree: check %s for uncommitted changes: %w", ev.path, err)
+	}
+	if ev.ignored, err = ev.repo.IgnoredEntries(ctx, ev.path); err != nil {
+		return fmt.Errorf("worktree: list ignored files of %s: %w", ev.path, err)
+	}
+	return nil
+}
+
+// checkDirty applies the trasher rules. Without --force a dirty worktree is
+// skipped. The delete strategy is refused for a worktree with uncommitted or
+// ignored files, since either may be the only copy of the user's work.
+func (ev *removeEval) checkDirty(env *Env, f findings.Finding) error {
+	if ev.dirty && !env.Force {
 		return skipf("worktree has uncommitted changes; re-run with --force to trash it")
 	}
 	tr, err := trasherFor(env, f.Detector)
@@ -244,10 +278,25 @@ func (ev *removeEval) checkDirty(env *Env, f findings.Finding) error {
 		return err
 	}
 	if tr.Strategy() == config.StrategyDelete {
-		return skipf("refusing to permanently delete uncommitted work; use --trash-strategy trash or quarantine")
+		switch {
+		case ev.dirty:
+			return skipf("refusing to permanently delete uncommitted work; use --trash-strategy trash or quarantine")
+		case len(ev.ignored) > 0:
+			return skipf("refusing to permanently delete files ignored by git (%s); use --trash-strategy trash or quarantine", ignoredSummary(ev.ignored))
+		}
+		return nil
 	}
 	ev.trasher = tr
 	return nil
+}
+
+// ignoredSummary names the first few ignored entries for messages.
+func ignoredSummary(entries []string) string {
+	const show = 3
+	if len(entries) <= show {
+		return strings.Join(entries, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(entries[:show], ", "), len(entries)-show)
 }
 
 // Plan implements Action.
@@ -258,7 +307,7 @@ func (removeWorktree) Plan(ctx context.Context, env *Env, f findings.Finding) (S
 	}
 	fresh := f
 	fresh.Path = ev.path
-	if !ev.dirty {
+	if ev.trasher == nil {
 		return Step{
 			Finding: fresh,
 			Description: fmt.Sprintf("remove worktree %s (%s) with git worktree remove",
@@ -269,9 +318,21 @@ func (removeWorktree) Plan(ctx context.Context, env *Env, f findings.Finding) (S
 	strategy := ev.trasher.Strategy()
 	return Step{
 		Finding:     fresh,
-		Description: describe(strategy, f.SizeBytes, ev.path, []string{"worktree with uncommitted changes"}) + noteSuffix(ev.note),
-		Command:     displayCommand(strategy, ev.path) + " && git worktree prune",
+		Description: describe(strategy, f.SizeBytes, ev.path, ev.notes()) + noteSuffix(ev.note),
+		Command:     displayCommand(strategy, ev.path) + " && git worktree remove -- " + shellQuote(ev.path),
 	}, nil
+}
+
+// notes flags what git's own removal would have lost or what needs care.
+func (ev *removeEval) notes() []string {
+	notes := []string{"worktree"}
+	if ev.dirty {
+		notes = append(notes, "uncommitted changes")
+	}
+	if len(ev.ignored) > 0 {
+		notes = append(notes, "ignored files: "+ignoredSummary(ev.ignored))
+	}
+	return notes
 }
 
 // Apply implements Action. It re-validates first; a step that no longer
@@ -294,15 +355,16 @@ func (removeWorktree) Apply(ctx context.Context, env *Env, s Step) (session.Entr
 	undo := map[string]string{
 		undoRepo: ev.repo.Dir, undoWT: ev.path, undoBranch: ev.wt.Branch, undoHead: ev.wt.Head,
 	}
-	if ev.dirty {
+	if ev.trasher != nil {
 		en.Undo = undo
 		return ev.applyTrashed(ctx, env, en)
 	}
 	return ev.applyClean(ctx, env, en, undo)
 }
 
-// applyClean removes a clean worktree with plain `git worktree remove`.
-// git's own refusals (submodules, untracked files that appeared since the
+// applyClean removes a worktree without uncommitted or ignored files with
+// plain `git worktree remove`; it is only reached under the delete strategy,
+// where nothing is left to lose. git's own refusals (submodules, untracked files that appeared since the
 // check, a lock taken meanwhile) surface as the failure message.
 func (ev *removeEval) applyClean(ctx context.Context, env *Env, en session.Entry, undo map[string]string) (session.Entry, error) {
 	if _, err := env.Git.Run(ctx, ev.repo.Dir, "worktree", "remove", "--", ev.path); err != nil {
@@ -313,15 +375,16 @@ func (ev *removeEval) applyClean(ctx context.Context, env *Env, en session.Entry
 	en.Undo = undo
 	en.Status = session.StatusApplied
 	en.Restorable = true
-	en.RecoveryHint = readdHint(en.Undo) +
-		" (files ignored by git, such as build output, were deleted with the directory and are not restored)"
+	en.RecoveryHint = readdHint(en.Undo)
 	return en, nil
 }
 
-// applyTrashed moves a dirty worktree to the trash and then prunes its now
-// dangling registration so the branch is free again. When the prune fails the
-// directory is already safe in the trash, so the entry keeps the record and
-// stays restorable; only its status is failed.
+// applyTrashed moves the worktree directory to the trash and then drops its
+// now dangling registration with `git worktree remove` on the missing path,
+// which touches this one entry only (unlike `git worktree prune`), so the
+// branch is free again. When that fails the directory is already safe in the
+// trash, so the entry keeps the record and stays restorable; only its status
+// is failed.
 func (ev *removeEval) applyTrashed(ctx context.Context, env *Env, en session.Entry) (session.Entry, error) {
 	rec, err := ev.trasher.Remove(ctx, ev.path)
 	if err != nil {
@@ -330,13 +393,15 @@ func (ev *removeEval) applyTrashed(ctx context.Context, env *Env, en session.Ent
 	en.Trash = &rec
 	en.Restorable = rec.Restorable
 	en.SizeBytes = rec.SizeBytes
-	en.RecoveryHint = "restore the directory from the trash record (brooom undo does it), then " + readdHint(en.Undo) +
-		"; the staged/unstaged split of the uncommitted work is not restored, all changes reappear as unstaged"
+	en.RecoveryHint = "restore the directory from the trash record (brooom undo does it), then " + readdHint(en.Undo)
+	if ev.dirty {
+		en.RecoveryHint += "; the staged/unstaged split of the uncommitted work is not restored, all changes reappear as unstaged"
+	}
 	if !rec.Restorable {
 		en.RecoveryHint = "not recoverable: the " + string(rec.Strategy) + " trash strategy keeps no restorable copy of the worktree"
 	}
-	if _, err := env.Git.Run(ctx, ev.repo.Dir, "worktree", "prune"); err != nil {
-		return failedTrash(en, fmt.Errorf("worktree moved to %s but git worktree prune failed: %w", rec.StoredPath, err))
+	if _, err := env.Git.Run(ctx, ev.repo.Dir, "worktree", "remove", "--", ev.path); err != nil {
+		return failedTrash(en, fmt.Errorf("worktree moved to %s but git worktree remove of the registration failed: %w", rec.StoredPath, err))
 	}
 	en.Status = session.StatusApplied
 	return en, nil

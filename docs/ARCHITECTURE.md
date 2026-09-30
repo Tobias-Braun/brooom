@@ -240,20 +240,28 @@ uncached) and look worktrees up with `Repo.ListWorktrees` and `gitx.SamePath`.
 `remove-worktree` skips when the path is no longer registered, is the main or
 a bare worktree, is locked (never overridable, the reason is quoted), its
 directory is missing, HEAD or branch differ from the finding, the current
-directory is inside it or a process has it open (`checkOpen`, both before the
-dirty handling and never overridable), or it is dirty without `--force`.
+directory is inside it or a process has it open (`checkOpen`, before the dirty
+handling and never overridable), it hits the trash action's static path
+refusals (all but the repository-root one), a `.git` entry exists below the
+worktree root (nested repository or submodule, measured with `measureWorktree`,
+which ignores the worktree's own link file), or it is dirty without `--force`.
 
 The `worktrees` detector protects active worktrees the same way: a candidate
 containing the current directory or open by a process gets the blocking
 `file_open_by_process` flag (evidence `worktree_in_use`, action `none`), and a
 candidate modified within `thresholds.recent_days` (fresh mtimes) gets
 `recently_modified` and one lower confidence level, which keeps it out of the
-`safe` preset (high only). A clean worktree goes through `git worktree remove` (git's
-`--force` is never passed; ignored build output is deleted with it and not
-restored by undo). A dirty one needs `--force` and a non-`delete` trasher: the
-directory is moved with `Trasher.Remove`, then `git worktree prune` frees the
-branch; a failing prune keeps the trash record and `Restorable`. Undo re-adds
-clean removals (branch form, else `--detach` at the recorded commit) and
+`safe` preset (high only). The directory always goes through the configured trasher
+(`Trasher.Remove`), because `git worktree remove` would permanently delete files
+git ignores (`.env`, agent settings, logs, build output). The plan flags
+uncommitted and ignored content (`Repo.IgnoredEntries`, `git ls-files -o -i
+--exclude-standard --directory`). Afterwards `git worktree remove -- <missing
+path>` drops only that registration (never `worktree prune`, which would take
+unrelated entries too); a failure keeps the trash record and `Restorable`.
+The `delete` strategy refuses a dirty worktree or one with ignored files even
+with `--force`; a worktree with neither is removed by plain `git worktree
+remove` (git's `--force` is never passed). Undo re-adds plain removals (branch
+form, else `--detach` at the recorded commit) and
 restores trashed ones via a `--no-checkout` placeholder, `Trasher.Restore`,
 `git worktree repair` and a mixed `reset` (staged/unstaged split is not kept).
 `Entry.Undo` carries `worktree`, `branch`, `head` and `repo`.
