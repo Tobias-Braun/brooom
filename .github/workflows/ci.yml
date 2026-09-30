@@ -43,12 +43,28 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      # The test output is also kept in a file so the step below can repeat
+      # the failures at the end of the log: the verbose Windows output is
+      # longer than the log tail the GitHub API returns, which otherwise hides
+      # the failing package. bash runs with -eo pipefail, so go test's exit
+      # status still decides the step.
       - name: Test (race)
         if: runner.os != 'Windows'
-        run: go test -race -count=1 ./...
+        shell: bash
+        run: go test -race -count=1 ./... 2>&1 | tee "$RUNNER_TEMP/go-test.log"
       - name: Test
         if: runner.os == 'Windows'
-        run: go test -count=1 -v -timeout 8m ./...
+        shell: bash
+        run: go test -count=1 -v -timeout 8m ./... 2>&1 | tee "$RUNNER_TEMP/go-test.log"
+      - name: Summarize failed tests
+        if: failure()
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/go-test.log"
+          [ -f "$log" ] || exit 0
+          echo "::group::Failed tests and packages"
+          grep -E -B 20 -A 5 '^[[:space:]]*--- FAIL|^FAIL|^panic:|^fatal error:' "$log" | head -n 600 || true
+          echo "::endgroup::"
 
   # Releases are built with CGO_ENABLED=0, where macOS reaches the Trash through
   # purego (Dlopen and objc into NSFileManager). The test job above runs with
