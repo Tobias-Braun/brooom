@@ -69,9 +69,11 @@ func (a *app) runUpdateCheck(cmd *cobra.Command) error {
 	current := a.currentVersion()
 	status := compareVersions(current, rel.TagName)
 	install := updatecheck.DetectInstall(a.executablePath(), installEnv())
+	// Tags carry a "v", the running version usually does not; JSON consumers
+	// compare the two, so both are reported bare.
 	report := updateReport{
-		Current:         current,
-		Latest:          rel.TagName,
+		Current:         strings.TrimPrefix(current, "v"),
+		Latest:          strings.TrimPrefix(rel.TagName, "v"),
 		UpdateAvailable: status == statusUpdate,
 		URL:             rel.HTMLURL,
 		InstallMethod:   install.Method,

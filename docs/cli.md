@@ -822,7 +822,7 @@ brooom roots list [flags]
 ```
 
 ```text
-List the configured roots with their status. Supports --format table (default), plain and json.
+List the configured roots with their status. Supports --format table (default), plain, json and ndjson.
 ```
 
 **Examples**
@@ -893,8 +893,9 @@ brooom sessions [session-id] [flags]
 
 ```text
 List the sessions recorded by --apply runs, or show one session in detail
-(pass the full id or a unique prefix). Supports --format table (default) and
---format json. Read-only: nothing is modified.
+(pass the full id or a unique prefix). Supports --format table (default),
+plain (session ids, or entry paths for one session), json and ndjson (one
+manifest, or one entry, per line). Read-only: nothing is modified.
 ```
 
 **Examples**

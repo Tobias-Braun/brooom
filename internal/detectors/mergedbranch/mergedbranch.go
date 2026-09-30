@@ -213,7 +213,7 @@ func (s *scan) localBranch(ctx context.Context, b gitx.Branch) error {
 	if gitx.IsBaseBranch(s.base, s.cfg.Git.BaseBranches, b.Name) {
 		return nil
 	}
-	if s.unstarted(ctx, b) {
+	if s.unstarted(ctx, b) || s.belowAgeFloor(b.Date) {
 		return nil
 	}
 	res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/heads/"+b.Name, s.squash)
@@ -228,6 +228,15 @@ func (s *scan) localBranch(ctx context.Context, b gitx.Branch) error {
 	}
 	s.emit(s.buildFinding(ctx, b, res.Method))
 	return nil
+}
+
+// belowAgeFloor applies the user's raised thresholds.min_age_days to the tip
+// commit date. merged-branch has no age of its own, so without a raised global
+// threshold every merged branch is reported however young. An unknown date is
+// never hidden.
+func (s *scan) belowAgeFloor(date time.Time) bool {
+	floor := s.cfg.Thresholds.AgeFloor()
+	return floor > 0 && !date.IsZero() && s.env.AgeDays(date) < floor
 }
 
 // unstarted reports a freshly created branch that was never pushed, still
@@ -449,7 +458,7 @@ func (s *scan) remoteBranches(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if s.skipRemote(rb) {
+		if s.skipRemote(rb) || s.belowAgeFloor(rb.Date) {
 			continue
 		}
 		res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/remotes/"+rb.Name, s.squash)

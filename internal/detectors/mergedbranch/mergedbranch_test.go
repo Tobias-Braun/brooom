@@ -565,9 +565,11 @@ func TestUpstreamGoneAndNeverPushed(t *testing.T) {
 	}
 }
 
+// With the built-in thresholds age does not gate merged branches: a branch
+// merged an hour ago is reported with the informational recently_modified flag
+// (a raised thresholds.min_age_days does gate them, see minage_test.go).
 func TestRecentlyModifiedIsInformationalAndAgeIsNotGated(t *testing.T) {
 	f := newFixture(t)
-	f.cfg.Thresholds.MinAgeDays = 30
 	f.feature("feat/fresh", "f.txt")
 	f.merge("feat/fresh")
 	f.publish()

@@ -123,21 +123,31 @@ func (a *app) updateCheckAllowed(cmd *cobra.Command) bool {
 	}
 	// Only the default table output gets a notice; json, ndjson, plain, ...
 	// are for machines and stay untouched (this also covers version --format json).
-	if a.flags.format != "" && a.flags.format != "table" {
+	if !isTableFormat(a.flags.format) {
 		return false
 	}
 	if !a.stdoutIsTerminal() || updatecheck.IsDevVersion(a.currentVersion()) {
 		return false
 	}
-	return a.updateCheckEnabledInConfig()
+	cfg := a.updateCheckConfig()
+	if cfg == nil || !cfg.UpdateCheck {
+		return false
+	}
+	// Without --format the config's output.format decides, exactly as it does
+	// for the report: a JSON report must not be followed by a notice.
+	return a.flags.format != "" || isTableFormat(cfg.Output.Format)
 }
 
-func (a *app) updateCheckEnabledInConfig() bool {
+// isTableFormat reports whether v names the default human output.
+func isTableFormat(v string) bool { return v == "" || v == "table" }
+
+// updateCheckConfig loads the config for the check; nil means unusable.
+func (a *app) updateCheckConfig() *config.Config {
 	path := a.flags.configPath
 	if path == "" {
 		dirs, err := config.ResolveDirs()
 		if err != nil {
-			return false
+			return nil
 		}
 		path = dirs.ConfigFile
 	}
@@ -146,7 +156,10 @@ func (a *app) updateCheckEnabledInConfig() bool {
 		load = config.Load
 	}
 	cfg, err := load(path)
-	return err == nil && cfg != nil && cfg.UpdateCheck
+	if err != nil {
+		return nil
+	}
+	return cfg
 }
 
 // stdoutIsTerminal reports whether the command's stdout is a character

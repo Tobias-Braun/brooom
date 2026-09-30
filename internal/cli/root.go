@@ -167,8 +167,12 @@ Without flags Brooom only looks at the git repository you are in. Use
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := rejectIgnoredScanFlags(cmd); err != nil {
+				return err
+			}
 			a.startUpdateCheck(cmd)
+			return nil
 		},
 		PersistentPostRun: a.runPostRunHooks,
 		RunE: func(cmd *cobra.Command, args []string) error {

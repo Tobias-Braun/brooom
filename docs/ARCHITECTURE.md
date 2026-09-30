@@ -113,7 +113,8 @@ A detector that needs user-level targets (catalog locations below the home
 directory) additionally implements the optional `detect.TargetSource`
 (`ExtraTargets(ctx, cfg) ([]scope.Target, error)`). The scan pipeline calls it
 once per scan for every selected, globally enabled detector, appends the
-`TargetUser` targets (deduplicated, missing locations dropped) and allows
+`TargetUser` targets (deduplicated by declaring detector, tool and resolved
+path, so tools sharing a base directory are all scanned; missing locations dropped) and allows
 their paths in the guard. It only declares locations and never detects.
 
 The `ai-artifacts` detector (`internal/detectors/aiartifacts`) matches the

@@ -131,8 +131,8 @@ func TestSessionsErrors(t *testing.T) {
 		code     int
 		contains string
 	}{
-		{"bad format", []string{"sessions", "--format", "xml"}, ExitUsage, "table, json"},
-		{"bad format detail", []string{"sessions", "abc", "--format", "plain"}, ExitUsage, "table, json"},
+		{"bad format", []string{"sessions", "--format", "xml"}, ExitUsage, "table, plain, json, ndjson"},
+		{"bad format detail", []string{"sessions", "abc", "--format", "summary"}, ExitUsage, "table, plain, json, ndjson"},
 		{"unknown id", []string{"sessions", "nope"}, ExitError, "nope"},
 		{"ambiguous", []string{"sessions", "20260101"}, ExitError, "20260101-000000-bbbb"},
 		{"traversal", []string{"sessions", "../x"}, ExitError, "invalid session id"},

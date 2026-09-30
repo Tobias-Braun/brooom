@@ -638,7 +638,7 @@ func TestExtraTargetsFromTargetSource(t *testing.T) {
 	src.extra = func(context.Context, *config.Config) ([]scope.Target, error) {
 		return []scope.Target{
 			{Kind: scope.TargetUser, Path: userDir, Scope: userScope, Tool: "demo"},
-			{Kind: scope.TargetUser, Path: userDir, Scope: userScope, Tool: "dup"},
+			{Kind: scope.TargetUser, Path: userDir, Scope: userScope, Tool: "demo"},
 			{Kind: scope.TargetUser, Path: missingDir},
 			{Kind: scope.TargetRepo, Path: userDir},
 		}, nil

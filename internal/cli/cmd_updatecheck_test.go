@@ -144,7 +144,7 @@ func TestUpdateCheckJSON(t *testing.T) {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, out)
 	}
 	want := map[string]any{
-		"current": "1.2.0", "latest": "v1.4.0", "update_available": true,
+		"current": "1.2.0", "latest": "1.4.0", "update_available": true,
 		"url": "https://example.test/releases/v1.4.0", "install_method": "brew", "upgrade": "brew upgrade brooom",
 	}
 	if len(got) != len(want) {
@@ -164,7 +164,7 @@ func TestUpdateCheckJSONDevBuild(t *testing.T) {
 		t.Fatal("dev json must exit 0")
 	}
 	var got updateReport
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil || got.UpdateAvailable || got.Latest != "v1.4.0" {
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil || got.UpdateAvailable || got.Latest != "1.4.0" {
 		t.Errorf("report = %+v, err %v", got, err)
 	}
 }

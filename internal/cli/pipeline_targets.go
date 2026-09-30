@@ -366,15 +366,28 @@ func canonical(p string) string {
 	return abs
 }
 
+// userKey identifies an extra target for deduplication. The path alone is not
+// enough: two catalog tools may share a base directory (an extra tool matching
+// `~/.claude/projects/*/*.log` next to claude-code) and each detector only
+// enumerates the locations of its own tool, so dropping the second target hid
+// its files and made results depend on catalog order. Targets already in the
+// set (repositories, projects) carry an empty detector and tool.
+type userKey struct{ detector, tool, path string }
+
+// userTargetKey builds the deduplication key of t as declared by detector.
+func userTargetKey(detector string, t scope.Target) userKey {
+	return userKey{detector: detector, tool: t.Tool, path: t.Path}
+}
+
 // addExtraTargets asks every selected, globally enabled detector that
 // implements detect.TargetSource for its user-level targets, appends them
-// (deduplicated by path), and allows their paths in the guard. Locations
+// (deduplicated by detector, tool and path), and allows their paths in the guard. Locations
 // that do not exist are dropped silently; every other problem is a scan
 // error and never aborts the scan.
 func (ts *targetSet) addExtraTargets(ctx context.Context, cfg *config.Config, detectors []detect.Detector) {
-	seen := map[string]bool{}
+	seen := map[userKey]bool{}
 	for _, t := range ts.targets {
-		seen[t.Path] = true
+		seen[userTargetKey("", t)] = true
 	}
 	for _, d := range detectors {
 		src, ok := d.(detect.TargetSource)
@@ -393,7 +406,7 @@ func (ts *targetSet) addExtraTargets(ctx context.Context, cfg *config.Config, de
 
 // addUserTarget validates one extra target and appends it. Only user-level
 // targets are accepted: a detector must not widen the scan to repositories.
-func (ts *targetSet) addUserTarget(detector string, t scope.Target, seen map[string]bool) {
+func (ts *targetSet) addUserTarget(detector string, t scope.Target, seen map[userKey]bool) {
 	if t.Kind != scope.TargetUser {
 		ts.errs = append(ts.errs, findings.ScanError{Detector: detector, Path: t.Path, Message: fmt.Sprintf("extra target of kind %q ignored: only user targets are allowed", t.Kind)})
 		return
@@ -402,11 +415,12 @@ func (ts *targetSet) addUserTarget(detector string, t scope.Target, seen map[str
 	if !ok {
 		return
 	}
-	if seen[resolved] {
+	t.Path = resolved
+	key := userTargetKey(detector, t)
+	if seen[key] {
 		return
 	}
-	seen[resolved] = true
-	t.Path = resolved
+	seen[key] = true
 	t.Scope = findings.Scope{Type: findings.ScopeUser, Path: resolved}
 	ts.targets = append(ts.targets, t)
 }
