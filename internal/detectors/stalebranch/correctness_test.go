@@ -89,6 +89,10 @@ func TestBranchSafeOnSiblingIsStillBlockedButNotCounted(t *testing.T) {
 	if !strings.Contains(r, "also exist on other local branches") || !strings.Contains(r, "no remote has them") || strings.Contains(r, "lose") {
 		t.Errorf("reason = %q", r)
 	}
+	// The phrase already carries a parenthesis; the hint must not add another.
+	if strings.Contains(r, ")") && strings.Count(r, "(") != 1 || !strings.Contains(r, "; re-run with --force to override") {
+		t.Errorf("reason = %q, want a semicolon-separated override hint", r)
+	}
 }
 
 // TestGitErrorsAreSurfaced: a failing remote-state query used to drop the
@@ -142,5 +146,32 @@ func TestLocalUpstreamBranch(t *testing.T) {
 	}
 	if got.Meta["upstream"] != "main" {
 		t.Errorf("meta = %v", got.Meta)
+	}
+}
+
+// TestMergedCheckErrorIsAggregatedPerRepository: a broken repository fails the
+// merged check for every branch; the scan error says so once, naming the first
+// branch and counting the rest, while every branch is still reported.
+func TestMergedCheckErrorIsAggregatedPerRepository(t *testing.T) {
+	f := newFixture(t, true)
+	for _, name := range []string{"feat/a", "feat/b", "feat/c"} {
+		f.pushed(name, f.daysAgo(100))
+	}
+	got, err := f.detectFailing(func(args []string) bool {
+		batch := args[0] == "for-each-ref" && slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "--merged=") })
+		single := args[0] == "merge-base" && slices.Contains(args, "--is-ancestor") && args[len(args)-1] == "refs/remotes/origin/main"
+		return batch || single
+	})
+	if err == nil {
+		t.Fatal("no error, want the aggregated merged-check failure")
+	}
+	if n := strings.Count(err.Error(), "simulated git failure"); n != 1 {
+		t.Errorf("cause repeated %d times, want once:\n%v", n, err)
+	}
+	if !strings.Contains(err.Error(), `"feat/a"`) || !strings.Contains(err.Error(), "and 2 more branches") {
+		t.Errorf("error = %v, want the first branch and the count of the others", err)
+	}
+	if len(got) != 3 {
+		t.Errorf("findings = %d, want all three branches still reported", len(got))
 	}
 }

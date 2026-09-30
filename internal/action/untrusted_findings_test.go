@@ -197,6 +197,8 @@ func TestDeleteBranchDerivesVerificationLive(t *testing.T) {
 	t.Run("squash merge without any claim", func(t *testing.T) {
 		fx := newBranchFixture(t)
 		fx.featureBranch("feat/sq")
+		// The branch commits sit on a remote: the heuristic alone would not do.
+		fx.repo.Git("push", "-q", "origin", "feat/sq")
 		fx.repo.SquashMerge("feat/sq", "squash", testutil.BaseTime.Add(2*time.Hour))
 		fx.repo.Push("main")
 		step, _ := fx.mustApply(fx.finding("feat/sq", "stale-branch", ""))

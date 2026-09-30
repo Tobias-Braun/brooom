@@ -58,6 +58,13 @@ func TestBranchCreatedOnly(t *testing.T) {
 	repo.Checkout("main")
 	// Plumbing creates a branch without a reflog entry.
 	repo.Git("update-ref", "refs/heads/plumbing", "main")
+	// A rename adds a reflog entry without moving the branch.
+	repo.Branch("fresh-old")
+	repo.Git("branch", "-m", "fresh-old", "fresh-renamed")
+	repo.Git("checkout", "-q", "-b", "used-old", "main")
+	repo.Commit("r.txt", "r", "work before rename", at(3))
+	repo.Checkout("main")
+	repo.Git("branch", "-m", "used-old", "used-renamed")
 	handle := openRepo(t, execRunner(t), repo.Dir)
 
 	tests := []struct {
@@ -67,6 +74,8 @@ func TestBranchCreatedOnly(t *testing.T) {
 		{"fresh", true},
 		{"used", false},
 		{"plumbing", true},
+		{"fresh-renamed", true},
+		{"used-renamed", false},
 	}
 	for _, tc := range tests {
 		got, err := handle.BranchCreatedOnly(ctx, tc.branch)

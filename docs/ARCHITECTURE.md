@@ -17,7 +17,7 @@ packages and the same findings schema.
 3. **Detectors find, actions act.** Detectors never modify anything (no file
    writes, no git commands that take locks). Actions consume findings.
 4. **Reversible by default.** Files go to the OS trash (or quarantine);
-   branches are deleted with `git branch -d`; `-D` is used only when the merge (squash/rebase/base ancestry) or remote containment is re-verified at apply time, or with `--force`; worktrees are
+   branches are deleted with `git branch -d`; `-D` is used only when base ancestry, or remote containment (alone or together with a squash/rebase merge), is re-verified at apply time, or with `--force` (a squash/rebase merge of commits on no remote needs `--force`); worktrees are
    removed with `git worktree remove`; git maintenance uses conservative
    expiries. Every applied session writes a manifest for `brooom undo`.
 5. **Fast.** Parallel walking, skip lists, cached directory sizes invalidated
@@ -99,10 +99,13 @@ Rules:
 - `merged-branch` hides a branch as unstarted only when it sits on the base
   tip, was never pushed and its reflog holds at most the creation entry
   (`gitx.Repo.BranchCreatedOnly`); a fast-forward-merged branch has more
-  entries and is reported.
+  entries and is reported; `Branch: renamed` entries are ignored, so a renamed
+  fresh branch stays hidden.
 - Branch detectors never drop a branch on a git failure: per-branch errors are
   collected and returned joined (a non-fatal `ScanError`) while the other
-  findings are still emitted.
+  findings are still emitted; early returns keep the collected errors, and
+  `stale-branch` reports a failing merged check once per repository (first
+  branch named, the others counted).
 - Stale-branch separates the safety gate (`UnpushedCount`: commits on no
   remote, evidence `unpushed_commits`) from the number shown to users
   (`UniqueCount`: commits only this branch holds, evidence `unique_commits`).
@@ -284,7 +287,27 @@ re-validation is skipped ("branch moved during apply") and never deleted (the
 checked-out check is best effort: a worktree created between it and
 `update-ref` is not caught; the `-d` path is not compare-and-swap, git itself
 refuses unmerged branches there);
-`branch.<name>.*` is then removed like `git branch -D` does. Before deleting,
+`branch.<name>.*` is then removed like `git branch -D` does.
+
+Safety policy for `-D` (decided in #178, pinned by `deletebranch_policy_test.go`):
+what justifies `-D` is always re-derived from the repository, never from the
+finding's `Detector` or `Args["verified"]`. Ancestry of the tip in the base is
+a fact and needs nothing more. A merge found only by the patch-id heuristic
+(squash or rebase) justifies `-D` solely when every commit of the branch is
+also contained in a remote-tracking branch (`ContainedInRemotes`); a
+squash-merged branch whose commits exist on no remote is skipped without
+`--force` (the reason quotes `UniqueCount` and says the merge is only
+heuristic), because a wrong guess would leave the work as unreachable objects
+recoverable only by `brooom undo` or `git branch <name> <sha>` until the next
+gc. With `--force` it is deleted with `-D` and the reason "forced; not verified
+as merged". Remote containment alone still justifies `-D` (nothing is lost).
+The refusal text is joined with semicolons only, since the commit-count phrase
+can already carry a parenthesis.
+
+Known limitation (deferred from #88, plan item 4): a local branch whose name
+collides with a tag or a remote-tracking name (for example a local branch
+called `origin/main`) is handled safely (detectors and actions address refs
+fully qualified) but is not reported as an informational finding yet. Before deleting,
 `branch.<name>.remote/merge` are recorded in `Entry.Undo`
 (`upstream_remote`, `upstream_merge`). Undo validates them (name shape, git's
 `check-ref-format`), and only when it created the branch restores them with
@@ -413,6 +436,12 @@ detectors are left alone silently. `vet` derives the effective configuration
 (`ForTarget`, including the tighten-only `.brooom.json`) from the resolved
 path, never from the file's scope, and refuses a finding of a detector that is
 disabled there or whose path lies below an `exclude`d directory (`clean_config.go`).
+The disabled-detector part is a courtesy check only: it is keyed on the
+`Detector` field of the file, so a renamed detector bypasses it (pinned by
+`TestCleanDisabledDetectorCheckIsCourtesy`). Deriving the detector from the
+finding kind would not help, since several detectors share a kind. The exclude
+check, the scope guard, the catalog protection and the action re-validation do
+not read that field.
 The catalog protect rules are enforced by the trash action (step 8 above).
 Accepted git maintenance findings lose their `Args`: the expiry of `git-gc`,
 `git-prune` and `git-reflog-expire` comes from the repository's configuration

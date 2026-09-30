@@ -63,6 +63,9 @@ type decision struct {
 type mergeFact struct {
 	why string
 	ok  bool
+	// heuristic is true when only the patch-id detection (squash or rebase)
+	// found the merge; ancestry is a fact, patch-id equality is a guess.
+	heuristic bool
 }
 
 // command is the exact git invocation for display.
@@ -450,11 +453,14 @@ func (d *decision) recheckFlags(ctx context.Context, env *Env) error {
 // chooseFlag picks -d when git would accept it, else -D only with a fact that
 // is re-verified now, else -D under --force, else a skip with the hint.
 //
-// There is deliberately no separate "commits on no remote" gate: every
-// justification for -D (merged into the base, contained in remotes) is
-// re-derived here from the repository, so an unverified branch never gets
-// past this point without --force. A gate keyed on the detector name or the
-// finding's "verified" claim would trust a field a findings file can edit.
+// Safety policy (pinned by tests, see ARCHITECTURE.md): every justification
+// for -D is re-derived here from the repository, never from the finding. A
+// merge found only by the patch-id heuristic (squash, rebase) justifies -D
+// solely when every commit of the branch is also on a remote; a squash-merged
+// branch whose commits exist on no remote needs --force, because the heuristic
+// can be wrong and a wrong guess would leave the work only as unreachable
+// objects. The gate is live (UnpushedCount) and not keyed on the detector name
+// or the finding's "verified" claim, which a findings file can edit.
 func (d *decision) chooseFlag(ctx context.Context, env *Env, b gitx.Branch, f findings.Finding) error {
 	if target, ok := d.gitAccepts(ctx, b); ok {
 		d.flag, d.why = flagSafe, "fully merged into "+target
@@ -469,7 +475,23 @@ func (d *decision) chooseFlag(ctx context.Context, env *Env, b gitx.Branch, f fi
 		d.why = "forced; not verified as merged"
 		return nil
 	}
-	return skipf("not fully merged; re-run with --force to delete with -D")
+	return d.refusal(ctx)
+}
+
+// refusal is the skip for a branch that no verified fact justifies deleting.
+// A branch only the patch-id heuristic calls merged says so and quotes how
+// many commits would be lost; the sentence uses semicolons only, because the
+// count phrase may already carry a parenthesis.
+func (d *decision) refusal(ctx context.Context) error {
+	if m := d.mergedFact(ctx); !m.ok || !m.heuristic {
+		return skipf("not fully merged; re-run with --force to delete with -D")
+	}
+	phrase := "its commits are on no remote"
+	if n, err := d.repo.UniqueCount(ctx, d.name); err == nil {
+		phrase = gitx.OnlyOnBranchPhrase(n)
+	}
+	return skipf("not fully merged; %s; the merge is only detected by the patch-id heuristic and "+
+		"no remote has the commits; re-run with --force to delete with -D", phrase)
 }
 
 // gitAccepts predicts git's own merge check for -d: the tip must be reachable
@@ -489,18 +511,23 @@ func (d *decision) gitAccepts(ctx context.Context, b gitx.Branch) (string, bool)
 }
 
 // verifiedWhy re-verifies, right now, one of the facts that justify -D: the
-// tip is an ancestor of the resolved base, a squash/rebase merge is detected,
-// or all commits are contained in remotes. Nothing is taken from the finding.
-// Errors mean unknown, never verified.
+// tip is an ancestor of the resolved base, all commits are contained in
+// remotes, or a squash/rebase merge is detected and all commits are contained
+// in remotes (the heuristic alone is not enough, see chooseFlag). Nothing is
+// taken from the finding. Errors mean unknown, never verified.
 func (d *decision) verifiedWhy(ctx context.Context) (string, bool) {
-	if m := d.mergedFact(ctx); m.ok {
+	m := d.mergedFact(ctx)
+	if m.ok && !m.heuristic {
 		return m.why, true
 	}
 	ok, err := d.repo.ContainedInRemotes(ctx, "refs/heads/"+d.name)
-	if err == nil && ok {
-		return "all commits contained in remote-tracking branches, re-verified", true
+	if err != nil || !ok {
+		return "", false
 	}
-	return "", false
+	if m.ok {
+		return m.why + "; all commits contained in remote-tracking branches", true
+	}
+	return "all commits contained in remote-tracking branches, re-verified", true
 }
 
 // mergedFact derives from the repository whether the tip is merged into the
@@ -511,6 +538,7 @@ func (d *decision) mergedFact(ctx context.Context) mergeFact {
 		d.merge = &mergeFact{}
 		if base, err := d.repo.DefaultBase(ctx, d.cfg.Git.BaseBranches); err == nil {
 			d.merge.why, d.merge.ok = d.mergedWhy(ctx, base)
+			d.merge.heuristic = d.merge.ok && isHeuristic(d.merge.why)
 		}
 	}
 	return *d.merge
@@ -528,6 +556,9 @@ func (d *decision) mergedWhy(ctx context.Context, base gitx.Base) (string, bool)
 	}
 	return res.Method + "-merged into " + base.Ref + ", re-verified", true
 }
+
+// isHeuristic tells the patch-id based descriptions from ancestry.
+func isHeuristic(why string) bool { return !strings.HasPrefix(why, "merged into ") }
 
 // Undo recreates the branch at the recorded tip. It never overwrites: an
 // existing branch at the same commit counts as done, one elsewhere is an

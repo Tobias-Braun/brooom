@@ -119,20 +119,27 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	if err != nil || s == nil {
 		return err
 	}
+	// Every early return joins the errors collected so far: a scan that stops
+	// half way must still report the branches it could not classify.
 	for _, b := range s.branches {
 		if err := ctx.Err(); err != nil {
-			return err
+			return s.joined(err)
 		}
 		if err := s.localBranch(ctx, b); err != nil {
-			return err
+			return s.joined(err)
 		}
 	}
 	if s.cfg.Detectors.MergedBranch.IncludeRemote {
 		if err := s.remoteBranches(ctx); err != nil {
-			return err
+			return s.joined(err)
 		}
 	}
-	return errors.Join(s.errs...)
+	return s.joined(nil)
+}
+
+// joined returns the collected per-branch errors followed by err (if any).
+func (s *scan) joined(err error) error {
+	return errors.Join(append(slices.Clone(s.errs), err)...)
 }
 
 // load gathers the per-target state. It returns a nil scan without error when

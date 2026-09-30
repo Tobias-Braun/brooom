@@ -286,13 +286,21 @@ func OnlyOnBranchPhrase(n int) string {
 // most its creation entry, i.e. nothing ever moved the branch since it was
 // created. An empty or missing reflog (expired, disabled, branch created by
 // plumbing) counts as true: the caller cannot tell the branch was ever used
-// and must stay conservative. Only the reflog message of each entry is read.
+// and must stay conservative. `git branch -m` adds a "Branch: renamed" entry
+// on top of the creation entry without moving the branch, so those entries are
+// ignored; a renamed fresh branch is still fresh. Only the reflog message of
+// each entry is read.
 func (r *Repo) BranchCreatedOnly(ctx context.Context, branch string) (bool, error) {
 	out, err := r.run(ctx, "reflog", "show", "--format=%gs", "refs/heads/"+branch, "--")
 	if err != nil {
 		return false, err
 	}
-	entries := Lines(out)
+	var entries []string
+	for _, e := range Lines(out) {
+		if !strings.HasPrefix(e, "Branch: renamed ") {
+			entries = append(entries, e)
+		}
+	}
 	switch len(entries) {
 	case 0:
 		return true, nil
