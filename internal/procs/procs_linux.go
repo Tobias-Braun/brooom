@@ -20,7 +20,7 @@ func openFiles(ctx context.Context, files, dirs []string, res map[string]bool) e
 	return scanProc(ctx, procRoot, files, dirs, res)
 }
 
-// scanProc walks <root>/<pid>/fd for every numeric pid. Unreadable processes
+// scanProc walks <root>/<pid>/fd, cwd, root and exe for every numeric pid. Unreadable processes
 // are skipped silently (see the package doc), a missing root is
 // ErrUnavailable and an expired context is ErrIncomplete.
 func scanProc(ctx context.Context, root string, files, dirs []string, res map[string]bool) error {
@@ -43,7 +43,9 @@ func scanProc(ctx context.Context, root string, files, dirs []string, res map[st
 		if ctx.Err() != nil {
 			return fmt.Errorf("%w: %w", ErrIncomplete, ctx.Err())
 		}
-		scanFDs(filepath.Join(root, e.Name(), "fd"), fileSet, dirs, prefixes, res)
+		pidDir := filepath.Join(root, e.Name())
+		scanFDs(filepath.Join(pidDir, "fd"), fileSet, dirs, prefixes, res)
+		scanLinks(pidDir, fileSet, dirs, prefixes, res)
 	}
 	return nil
 }
@@ -66,6 +68,25 @@ func scanFDs(fdDir string, fileSet map[string]struct{}, dirs, prefixes []string,
 	}
 }
 
+// processLinks are the per-process symlinks that pin a path without a file
+// descriptor: the working directory, the root directory (chroot) and the
+// running executable. Moving a directory that holds one of them leaves the
+// process in a vanished or relocated directory.
+var processLinks = []string{"cwd", "root", "exe"}
+
+// scanLinks inspects cwd, root and exe of one process. A target of "/" is the
+// normal root of nearly every process and says nothing about the checked
+// paths, so it is skipped rather than matched against a "/" directory.
+func scanLinks(pidDir string, fileSet map[string]struct{}, dirs, prefixes []string, res map[string]bool) {
+	for _, name := range processLinks {
+		target, err := os.Readlink(filepath.Join(pidDir, name))
+		if err != nil || target == "/" {
+			continue
+		}
+		markTarget(target, fileSet, dirs, prefixes, res)
+	}
+}
+
 // markTarget records one descriptor target. Pseudo targets such as
 // "socket:[1]" or "anon_inode:x" and unlinked files ("... (deleted)") do not
 // name a path on disk and are ignored.
@@ -77,7 +98,9 @@ func markTarget(target string, fileSet map[string]struct{}, dirs, prefixes []str
 		res[target] = true
 	}
 	for i, p := range prefixes {
-		if strings.HasPrefix(target, p) {
+		// The directory itself counts too: a process whose cwd is exactly the
+		// directory has no path below the prefix.
+		if strings.HasPrefix(target, p) || target == dirs[i] {
 			res[dirs[i]] = true
 		}
 	}

@@ -49,7 +49,11 @@ func newHarness(t *testing.T, repo *testutil.Repo, guarded ...string) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := &detect.Env{Config: config.Default(), Git: runner, Repos: gitx.NewCache(runner), Guard: g, Now: now}
+	cfg := config.Default()
+	// Real mtimes of freshly built fixtures lie after the fixed scan time and
+	// would count as recent; recency has its own tests (active_test.go).
+	cfg.Thresholds.RecentDays = 0
+	env := &detect.Env{Config: cfg, Git: runner, Repos: gitx.NewCache(runner), Guard: g, Now: now}
 	return &harness{t: t, repo: repo, env: env}
 }
 

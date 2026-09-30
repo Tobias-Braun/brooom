@@ -71,7 +71,9 @@ func (s *scan) examine(ctx context.Context, e *entry) (findings.Finding, bool, e
 	if err := s.flagBlocking(ctx, e, &v); err != nil {
 		return findings.Finding{}, false, err
 	}
-	s.flagRecent(e, &v)
+	if err := s.markActivity(ctx, e, &v); err != nil {
+		return findings.Finding{}, false, err
+	}
 	return s.build(ctx, e, v), true, nil
 }
 
@@ -253,18 +255,6 @@ func (s *scan) summarize(ctx context.Context, e *entry) error {
 	}
 	e.sum, e.sized = sum, true
 	return nil
-}
-
-// flagRecent adds the informational recently_modified flag when any file in
-// the worktree changed within recent_days. It does not change the suggested
-// action; it tells the user that ignored files were touched recently.
-func (s *scan) flagRecent(e *entry, v *verdict) {
-	if !e.sized || e.sum.NewestModTime.IsZero() {
-		return
-	}
-	if s.env.AgeDays(e.sum.NewestModTime) < s.cfg.Thresholds.RecentDays {
-		v.risks = append(v.risks, findings.RiskRecentlyModified)
-	}
 }
 
 // headCommitTime returns the committer time of HEAD once, zero when unknown.

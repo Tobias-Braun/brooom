@@ -109,12 +109,16 @@ type removeEval struct {
 	dirty bool
 	// trasher is set only for dirty worktrees.
 	trasher trash.Trasher
+	// note says why the open-file check could not vouch for the worktree
+	// (unavailable, incomplete); empty when it ran completely.
+	note string
 }
 
 // evaluateRemove is shared by Plan and Apply so both re-validate everything
 // from the live repository state. Order: scope, registration, main/bare,
-// lock, existence, drift since the scan, dirtiness, risk flags. The lock and
-// the permanent-deletion refusals ignore --force.
+// lock, existence, drift since the scan, in-use (current directory, open
+// files), dirtiness, risk flags. The lock, the in-use and the
+// permanent-deletion refusals ignore --force.
 func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeEval, error) {
 	repo, err := openWorktreeRepo(ctx, env, f)
 	if err != nil {
@@ -139,6 +143,9 @@ func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeE
 		return nil, err
 	}
 	ev := &removeEval{repo: repo, wt: wt, path: path}
+	if ev.note, err = checkWorktreeInUse(ctx, path); err != nil {
+		return nil, err
+	}
 	if ev.dirty, err = repo.IsDirty(ctx, path); err != nil {
 		return nil, fmt.Errorf("worktree: check %s for uncommitted changes: %w", path, err)
 	}
@@ -194,6 +201,28 @@ func checkRemovable(wt gitx.Worktree, f findings.Finding) error {
 	return nil
 }
 
+// checkWorktreeInUse refuses a worktree the caller stands in or that a
+// process holds open, before any dirty/force handling and regardless of
+// --force: moving it would pull the directory from under a live process.
+// The own working directory is checked explicitly (gitx.CwdWithin) because it
+// is known on every OS, also where the open-file scan is unavailable or, as
+// on Windows, does not report working directories. The returned note is
+// non-empty when the open-file check was unavailable or incomplete.
+func checkWorktreeInUse(ctx context.Context, path string) (string, error) {
+	if gitx.CwdWithin(path) {
+		return "", skipf("%s: the current directory is inside the worktree; change directory first", findings.RiskFileOpen)
+	}
+	return checkOpen(ctx, path)
+}
+
+// noteSuffix appends an open-check note to a step description.
+func noteSuffix(note string) string {
+	if note == "" {
+		return ""
+	}
+	return " (" + note + ")"
+}
+
 func refLabel(branch string) string {
 	if branch == "" {
 		return "detached"
@@ -233,14 +262,14 @@ func (removeWorktree) Plan(ctx context.Context, env *Env, f findings.Finding) (S
 		return Step{
 			Finding: fresh,
 			Description: fmt.Sprintf("remove worktree %s (%s) with git worktree remove",
-				filepath.Base(ev.path), output.FormatSize(f.SizeBytes)),
+				filepath.Base(ev.path), output.FormatSize(f.SizeBytes)) + noteSuffix(ev.note),
 			Command: "git worktree remove -- " + shellQuote(ev.path),
 		}, nil
 	}
 	strategy := ev.trasher.Strategy()
 	return Step{
 		Finding:     fresh,
-		Description: describe(strategy, f.SizeBytes, ev.path, []string{"worktree with uncommitted changes"}),
+		Description: describe(strategy, f.SizeBytes, ev.path, []string{"worktree with uncommitted changes"}) + noteSuffix(ev.note),
 		Command:     displayCommand(strategy, ev.path) + " && git worktree prune",
 	}, nil
 }

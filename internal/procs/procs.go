@@ -10,7 +10,10 @@
 //   - Linux reads /proc/<pid>/fd once per call. Processes that cannot be read
 //     (other users, hidepid mounts, exited meanwhile) are skipped silently,
 //     because otherwise a scan as a normal user would always be incomplete.
-//     Memory-mapped files without an fd and working directories are not seen.
+//     It also reads the cwd, root and exe links of every process, so a shell
+//     standing in a directory or a running binary inside it counts as open
+//     (links to deleted paths and "/" are ignored). Memory-mapped files
+//     without an fd are not seen.
 //   - macOS runs lsof. Files are checked in batches, directories with the
 //     recursive +D option and one time slice each. lsof only reports other
 //     users' processes when permitted to. +D also counts working directories

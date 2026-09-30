@@ -6,3 +6,6 @@ var SamePathOS = samePathOS
 
 // ParseWorktrees exposes the porcelain parser for format tests.
 var ParseWorktrees = parseWorktrees
+
+// PathWithinOS exposes pathWithinOS for the same reason.
+var PathWithinOS = pathWithinOS
