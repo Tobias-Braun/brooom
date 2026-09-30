@@ -409,10 +409,22 @@ func TestWorktreesApplyAfterAgentRun(t *testing.T) {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("%s not restored: %v", filepath.Base(p), err)
 		}
-		if !strings.Contains(list, p) {
+		if !listsWorktree(list, p) {
 			t.Errorf("%s is not a registered worktree again", filepath.Base(p))
 		}
 	}
+}
+
+// listsWorktree reports whether the porcelain worktree list names path. git
+// prints registered paths with forward slashes and long names, so the
+// comparison uses the resolved, slash-normalised form (Windows uses
+// backslashes and may hand out 8.3 short temp directory names).
+func listsWorktree(list, path string) bool {
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		real = path
+	}
+	return strings.Contains(filepath.ToSlash(list), filepath.ToSlash(real))
 }
 
 // TestSweepPresetsTreatPatchEquivalentWorktrees pins the confidence split of
