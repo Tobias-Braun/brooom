@@ -85,6 +85,9 @@ func (a *app) newScanRequest(opts scanOptions) (*scanRequest, error) {
 	if opts.configOverlay != nil {
 		opts.configOverlay(cfg)
 	}
+	if opts.targetsOnly {
+		detectors = nil
+	}
 	if opts.userLocations {
 		applyUserLocations(cfg, opts.detectors)
 	}

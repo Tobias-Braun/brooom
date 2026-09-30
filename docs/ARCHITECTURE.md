@@ -275,6 +275,49 @@ are not linked into the build are skipped with a verbose note
 `config.PresetNames` mirrors `presets.Names()` (pinned by a test) because
 `presets` imports `config`.
 
+#### The git maintenance actions
+
+`internal/action/gitmaint*.go` holds `git-gc` (`git gc --quiet --prune=<date>`),
+`git-prune` (`git prune --expire=<date>`) and `git-reflog-expire`
+(`git reflog expire --expire=<date> --all`). They destroy data that is
+otherwise recoverable, so each is opt-in (`brooom git purge --gc|--prune|
+--reflog-expire`), never restorable (`Restorable=false`, `Undo` returns an
+error wrapping `trash.ErrNotRestorable` with the explanation) and every
+entry carries a `RecoveryHint` saying what was lost. Never `--force`,
+`--aggressive` or `--cruft`; gc's own reflog expiry follows the user's git
+config and is documented in the plan and help text.
+
+`Plan` (and `Apply` again) re-validates: action type, blocking risk flags,
+`Guard.Resolve`, the path being a working-tree root, the date and operations
+in progress. Dates are validated by git, never parsed by Brooom: empty,
+dash-leading, control-character and letterless values are rejected
+statically (`ErrInvalidDate`), the rest by a dry run (`git prune -n
+--expire=<date>`), and the value is always passed as `--expire=<date>` so it
+cannot be parsed as an option. A rebase, merge, cherry-pick, revert or bisect
+in the repository or any linked worktree (`gitx.OperationInProgress` over
+`gitx.WorktreeGitDirs`) skips all three actions, gc included because it
+prunes too. Dry-run counts come from git (`prune -n` plus a bounded
+`cat-file --batch-check` sample, `reflog expire --dry-run --verbose` "would
+prune" lines, `count-objects -v` for gc); prune and reflog-expire skip with
+"nothing to do" when git would change nothing. `Apply` measures
+`count-objects` (size + size-pack + size-garbage) and, for gc and reflog
+expiry, the fresh size of all reflog directories before and after; each part's
+delta is clamped at 0 and the sum is `Entry.SizeBytes`. A running gc (git's
+"already running"/`gc.pid` refusal) is a skip quoting git; other failures name
+the repository.
+
+Order and serialization: `actionPriority` runs reflog-expire, then prune, then
+gc, so later steps see the expired reflog. The executor runs steps one after
+another, so two maintenance steps never run concurrently on one repository; a
+parallel executor would have to keep that per-repository serialization.
+
+`brooom git purge` without flags only reports the git-bloat findings.
+`--gc` acts on repositories with a loose-object or pack finding only;
+`--reflog-expire`/`--prune` synthesize a finding for every repository in scope
+(one per common git dir, linked worktrees folded into the main one) and let
+the dry run decide. Machine formats are refused together with the flags, and
+invalid dates are usage errors before anything is planned.
+
 ### Trash (`internal/trash`)
 
 `Remove(path) (Record, error)` / `Restore(Record)`. Never follows symlinks.
