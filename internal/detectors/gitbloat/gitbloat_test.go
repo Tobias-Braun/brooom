@@ -245,6 +245,10 @@ func packSince(t *testing.T, r *testutil.Repo, prev string) {
 
 func TestPacksFinding(t *testing.T) {
 	r := testutil.NewRepo(t)
+	// Newer git versions run auto maintenance (which may consolidate packs)
+	// after commits; it must not undo the fragmentation built here.
+	r.Git("config", "gc.auto", "0")
+	r.Git("config", "maintenance.auto", "false")
 	prev := ""
 	for i := 0; i < 4; i++ {
 		r.WriteFile(fmt.Sprintf("f%d.txt", i), strings.Repeat(fmt.Sprintf("content %d\n", i), 200))
@@ -259,7 +263,7 @@ func TestPacksFinding(t *testing.T) {
 	}
 	packs := byKind(got, findings.KindGitPacks)
 	if len(packs) != 1 {
-		t.Fatalf("want 1 packs finding in %+v", got)
+		t.Fatalf("want 1 packs finding in %+v (count-objects: %s)", got, r.Git("count-objects", "-v"))
 	}
 	x := packs[0]
 	n, _ := evidence(x, "pack_count")
