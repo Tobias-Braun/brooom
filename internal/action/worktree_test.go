@@ -327,6 +327,14 @@ func TestRemoveWorktreeUndoRefusals(t *testing.T) {
 			t.Fatal("expected refusal")
 		}
 	})
+	t.Run("foreign action", func(t *testing.T) {
+		bad := en
+		bad.Action = findings.ActionPruneWorktrees
+		err := act.Undo(ctx, fx.env, bad)
+		if err == nil || !strings.Contains(err.Error(), "not remove-worktree") {
+			t.Fatalf("err = %v", err)
+		}
+	})
 	t.Run("missing data and relative paths", func(t *testing.T) {
 		for _, u := range []map[string]string{nil, {"repo": "r", "worktree": "w", "head": "h"}} {
 			bad := en
@@ -441,6 +449,14 @@ func TestRemoveWorktreeDirty(t *testing.T) {
 		if exists(path) {
 			t.Error("directory should be in the trash")
 		}
+
+		// The stale registration is still listed, so undo has to reuse it
+		// instead of falling back to a detached checkout that git refuses.
+		fx.env.Git = fx.git
+		if err := (removeWorktree{}).Undo(context.Background(), fx.env, en); err != nil {
+			t.Fatalf("Undo after prune failure: %v", err)
+		}
+		fx.wantRestoredDirty(path)
 	})
 }
 

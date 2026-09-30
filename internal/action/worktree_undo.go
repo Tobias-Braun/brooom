@@ -17,11 +17,18 @@ import (
 // undoData is the validated content of a remove-worktree manifest entry.
 type undoData struct {
 	repo, path, branch, head string
+	// stale is set when git still lists the path as a missing, unlocked
+	// worktree (a failed prune after the trashing). The registration is
+	// reused with add --force instead of being treated as occupying the branch.
+	stale bool
 }
 
 // undoable reports whether the entry may be undone. An entry that failed only
 // because the follow-up prune failed still holds the trashed directory.
 func undoable(e session.Entry) error {
+	if e.Action != findings.ActionRemoveWorktree {
+		return fmt.Errorf("worktree undo: entry for %s is a %s entry, not remove-worktree", e.Path, e.Action)
+	}
 	if e.Status == session.StatusApplied || (e.Status == session.StatusFailed && e.Trash != nil) {
 		return nil
 	}
@@ -98,9 +105,13 @@ func readdWorktree(ctx context.Context, env *Env, repo *gitx.Repo, d undoData, n
 	if noCheckout {
 		args = append(args, "--no-checkout")
 	}
-	useBranch, err := branchUsable(ctx, env, repo, branch)
+	useBranch, err := branchUsable(ctx, env, repo, branch, path)
 	if err != nil {
 		return err
+	}
+	if d.stale {
+		// git refuses to re-add a path it still lists as missing without --force.
+		args = append(args, "--force")
 	}
 	if useBranch {
 		args = append(args, "--", path, branch)
@@ -118,8 +129,9 @@ func readdWorktree(ctx context.Context, env *Env, repo *gitx.Repo, d undoData, n
 }
 
 // branchUsable reports whether branch exists and no worktree has it checked
-// out. An empty branch (the worktree was detached) is never usable.
-func branchUsable(ctx context.Context, env *Env, repo *gitx.Repo, branch string) (bool, error) {
+// out. An empty branch (the worktree was detached) is never usable. A missing,
+// unlocked worktree registered at ownPath is stale and does not count.
+func branchUsable(ctx context.Context, env *Env, repo *gitx.Repo, branch, ownPath string) (bool, error) {
 	if branch == "" {
 		return false, nil
 	}
@@ -136,11 +148,50 @@ func branchUsable(ctx context.Context, env *Env, repo *gitx.Repo, branch string)
 		return false, fmt.Errorf("worktree undo: list worktrees: %w", err)
 	}
 	for _, w := range list {
-		if w.BranchRef == ref {
+		if w.BranchRef == ref && !isStale(w, ownPath) {
 			return false, nil
 		}
 	}
 	return true, nil
+}
+
+// isStale reports whether w is the missing, unlocked registration of path.
+func isStale(w gitx.Worktree, path string) bool {
+	return gitx.SamePath(w.Path, path) && w.DirMissing && !w.Locked && !w.Main && !w.Bare
+}
+
+// staleRegistration reports whether git still lists path as a missing,
+// unlocked worktree, which is what a failed prune leaves behind. A path that
+// is registered any other way (live directory, locked) is refused.
+func staleRegistration(ctx context.Context, repo *gitx.Repo, path string) (bool, error) {
+	list, err := repo.ListWorktrees(ctx)
+	if err != nil {
+		return false, fmt.Errorf("worktree undo: list worktrees: %w", err)
+	}
+	w, ok := findWorktree(list, path)
+	if !ok {
+		return false, nil
+	}
+	if !isStale(w, path) {
+		return false, fmt.Errorf("worktree undo: %s is still registered as a live or locked worktree", path)
+	}
+	return true, nil
+}
+
+// recordTrasher checks that the trash record belongs to path and returns the
+// trasher of the strategy that created it.
+func recordTrasher(env *Env, rec trash.Record, path string) (trash.Trasher, error) {
+	if !gitx.SamePath(rec.OriginalPath, path) {
+		return nil, fmt.Errorf("worktree undo: trash record path %s does not match worktree %s", rec.OriginalPath, path)
+	}
+	if env.TrasherFor == nil {
+		return nil, errors.New("worktree undo: no trasher factory configured")
+	}
+	tr, err := env.TrasherFor(rec.Strategy)
+	if err != nil {
+		return nil, fmt.Errorf("worktree undo: %w", err)
+	}
+	return tr, nil
 }
 
 // undoTrashed restores a worktree that was moved to the trash:
@@ -160,17 +211,14 @@ func branchUsable(ctx context.Context, env *Env, repo *gitx.Repo, branch string)
 // and leaves the trash copy untouched.
 func undoTrashed(ctx context.Context, env *Env, repo *gitx.Repo, rec trash.Record, d undoData) error {
 	path := d.path
-	if !gitx.SamePath(rec.OriginalPath, path) {
-		return fmt.Errorf("worktree undo: trash record path %s does not match worktree %s", rec.OriginalPath, path)
-	}
-	if env.TrasherFor == nil {
-		return errors.New("worktree undo: no trasher factory configured")
-	}
-	tr, err := env.TrasherFor(rec.Strategy)
+	tr, err := recordTrasher(env, rec, path)
 	if err != nil {
-		return fmt.Errorf("worktree undo: %w", err)
+		return err
 	}
 	if err := pathFreeForWorktree(path); err != nil {
+		return err
+	}
+	if d.stale, err = staleRegistration(ctx, repo, path); err != nil {
 		return err
 	}
 	if err := readdWorktree(ctx, env, repo, d, true); err != nil {

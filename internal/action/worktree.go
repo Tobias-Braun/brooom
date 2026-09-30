@@ -235,22 +235,26 @@ func (removeWorktree) Apply(ctx context.Context, env *Env, s Step) (session.Entr
 		return failedTrash(en, err)
 	}
 	en.Path = ev.path
-	en.Undo = map[string]string{
+	undo := map[string]string{
 		undoRepo: ev.repo.Dir, undoWT: ev.path, undoBranch: ev.wt.Branch, undoHead: ev.wt.Head,
 	}
 	if ev.dirty {
+		en.Undo = undo
 		return ev.applyTrashed(ctx, env, en)
 	}
-	return ev.applyClean(ctx, env, en)
+	return ev.applyClean(ctx, env, en, undo)
 }
 
 // applyClean removes a clean worktree with plain `git worktree remove`.
 // git's own refusals (submodules, untracked files that appeared since the
 // check, a lock taken meanwhile) surface as the failure message.
-func (ev *removeEval) applyClean(ctx context.Context, env *Env, en session.Entry) (session.Entry, error) {
+func (ev *removeEval) applyClean(ctx context.Context, env *Env, en session.Entry, undo map[string]string) (session.Entry, error) {
 	if _, err := env.Git.Run(ctx, ev.repo.Dir, "worktree", "remove", "--", ev.path); err != nil {
 		return failedTrash(en, fmt.Errorf("git worktree remove %s: %w", ev.path, err))
 	}
+	// Undo data is attached only once the removal happened; a failed removal
+	// leaves nothing to undo.
+	en.Undo = undo
 	en.Status = session.StatusApplied
 	en.Restorable = true
 	en.RecoveryHint = readdHint(en.Undo) +
@@ -273,7 +277,7 @@ func (ev *removeEval) applyTrashed(ctx context.Context, env *Env, en session.Ent
 	en.RecoveryHint = "restore the directory from the trash record (brooom undo does it), then " + readdHint(en.Undo) +
 		"; the staged/unstaged split of the uncommitted work is not restored, all changes reappear as unstaged"
 	if !rec.Restorable {
-		en.RecoveryHint = "not recoverable"
+		en.RecoveryHint = "not recoverable: the " + string(rec.Strategy) + " trash strategy keeps no restorable copy of the worktree"
 	}
 	if _, err := env.Git.Run(ctx, ev.repo.Dir, "worktree", "prune"); err != nil {
 		return failedTrash(en, fmt.Errorf("worktree moved to %s but git worktree prune failed: %w", rec.StoredPath, err))
