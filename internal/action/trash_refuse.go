@@ -153,3 +153,51 @@ func resolveTarget(env *Env, path string) (string, error) {
 		return "", skipf("cannot resolve path: %v", err)
 	}
 }
+
+// refuseRestoreTarget applies the static refusals that matter for writing:
+// a restore destination must never be git metadata or Brooom's own session or
+// quarantine data, since a forged manifest could otherwise plant hooks or
+// rewrite the undo information itself. The check is lexical first and then
+// identity based (os.SameFile on every existing ancestor), because a name
+// comparison alone misses aliases such as Windows 8.3 short names, bind
+// mounts and hard-linked directories. The error is not a skip: a manifest
+// asking for this is corrupt or forged.
+func refuseRestoreTarget(dest string) error {
+	if insideGitDir(dest) {
+		return fmt.Errorf("trash undo: refusing to restore to %s: inside .git", dest)
+	}
+	for _, p := range brooomStateDirs() {
+		if covers(p, dest) {
+			return fmt.Errorf("trash undo: refusing to restore to %s: inside Brooom's session or quarantine data", dest)
+		}
+	}
+	return refuseRestoreByIdentity(dest)
+}
+
+// refuseRestoreByIdentity walks the existing ancestors of dest and compares
+// each with the Brooom state directories and with its sibling ".git" entry by
+// file identity. Missing path elements are skipped: they cannot alias
+// anything yet.
+func refuseRestoreByIdentity(dest string) error {
+	var state []os.FileInfo
+	for _, p := range brooomStateDirs() {
+		if fi, err := os.Stat(p); err == nil {
+			state = append(state, fi)
+		}
+	}
+	for cur := dest; ; cur = filepath.Dir(cur) {
+		if fi, err := os.Stat(cur); err == nil {
+			for _, s := range state {
+				if os.SameFile(fi, s) {
+					return fmt.Errorf("trash undo: refusing to restore to %s: inside Brooom's session or quarantine data", dest)
+				}
+			}
+			if g, err := os.Stat(filepath.Join(filepath.Dir(cur), ".git")); err == nil && os.SameFile(fi, g) {
+				return fmt.Errorf("trash undo: refusing to restore to %s: inside .git", dest)
+			}
+		}
+		if isVolumeRoot(cur) {
+			return nil
+		}
+	}
+}

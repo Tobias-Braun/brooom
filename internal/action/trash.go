@@ -272,6 +272,12 @@ func (trashAction) Apply(ctx context.Context, env *Env, s Step) (session.Entry, 
 	if _, err := os.Lstat(path); isGone(err) {
 		return goneEntry(en), nil
 	}
+	// A step may come from any caller, so the checks that Plan makes
+	// against live state run again: nested repositories, open files and
+	// the delete-strategy guard.
+	if err := recheckStep(ctx, env, f, path); err != nil {
+		return failedTrash(en, err)
+	}
 	tr, err := trasherFor(env, f.Detector)
 	if err != nil {
 		return failedTrash(en, err)
@@ -281,6 +287,20 @@ func (trashAction) Apply(ctx context.Context, env *Env, s Step) (session.Entry, 
 		return removeFailed(en, path, rec, err)
 	}
 	return appliedEntry(en, rec), nil
+}
+
+// recheckStep repeats the Plan checks that cannot be overridden by --force
+// and are not purely static. A path that vanished is left to the caller's
+// existence check, which runs before this one.
+func recheckStep(ctx context.Context, env *Env, f findings.Finding, path string) error {
+	if _, err := refreshFinding(ctx, f, path); err != nil {
+		return err
+	}
+	if _, err := checkOpen(ctx, path); err != nil {
+		return err
+	}
+	_, err := planStrategy(env, f)
+	return err
 }
 
 func failedTrash(en session.Entry, err error) (session.Entry, error) {
@@ -365,6 +385,9 @@ func (trashAction) Undo(ctx context.Context, env *Env, e session.Entry) error {
 	}
 	dest, err := resolveRestoreTarget(env, rec.OriginalPath)
 	if err != nil {
+		return err
+	}
+	if err := refuseRestoreTarget(dest); err != nil {
 		return err
 	}
 	rec.OriginalPath = dest
