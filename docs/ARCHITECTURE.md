@@ -180,6 +180,31 @@ with the strategy recorded in the entry (`Env.TrasherFor`), never the
 configured one, after checking that the original path lies inside the allowed
 roots; `ErrRestoreConflict` and `ErrNotRestorable` are passed through.
 
+#### The worktree actions
+
+`internal/action/worktree.go` (plus `worktree_undo.go`, `worktree_prune.go`)
+holds `remove-worktree` and `prune-worktrees`. Both run git in the repository
+named by `Finding.Meta["repo"]` (resolved through `Guard.Resolve`, opened
+uncached) and look worktrees up with `Repo.ListWorktrees` and `gitx.SamePath`.
+
+`remove-worktree` skips when the path is no longer registered, is the main or
+a bare worktree, is locked (never overridable, the reason is quoted), its
+directory is missing, HEAD or branch differ from the finding, or it is dirty
+without `--force`. A clean worktree goes through `git worktree remove` (git's
+`--force` is never passed; ignored build output is deleted with it and not
+restored by undo). A dirty one needs `--force` and a non-`delete` trasher: the
+directory is moved with `Trasher.Remove`, then `git worktree prune` frees the
+branch; a failing prune keeps the trash record and `Restorable`. Undo re-adds
+clean removals (branch form, else `--detach` at the recorded commit) and
+restores trashed ones via a `--no-checkout` placeholder, `Trasher.Restore`,
+`git worktree repair` and a mixed `reset` (staged/unstaged split is not kept).
+`Entry.Undo` carries `worktree`, `branch`, `head` and `repo`.
+
+`prune-worktrees` requires the recorded path to be prunable, unlocked and
+missing on disk. `git worktree prune` cannot be limited to one entry, so Apply
+compares the list before and after, fails if anything non-prunable vanished
+and names every removed entry in the hint. It is not undoable.
+
 ### Trash (`internal/trash`)
 
 `Remove(path) (Record, error)` / `Restore(Record)`. Never follows symlinks.
