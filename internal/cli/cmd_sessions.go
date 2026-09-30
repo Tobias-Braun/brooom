@@ -10,8 +10,9 @@ func newSessionsCmd(a *app) *cobra.Command {
   brooom sessions 20260929
   brooom sessions --format json`,
 		Long: `List the sessions recorded by --apply runs, or show one session in detail
-(pass the full id or a unique prefix). Supports --format table (default) and
---format json. Read-only: nothing is modified.`,
+(pass the full id or a unique prefix). Supports --format table (default),
+plain (session ids, or entry paths for one session), json and ndjson (one
+manifest, or one entry, per line). Read-only: nothing is modified.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runSessions(args)

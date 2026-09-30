@@ -11,7 +11,7 @@ func Default() *Config {
 		Version: CurrentVersion,
 		Roots:   []Root{},
 		Thresholds: Thresholds{
-			MinAgeDays:   14,
+			MinAgeDays:   DefaultMinAgeDays,
 			MinSizeBytes: 0,
 			RecentDays:   2,
 		},

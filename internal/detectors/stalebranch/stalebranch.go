@@ -149,7 +149,7 @@ func (d *Detector) newScan(ctx context.Context, env *detect.Env, target scope.Ta
 // not protected. Protected branches are not reported at all, unlike in
 // merged-branch, because a stale release branch is long-lived on purpose.
 func (s *scan) isCandidate(b gitx.Branch) bool {
-	if s.env.AgeDays(b.Date) < s.cfg.Detectors.StaleBranch.MinAgeDays {
+	if s.env.AgeDays(b.Date) < max(s.cfg.Detectors.StaleBranch.MinAgeDays, s.cfg.Thresholds.AgeFloor()) {
 		return false
 	}
 	if gitx.IsBaseBranch(s.base, s.cfg.Git.BaseBranches, b.Name) {

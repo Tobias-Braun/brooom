@@ -53,7 +53,7 @@ Roots are edited in place in the config file: every other key is preserved.`,
 			Short: "List workspace roots",
 			Example: `  brooom roots list
   brooom roots list --format json`,
-			Long: "List the configured roots with their status. Supports --format table (default), plain and json.",
+			Long: "List the configured roots with their status. Supports --format table (default), plain, json and ndjson.",
 			Args: cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error { return a.runRootsList() },
 		},
@@ -81,11 +81,27 @@ func loadConfigForEdit(a *app) (string, *config.Config, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	if err := a.requireExplicitConfig(path); err != nil {
+		return path, nil, err
+	}
 	cfg, err := config.Load(path)
 	if err != nil {
 		return path, nil, err
 	}
 	return path, cfg, nil
+}
+
+// requireExplicitConfig fails when --config names a file that does not exist.
+// A typo would otherwise silently fall back to the defaults, while `scan`
+// already refuses it. The implicit ~/.brooom/config.json may be absent.
+func (a *app) requireExplicitConfig(path string) error {
+	if a.flags.configPath == "" {
+		return nil
+	}
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("config file not found: %s", path)
+	}
+	return nil
 }
 
 // configuredRootStrings returns the root paths as stored in the config, for
@@ -517,8 +533,8 @@ func (a *app) runRootsList() error {
 	if format == "" {
 		format = "table"
 	}
-	if format != "table" && format != "plain" && format != "json" {
-		return usageError{fmt.Errorf("unsupported format %q for roots list (supported: table, plain, json)", format)}
+	if format != "table" && format != "plain" && format != "json" && format != "ndjson" {
+		return usageError{fmt.Errorf("unsupported format %q for roots list (supported: table, plain, json, ndjson)", format)}
 	}
 	_, cfg, err := loadConfigForEdit(a)
 	if err != nil {
@@ -535,6 +551,8 @@ func renderRoots(w io.Writer, format string, infos []rootInfo) error {
 	switch format {
 	case "json":
 		return writeJSON(w, infos)
+	case "ndjson":
+		return writeNDJSON(w, infos)
 	case "plain":
 		for _, i := range infos {
 			fmt.Fprintln(w, output.Sanitize(i.Path))

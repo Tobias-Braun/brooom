@@ -216,6 +216,20 @@ func TestThresholdBoundary(t *testing.T) {
 	h.want(h.run(), "exact.bin")
 }
 
+// TestGlobalMinSizeFloorsDetectorThreshold: thresholds.min_size_bytes above
+// the detector's own threshold wins, as the repo-level overlay already does.
+func TestGlobalMinSizeFloorsDetectorThreshold(t *testing.T) {
+	h := newHarness(t)
+	h.big("a.bin")
+	if fs := h.run(); len(fs) != 1 {
+		t.Fatalf("precondition: a.bin must be reported, got %d", len(fs))
+	}
+	h.env.Config.Thresholds.MinSizeBytes = 1 << 40
+	if fs := h.run(); len(fs) != 0 {
+		t.Fatalf("global min_size_bytes must hide the file, got %d findings", len(fs))
+	}
+}
+
 func TestZeroMinSizeMeansDefault(t *testing.T) {
 	h := newHarness(t)
 	h.cfg().MinSizeBytes = 0

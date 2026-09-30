@@ -130,10 +130,12 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 
 // minSize applies the documented default for non-positive thresholds.
 func minSize(cfg *config.Config) int64 {
-	if m := cfg.Detectors.LargeUntracked.MinSizeBytes; m > 0 {
-		return m
+	own := cfg.Detectors.LargeUntracked.MinSizeBytes
+	if own <= 0 {
+		own = DefaultMinSizeBytes
 	}
-	return DefaultMinSizeBytes
+	// The global threshold is a floor, exactly like the repo-level overlay.
+	return max(own, cfg.Thresholds.MinSizeBytes)
 }
 
 // scan holds the per-target state.

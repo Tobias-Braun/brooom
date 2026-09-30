@@ -83,6 +83,22 @@ type Thresholds struct {
 	RecentDays int `json:"recent_days"`
 }
 
+// DefaultMinAgeDays is the built-in thresholds.min_age_days.
+const DefaultMinAgeDays = 14
+
+// AgeFloor is the global age that detectors with an age of their own
+// (stale-branch, worktrees) or none at all (merged-branch) must respect. It
+// only counts once the user raised thresholds.min_age_days above the built-in
+// default: the default is tuned for artifact files, and applying it to
+// branches would hide recently merged ones (which are the point of
+// merged-branch) and override deliberately lower per-detector ages.
+func (t Thresholds) AgeFloor() int {
+	if t.MinAgeDays > DefaultMinAgeDays {
+		return t.MinAgeDays
+	}
+	return 0
+}
+
 // ThresholdOverrides is Thresholds with optional fields, used for per-root
 // and per-repo overrides.
 type ThresholdOverrides struct {

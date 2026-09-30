@@ -13,15 +13,16 @@ import (
 )
 
 // sessionsFormat validates the --format value of `brooom sessions`. Only
-// table (also the empty default) and json exist for manifests.
+// table (also the empty default), plain, json and ndjson exist for manifests;
+// tree and summary describe findings and have no meaning here.
 func sessionsFormat(v string) (string, error) {
 	switch v {
 	case "", "table":
 		return "table", nil
-	case "json":
-		return "json", nil
+	case "json", "plain", "ndjson":
+		return v, nil
 	}
-	return "", usageError{fmt.Errorf("unsupported format %q for sessions (supported: table, json)", v)}
+	return "", usageError{fmt.Errorf("unsupported format %q for sessions (supported: table, plain, json, ndjson)", v)}
 }
 
 func (a *app) runSessions(args []string) error {
@@ -44,6 +45,15 @@ func (a *app) listSessions(store *session.Store, format string) error {
 	list, problems, err := store.List()
 	if err != nil {
 		return err
+	}
+	switch format {
+	case "plain":
+		for _, m := range list {
+			fmt.Fprintln(a.io.Out, output.Sanitize(m.ID))
+		}
+		return nil
+	case "ndjson":
+		return writeNDJSON(a.io.Out, list)
 	}
 	if format == "json" {
 		if list == nil {
@@ -69,8 +79,16 @@ func (a *app) showSession(store *session.Store, id, format string) error {
 	if err != nil {
 		return err
 	}
-	if format == "json" {
+	switch format {
+	case "json":
 		return writeJSON(a.io.Out, m)
+	case "plain":
+		for _, e := range m.Entries {
+			fmt.Fprintln(a.io.Out, output.Sanitize(e.Path))
+		}
+		return nil
+	case "ndjson":
+		return writeNDJSON(a.io.Out, m.Entries)
 	}
 	return renderSessionDetail(a.io.Out, m, time.Now())
 }
@@ -79,6 +97,17 @@ func writeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// writeNDJSON writes one compact JSON document per element of items.
+func writeNDJSON[T any](w io.Writer, items []T) error {
+	enc := json.NewEncoder(w)
+	for _, it := range items {
+		if err := enc.Encode(it); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func renderSessionTable(w io.Writer, list []*session.Manifest, now time.Time) error {

@@ -239,7 +239,8 @@ func (s *scan) staleRule(ctx context.Context, e *entry) (verdict, bool, error) {
 		return verdict{}, false, err
 	}
 	commitAge, fileAge := s.env.AgeDays(head), s.env.AgeDays(e.sum.NewestModTime)
-	if commitAge < wcfg.MinAgeDays || fileAge < wcfg.MinAgeDays {
+	minAge := max(wcfg.MinAgeDays, s.cfg.Thresholds.AgeFloor())
+	if commitAge < minAge || fileAge < minAge {
 		return verdict{}, false, nil
 	}
 	ev := findings.Evidence{

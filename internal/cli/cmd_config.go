@@ -189,6 +189,9 @@ func (a *app) runConfigValidate() error {
 	if err != nil {
 		return err
 	}
+	if err := a.requireExplicitConfig(path); err != nil {
+		return err
+	}
 	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
 		_, err = fmt.Fprintf(a.io.Out, "ok (no config file at %s; defaults apply)\n", output.Sanitize(path))
 		return err

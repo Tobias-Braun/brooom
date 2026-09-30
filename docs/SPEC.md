@@ -125,6 +125,13 @@ Every listing/dry-run command supports `--format`:
 - `plain` (paths only, one per line, for xargs-style use)
 - `summary` (just counts and reclaimable bytes per detector)
 
+Commands that list something other than findings support the formats that
+make sense for their rows: `sessions` and `roots list` take `table` (default),
+`plain`, `json` and `ndjson`; `config show` takes `json` and `table`;
+`version` and `update-check` take `table`, `plain` and `json`. `tree` and
+`summary` describe findings only. `--format`, `--detector`, `--workspaces` and
+`--root` are rejected (usage error) on commands that would ignore them.
+
 Respect `NO_COLOR`, detect TTY vs pipe, and support `--quiet`.
 
 ## Findings model
@@ -173,7 +180,12 @@ Files:
   inactivity (last commit / last source mtime).
 
 Thresholds and pattern lists are configurable globally, per root, per
-detector.
+detector. The global `thresholds.min_age_days` filters ai-artifacts,
+log-and-runtime-files, stale-branch, worktrees and merged-branch (the last
+three only once it is raised above the built-in default, see
+[config.md](config.md)); `thresholds.min_size_bytes` filters ai-artifacts,
+log-and-runtime-files, build-artifacts and large-untracked. git-bloat has
+neither, and build-artifacts weighs project inactivity instead of age.
 
 ## Actions (v1)
 

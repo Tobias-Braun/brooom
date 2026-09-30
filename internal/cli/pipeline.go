@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -116,10 +114,8 @@ func (a *app) loadConfig() (*config.Config, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	if a.flags.configPath != "" {
-		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-			return nil, "", fmt.Errorf("config file not found: %s", path)
-		}
+	if err := a.requireExplicitConfig(path); err != nil {
+		return nil, "", err
 	}
 	cfg, err := config.Load(path)
 	if err != nil {

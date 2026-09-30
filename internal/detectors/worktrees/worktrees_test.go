@@ -520,6 +520,9 @@ func TestStale(t *testing.T) {
 		{"include_stale=false disables the rule", func(t *testing.T, wt string, h *harness) {
 			h.env.Config.Detectors.Worktrees.IncludeStale = false
 		}, false},
+		{"global min_age_days floors the detector age", func(t *testing.T, wt string, h *harness) {
+			h.env.Config.Thresholds.MinAgeDays = 365
+		}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

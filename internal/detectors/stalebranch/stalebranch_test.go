@@ -329,6 +329,31 @@ func TestAgeThreshold(t *testing.T) {
 	}
 }
 
+// TestGlobalMinAgeDaysFloorsDetectorAge: a user-level thresholds.min_age_days
+// above the built-in default raises the detector's own age like a repo-level
+// override does, while the default leaves lower detector ages alone.
+func TestGlobalMinAgeDaysFloorsDetectorAge(t *testing.T) {
+	tests := []struct {
+		name   string
+		global int
+		want   bool
+	}{
+		{"default global keeps detector age", config.DefaultMinAgeDays, true},
+		{"raised global floors detector age", 365, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t, true)
+			f.cfg.Detectors.StaleBranch.MinAgeDays = 5
+			f.cfg.Thresholds.MinAgeDays = tt.global
+			f.pushed("feat/x", f.daysAgo(100))
+			if got := len(f.mustDetect()) == 1; got != tt.want {
+				t.Errorf("reported = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPerRepoThresholdOverride(t *testing.T) {
 	f := newFixture(t, true)
 	f.pushed("feat/x", f.daysAgo(100))
