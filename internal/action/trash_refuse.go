@@ -139,7 +139,7 @@ func refusePath(env *Env, path string, refuseRepoRoot bool) error {
 			return skipf("refusing to remove Brooom's own session or quarantine data")
 		}
 	}
-	return nil
+	return RefuseByIdentity(path)
 }
 
 // isRepoRoot reports whether path is itself the top of a git repository.

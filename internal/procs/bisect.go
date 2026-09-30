@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 const (
@@ -178,11 +180,31 @@ func readDirEntries(dir string) (regular, subdirs []string, ok bool) {
 		switch {
 		case e.Type().IsRegular():
 			regular = append(regular, p)
-		case e.IsDir() && e.Type()&os.ModeSymlink == 0 && e.Type()&os.ModeIrregular == 0:
+		case isPlainDir(p, e):
 			subdirs = append(subdirs, p)
 		}
 	}
 	return regular, subdirs, true
+}
+
+// statEntry is a seam for tests.
+var statEntry = walk.Stat
+
+// isPlainDir reports whether e is a directory the walk may descend into.
+// Symlinks never qualify. Windows reports non-symlink reparse points as
+// irregular; junctions redirect and stay excluded, but cloud placeholders
+// (OneDrive) and ProjFS directories are real directories, so the walk
+// package's reparse-tag classification decides. Files inside them would
+// otherwise never be checked for locks.
+func isPlainDir(path string, e os.DirEntry) bool {
+	if !e.IsDir() || e.Type()&os.ModeSymlink != 0 {
+		return false
+	}
+	if e.Type()&os.ModeIrregular == 0 {
+		return true
+	}
+	en, err := statEntry(path)
+	return err == nil && en.IsDir()
 }
 
 // lockedDirs implements the directory half of the Windows strategy: a

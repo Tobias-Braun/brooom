@@ -259,11 +259,18 @@ func Stat(path string) (Entry, error) {
 }
 
 // entryFromInfo builds an Entry from lstat-style file info.
+//
+// Go reports every reparse point that is not a symlink as ModeIrregular, and
+// keeps ModeDir on those that are directories. Only name-surrogate reparse
+// points (symlinks, junctions) redirect to another location and must never
+// look descendable; cloud placeholders (OneDrive) and ProjFS directories are
+// ordinary directories whose contents live below them, so they keep ModeDir.
 func entryFromInfo(path string, fi fs.FileInfo) Entry {
 	typ := fi.Mode().Type()
-	if typ&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
-		// Reparse points may carry the directory bit on some Go versions;
-		// they must never look like descendable directories.
+	switch {
+	case typ&fs.ModeSymlink != 0:
+		typ &^= fs.ModeDir
+	case typ&fs.ModeIrregular != 0 && typ&fs.ModeDir != 0 && nameSurrogate(path):
 		typ &^= fs.ModeDir
 	}
 	e := Entry{Path: path, Name: fi.Name(), Type: typ, ModTime: fi.ModTime(), fid: fileIDOf(fi)}
@@ -273,6 +280,13 @@ func entryFromInfo(path string, fi fs.FileInfo) Entry {
 	e.Size = fi.Size()
 	e.Allocated = allocatedSize(fi)
 	return e
+}
+
+// IsSizedFile reports whether the entry is a file whose size counts towards
+// a directory total: regular files and irregular non-directory entries such
+// as cloud-tagged files, which have real content but a non-regular mode.
+func (e Entry) IsSizedFile() bool {
+	return e.Type.IsRegular() || (e.Type&fs.ModeIrregular != 0 && e.Type&(fs.ModeDir|fs.ModeSymlink) == 0)
 }
 
 // DirSummary is the aggregate of a directory tree.

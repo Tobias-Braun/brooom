@@ -2,12 +2,25 @@ package action
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/walk"
+)
+
+// statRoot and lstatIsDir are seams for tests: they let a Linux test present
+// the ModeDir|ModeIrregular reparse points Windows reports.
+var (
+	statRoot   = walk.Stat
+	lstatIsDir = func(path string) bool {
+		fi, err := os.Lstat(path)
+		// Symlinks are removed as links and their target is never touched.
+		return err == nil && fi.IsDir() && fi.Mode()&os.ModeSymlink == 0
+	}
 )
 
 // measurement is what one traversal of a trash target yields.
@@ -31,11 +44,18 @@ type measurement struct {
 // although the walk is parallel. A directory that cannot be read completely
 // is an error: an unreadable subtree could hide a repository.
 func sizeAndNestedGit(ctx context.Context, path string) (measurement, error) {
-	root, err := walk.Stat(path)
+	root, err := statRoot(path)
 	if err != nil {
 		return measurement{}, err
 	}
 	if !root.IsDir() {
+		// A directory the walker does not treat as one (a junction or an
+		// unclassifiable reparse point) has contents nobody inspected, so a
+		// nested repository cannot be ruled out. Trashing it as a "file" of
+		// size zero would be a guess; refuse instead.
+		if lstatIsDir(path) {
+			return measurement{}, errors.New("directory is a reparse point whose contents cannot be inspected, so a nested git repository cannot be ruled out")
+		}
 		size := root.Allocated
 		if root.IsSymlink() {
 			size = root.Size
@@ -76,7 +96,7 @@ func (t *treeMeter) entrySize(e walk.Entry) int64 {
 	switch {
 	case e.IsSymlink():
 		return e.Size
-	case !e.Type.IsRegular():
+	case !e.IsSizedFile():
 		return 0
 	}
 	if id, ok := e.HardLinkID(); ok {

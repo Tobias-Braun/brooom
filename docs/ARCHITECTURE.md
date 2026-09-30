@@ -211,6 +211,15 @@ reason at the first failure:
 7. Delete-strategy guard: with the `delete` strategy a finding whose
    `Meta["user_data_risk"]` is `untracked` is refused.
 
+Windows specifics: `Guard.ResolveParent` canonicalises the final element with
+`GetLongPathName` (8.3 aliases such as `GIT~1` become `.git`), and step 2 ends
+with `RefuseByIdentity`, which compares file identity (`os.SameFile`) of the
+path and its ancestors with `.git`, the Brooom home, the user's home and the
+sessions/quarantine dirs; `brooom clean --from` vetting runs it too. Step 3
+treats reparse-point directories that are not name surrogates (OneDrive,
+ProjFS) as directories (`walk` decides by the reparse tag); a junction or other
+directory the walker cannot inspect is refused.
+
 Not overridable by `--force`: steps 1, 2, 3, 4 (open files, also via the
 `file_open_by_process` flag) and 7. `--force` only lifts blocking risk flags
 and the tracked-files check. `Apply` re-resolves and re-checks the static
