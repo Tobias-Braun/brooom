@@ -72,6 +72,7 @@ func Default() *Config {
 			Cache:       true,
 			MaxDepth:    6,
 		},
+		Sweep:       Sweep{Preset: DefaultPreset},
 		UpdateCheck: false,
 	}
 }

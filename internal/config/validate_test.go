@@ -32,6 +32,8 @@ func TestValidateRejects(t *testing.T) {
 	}{
 		{"version too new", func(c *Config) { c.Version = 99 }, "version"},
 		{"version zero", func(c *Config) { c.Version = 0 }, "version"},
+		{"unknown sweep preset", func(c *Config) { c.Sweep.Preset = "reckless" }, "sweep.preset"},
+		{"empty sweep preset", func(c *Config) { c.Sweep.Preset = "" }, "sweep.preset"},
 		{"root empty", func(c *Config) { c.Roots = []Root{{Path: ""}} }, "roots[0].path"},
 		{"root relative", func(c *Config) { c.Roots = []Root{{Path: "rel/dir"}} }, "roots[0].path"},
 		{"root undefined var", func(c *Config) { c.Roots = []Root{{Path: "$BROOOM_TEST_UNSET_VAR/x"}} }, "roots[0].path"},

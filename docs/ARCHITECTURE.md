@@ -60,6 +60,7 @@ packages and the same findings schema.
 | `internal/detect` | `Detector` interface, registry, `Env`, parallel `Run` engine. |
 | `internal/detectors/<name>` | One package per detector, self-registering via `init()`. `internal/detectors/all` blank-imports them. |
 | `internal/catalog` | Embedded JSON data: AI tool locations, dev tool log/cache locations, build artifact dirs + project markers. Extensible via config. |
+| `internal/presets` | Sweep presets as pure data (detector set, minimum confidence, config overlay) plus `Apply` (deep copy, never mutates the loaded config). Presets never touch safety settings. |
 | `internal/action` | `Action` interface, registry, `Executor` (plan → dry run / confirm → apply → manifest → summary). One file per action type. |
 | `internal/trash` | `Trasher` interface; OS trash per OS (`trash_windows.go`, `trash_darwin.go`, `trash_unix.go` freedesktop), quarantine, delete. |
 | `internal/session` | Session manifests in `~/.brooom/sessions`, listing, undo bookkeeping. |
@@ -242,6 +243,24 @@ away with `--id` are never evaluated. Findings without an action (also with
 a known but unimplemented one is skipped. Risk flags, sizes and ages from the
 file are not trusted: the executor's `Plan` re-validates everything. Execution
 is `runExecutor`, shared with the shortcut commands.
+
+### Sweep presets (`internal/presets`, `internal/cli/cmd_sweep.go`)
+
+`brooom sweep` resolves the preset (flag, then `sweep.preset`, then `safe`) and
+calls `runCleanup` with the preset's detectors, its `MinConfidence` and an
+overlay. The overlay is applied right after `config.Load` in `newScanRequest`
+and before `ForTarget`, so root overrides and the tighten-only `.brooom.json`
+still act on top of it. Findings below the confidence floor are dropped in
+`execute`, before reporting and planning; blocked findings are not treated
+specially and stay blocked. Age thresholds are set as `min(current, preset)`
+and lowered values live in one table (`presets.AggressiveAges`). Overlays never
+touch `RecentDays`, protected branches, the trash strategy or `AllowDelete`,
+and never switch `ai-artifacts.user_locations` on. `--detector` is intersected
+with the preset; naming one outside it is a usage error. Preset detectors that
+are not linked into the build are skipped with a verbose note
+(`cleanupSelection.skipUnavailable`), explicitly requested ones are an error.
+`config.PresetNames` mirrors `presets.Names()` (pinned by a test) because
+`presets` imports `config`.
 
 ### Trash (`internal/trash`)
 

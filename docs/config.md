@@ -73,6 +73,7 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `agent.provider` | | `""`, `anthropic` or `openai-compatible`. |
 | `agent.endpoint`, `agent.model` | | Agent settings. |
 | `agent.api_key_env` | | Name of the environment variable holding the key (`[A-Za-z_][A-Za-z0-9_]*`); keys are never stored. |
+| `sweep.preset` | `safe` | Preset of `brooom sweep` when `--preset` is not given: `safe`, `standard` or `aggressive`. |
 | `update_check` | `false` | Opt-in update check. |
 
 ### Catalog `extra` entries

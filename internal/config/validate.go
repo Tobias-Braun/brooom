@@ -97,6 +97,7 @@ func (c *Config) Validate() error {
 	validateOutput(&p, c.Output)
 	validateScan(&p, c.Scan)
 	validateAgent(&p, c.Agent)
+	p.oneOf("sweep.preset", c.Sweep.Preset, PresetNames())
 	if len(p) == 0 {
 		return nil
 	}

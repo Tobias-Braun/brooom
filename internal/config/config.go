@@ -33,6 +33,8 @@ type Config struct {
 	Scan Scan `json:"scan"`
 	// Agent holds settings for the (future) agent layer.
 	Agent Agent `json:"agent"`
+	// Sweep holds the defaults of `brooom sweep`.
+	Sweep Sweep `json:"sweep"`
 	// UpdateCheck enables `brooom update-check` to contact GitHub. Opt-in.
 	UpdateCheck bool `json:"update_check"`
 
@@ -315,6 +317,13 @@ type Scan struct {
 	SkipDirs []string `json:"skip_dirs,omitempty"`
 	// MaxDepth limits workspace discovery depth below each root.
 	MaxDepth int `json:"max_depth"`
+}
+
+// Sweep configures `brooom sweep`.
+type Sweep struct {
+	// Preset is the preset used when `brooom sweep` gets no --preset flag:
+	// one of PresetNames.
+	Preset string `json:"preset"`
 }
 
 // Agent configures the future agent layer (not used by the v1 CLI).

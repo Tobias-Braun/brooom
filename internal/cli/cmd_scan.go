@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/output"
 )
 
@@ -22,6 +24,47 @@ type scanOptions struct {
 	// userLocations turns on detectors.ai-artifacts.user_locations for this
 	// run only (`brooom ai --user`); the config file is never changed.
 	userLocations bool
+	// configOverlay adjusts the loaded configuration right after it was
+	// read and before any per-root or per-repo layer (ForTarget), so a
+	// .brooom.json still tightens on top of it. It receives a private copy.
+	configOverlay func(*config.Config)
+	// minConfidence drops findings below this confidence before they are
+	// reported or planned; the zero value keeps everything.
+	minConfidence findings.Confidence
+}
+
+// keep reports whether a finding passes the confidence floor.
+func (o scanOptions) keep(f findings.Finding) bool {
+	return o.minConfidence == "" || f.Confidence.Rank() >= o.minConfidence.Rank()
+}
+
+// filterStream wraps a streaming callback so it only sees findings that pass
+// the confidence floor. A nil callback stays nil.
+func (o scanOptions) filterStream(onFinding func(findings.Finding)) func(findings.Finding) {
+	if onFinding == nil || o.minConfidence == "" {
+		return onFinding
+	}
+	return func(f findings.Finding) {
+		if o.keep(f) {
+			onFinding(f)
+		}
+	}
+}
+
+// filter returns the findings that pass the confidence floor. Blocked
+// findings are not treated specially: they stay when their confidence is high
+// enough and the executor reports them as blocked.
+func (o scanOptions) filter(in []findings.Finding) []findings.Finding {
+	if o.minConfidence == "" {
+		return in
+	}
+	out := make([]findings.Finding, 0, len(in))
+	for _, f := range in {
+		if o.keep(f) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func newScanCmd(a *app) *cobra.Command {
