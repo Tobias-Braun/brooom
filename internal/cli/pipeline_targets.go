@@ -324,21 +324,26 @@ func userTargetKey(detector string, t scope.Target) userKey {
 }
 
 // addExtraTargets asks every selected, globally enabled detector that
-// implements detect.TargetSource for its user-level targets, appends them
+// implements detect.TargetSource for the user-level targets of the set's
+// repositories, appends them
 // (deduplicated by detector, tool and path), and allows their paths in the guard. Locations
 // that do not exist are dropped silently; every other problem is a scan
 // error and never aborts the scan.
 func (ts *targetSet) addExtraTargets(ctx context.Context, cfg *config.Config, detectors []detect.Detector) {
 	seen := map[userKey]bool{}
+	var repos []string
 	for _, t := range ts.targets {
 		seen[userTargetKey("", t)] = true
+		if t.Kind == scope.TargetRepo {
+			repos = append(repos, t.Path)
+		}
 	}
 	for _, d := range detectors {
 		src, ok := d.(detect.TargetSource)
 		if !ok || !detectorEnabled(cfg, d.Name()) {
 			continue
 		}
-		extra, err := src.ExtraTargets(ctx, cfg)
+		extra, err := src.ExtraTargets(ctx, cfg, repos)
 		if err != nil {
 			ts.errs = append(ts.errs, findings.ScanError{Detector: d.Name(), Message: "extra targets: " + err.Error()})
 		}

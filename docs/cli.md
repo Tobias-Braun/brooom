@@ -117,7 +117,8 @@ what gets cleaned. Every finding is re-validated before anything is done.
 The file is untrusted input. The scope comes from this invocation (the current
 repository, or the folder --path names), never from the file:
 findings outside it are refused and make the command exit with 1. User-level
-locations are only accepted with --user. The action in the file only selects
+locations are only accepted where they belong to a repository of the scope
+(for example its Claude Code transcripts). The action in the file only selects
 which action to run; risk flags, sizes and ages in the file are never trusted,
 and each finding is checked again against the live state before it is applied.
 
@@ -161,7 +162,6 @@ brooom scan --format json | brooom clean --from - --yes
 | `--id` | - | only act on these finding IDs (repeatable, comma-separated) |
 | `--path` | - | work on this folder or repository instead of the current one |
 | `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
-| `--user` | - | also accept findings in user-level tool locations |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 

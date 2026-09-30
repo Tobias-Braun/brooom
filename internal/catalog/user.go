@@ -82,11 +82,14 @@ func (l UserLocation) Match(abs string, isDir bool) bool {
 	return GlobMatch(l.Rel, rel, l.fold)
 }
 
-// UserLocations expands the user-scope entries of the tools in cats (all when
+// userLocations expands the user-scope entries of the tools in cats (all when
 // empty) for env.GOOS and returns those whose Base exists and is readable.
+// No detector scans these global locations any more (only the
+// repository-keyed ones, see RepoLocations); the function stays as the
+// reference implementation of the expansion rules the tests pin.
 // Patterns whose variable is undefined on that OS are skipped silently, as are
 // entries whose os filter excludes it.
-func (c *Catalog) UserLocations(env PathEnv, cats ...Category) []UserLocation {
+func (c *Catalog) userLocations(env PathEnv, cats ...Category) []UserLocation {
 	var out []UserLocation
 	for _, t := range c.selected(cats) {
 		for _, e := range t.Entries {
@@ -94,6 +97,9 @@ func (c *Catalog) UserLocations(env PathEnv, cats ...Category) []UserLocation {
 				continue
 			}
 			for _, pat := range e.Patterns {
+				if strings.Contains(pat, RepoPlaceholder) {
+					continue // expanded per repository by RepoLocations
+				}
 				x, ok := expandUser(env, pat)
 				if !ok || !readable(x.base) {
 					continue

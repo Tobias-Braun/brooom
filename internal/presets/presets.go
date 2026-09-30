@@ -210,12 +210,9 @@ func WithDetector(detector string) string {
 }
 
 // overlayCommon keeps every preset to merged work: worktrees whose upstream is
-// gone are not merged, so they are left to `brooom review`. User-level tool
-// locations stay off; a preset only looks inside the repository. It only
-// switches things off, never on, so a user who disabled more keeps that.
+// gone are not merged, so they are left to `brooom review`. It only switches
+// things off, never on, so a user who disabled more keeps that.
 func overlayCommon(c *config.Config) {
-	c.Detectors.AIArtifacts.UserLocations = false
-	c.Detectors.Logs.UserLocations = false
 	c.Detectors.Worktrees.IncludeStale = false
 }
 

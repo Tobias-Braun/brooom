@@ -677,55 +677,6 @@ func TestScanFooterPointsToSweep(t *testing.T) {
 	}
 }
 
-func TestSelectionFlagsPassThrough(t *testing.T) {
-	isolate(t)
-	a := &app{}
-	req, err := a.newScanRequest(scanOptions{userLocations: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !req.cfg.Detectors.AIArtifacts.UserLocations {
-		t.Error("userLocations did not reach the config")
-	}
-	req, err = a.newScanRequest(scanOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if req.cfg.Detectors.AIArtifacts.UserLocations {
-		t.Error("user locations are on without the flag")
-	}
-}
-
-// TestUserLocationsTargetTheSelectedDetector: userLocations enables the user
-// locations of log-and-runtime-files only when logs are selected, those of
-// ai-artifacts only when ai is selected, and neither is on without it.
-func TestUserLocationsTargetTheSelectedDetector(t *testing.T) {
-	cases := []struct {
-		name         string
-		opts         scanOptions
-		wantAI, logs bool
-	}{
-		{"logs with user locations", scanOptions{detectors: []string{config.DetectorLogs}, userLocations: true}, false, true},
-		{"logs without", scanOptions{detectors: []string{config.DetectorLogs}}, false, false},
-		{"ai with user locations", scanOptions{detectors: []string{config.DetectorAIArtifacts}, userLocations: true}, true, false},
-		{"ai without", scanOptions{detectors: []string{config.DetectorAIArtifacts}}, false, false},
-		{"no selection keeps the ai behaviour", scanOptions{userLocations: true}, true, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			isolate(t)
-			req, err := (&app{}).newScanRequest(tc.opts)
-			if err != nil {
-				t.Fatal(err)
-			}
-			d := req.cfg.Detectors
-			if d.AIArtifacts.UserLocations != tc.wantAI || d.Logs.UserLocations != tc.logs {
-				t.Errorf("ai=%v logs=%v, want ai=%v logs=%v", d.AIArtifacts.UserLocations, d.Logs.UserLocations, tc.wantAI, tc.logs)
-			}
-		})
-	}
-}
-
 func TestCommandLineQuoting(t *testing.T) {
 	tests := []struct{ goos, want string }{
 		{"linux", `brooom sweep --config '/tmp/my dir/c.json' ''`},

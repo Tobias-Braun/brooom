@@ -539,17 +539,14 @@ func TestCleanUserScopeFindings(t *testing.T) {
 	lying := trashFinding(base, repoDir)
 	lying.Scope = findings.Scope{Type: findings.ScopeUser, Path: base}
 
-	t.Run("refused without --user", func(t *testing.T) {
-		code, out, _ := clean(t, "", "--from", writeReportFile(t, userFinding), "--yes")
-		if code != ExitError || !strings.Contains(out, "user location not enabled for this run (pass --user)") {
-			t.Fatalf("code %d\n%s", code, out)
-		}
-		if !exists(cacheFile) {
-			t.Error("user location was touched")
+	t.Run("the removed --user flag", func(t *testing.T) {
+		code, _, errOut := clean(t, "", "--from", writeReportFile(t, userFinding), "--user", "--dry-run")
+		if code != ExitUsage || !strings.Contains(errOut, "--user") {
+			t.Fatalf("code %d, stderr %q", code, errOut)
 		}
 	})
-	t.Run("accepted with --user", func(t *testing.T) {
-		code, out, errOut := clean(t, "", "--from", writeReportFile(t, userFinding), "--user", "--dry-run")
+	t.Run("accepted in a location of the repository", func(t *testing.T) {
+		code, out, errOut := clean(t, "", "--from", writeReportFile(t, userFinding), "--dry-run")
 		if code != ExitOK || !strings.Contains(out, "cache") || !strings.Contains(out, "dry run") {
 			t.Fatalf("code %d\nstdout %q\nstderr %q", code, out, errOut)
 		}
@@ -558,7 +555,7 @@ func TestCleanUserScopeFindings(t *testing.T) {
 		}
 	})
 	t.Run("outside the user base is still refused", func(t *testing.T) {
-		code, out, _ := clean(t, "", "--from", writeReportFile(t, lying), "--user", "--yes")
+		code, out, _ := clean(t, "", "--from", writeReportFile(t, lying), "--yes")
 		if code != ExitError || !strings.Contains(out, "refused findings (1)") || !exists(repoFile) {
 			t.Fatalf("code %d, file exists %v\n%s", code, exists(repoFile), out)
 		}
@@ -567,7 +564,7 @@ func TestCleanUserScopeFindings(t *testing.T) {
 		other := testutil.ResolvedTempDir(t)
 		fd := trashFinding(base, other)
 		fd.Scope.Type = findings.ScopeUser
-		code, _, _ := clean(t, "", "--from", writeReportFile(t, fd), "--user")
+		code, _, _ := clean(t, "", "--from", writeReportFile(t, fd), "--yes")
 		if code != ExitError {
 			t.Fatalf("code %d, want 1", code)
 		}

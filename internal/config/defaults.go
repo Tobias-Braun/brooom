@@ -49,12 +49,10 @@ func Default() *Config {
 				IncludeIgnored: true,
 			},
 			AIArtifacts: AIArtifacts{
-				Enabled:       true,
-				UserLocations: false,
+				Enabled: true,
 			},
 			Logs: Logs{
-				Enabled:       true,
-				UserLocations: false,
+				Enabled: true,
 			},
 			BuildArtifacts: BuildArtifacts{
 				Enabled:      true,
