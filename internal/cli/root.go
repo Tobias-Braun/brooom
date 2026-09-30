@@ -57,8 +57,10 @@ func StdIO() IO {
 
 // globalFlags are the flags shared by every command.
 type globalFlags struct {
-	workspaces bool
-	roots      []string
+	// path is the folder or repository to work on instead of the working
+	// directory. It is the positional argument of the bare command, scan,
+	// sweep and git purge, and --path of undo and clean.
+	path       string
 	detectors  []string
 	format     string
 	quiet      bool
@@ -85,6 +87,9 @@ func (f applyFlags) apply() bool { return !f.dryRun }
 type app struct {
 	io    IO
 	flags globalFlags
+	// deprecationNoted is set once the deprecated config keys were reported,
+	// so a run that loads the config several times says so once.
+	deprecationNoted bool
 	// args are the command-line arguments of this invocation (without the
 	// program name); the session manifest records them.
 	args []string
@@ -222,9 +227,10 @@ func executeContext(ctx context.Context, a *app, args []string) int {
 
 func newRootCmd(a *app) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "brooom",
+		Use:   "brooom [path]",
 		Short: "Sweep disk clutter from AI-assisted development",
 		Example: `  brooom
+  brooom ~/code
   brooom sweep
   brooom sweep after-agents
   brooom undo`,
@@ -241,11 +247,12 @@ Brooom never removes a directory that contains version control metadata (.git,
 outside a git repository and whenever git cannot confirm that a path holds no
 untracked files.
 
-Without flags Brooom only looks at the git repository you are in. Use
---workspaces to scan every repository below your configured roots.`,
+Without a path Brooom only looks at the git repository you are in. Pass a
+folder (brooom ~/code, brooom sweep tidy ~/code) to work on every repository
+below it.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Args:          cobra.NoArgs,
+		Args:          rootPathArg,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := rejectIgnoredScanFlags(cmd); err != nil {
 				return err
@@ -258,6 +265,7 @@ Without flags Brooom only looks at the git repository you are in. Use
 		},
 		PersistentPostRun: a.runPostRunHooks,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			a.setPath(args)
 			return a.runScan(cmd, scanOptions{})
 		},
 	}
@@ -265,8 +273,6 @@ Without flags Brooom only looks at the git repository you are in. Use
 		return usageError{err}
 	})
 	pf := root.PersistentFlags()
-	pf.BoolVarP(&a.flags.workspaces, "workspaces", "w", false, "scan all configured workspace roots instead of the current repo")
-	pf.StringSliceVar(&a.flags.roots, "root", nil, "limit --workspaces to these roots (repeatable)")
 	pf.StringSliceVarP(&a.flags.detectors, "detector", "d", nil, "run only these detectors (repeatable)")
 	pf.StringVarP(&a.flags.format, "format", "f", "", "output format: table, tree, json, ndjson, plain, summary")
 	pf.BoolVarP(&a.flags.quiet, "quiet", "q", false, "print only essential output")
@@ -285,7 +291,6 @@ Without flags Brooom only looks at the git repository you are in. Use
 		newUndoCmd(a),
 		newSessionsCmd(a),
 		newPurgeCmd(a),
-		newRootsCmd(a),
 		newConfigCmd(a),
 		newVersionCmd(a),
 		newUpdateCheckCmd(a),
@@ -347,6 +352,42 @@ func groupRunE(cmd *cobra.Command, _ []string) error { return cmd.Help() }
 // a `go run` tool. Use Main to run the CLI.
 func NewRootCommand() *cobra.Command {
 	return newRootCmd(&app{})
+}
+
+// setPath takes the optional path argument of a command.
+func (a *app) setPath(args []string) {
+	if len(args) == 1 {
+		a.flags.path = args[0]
+	}
+}
+
+// addPathFlag registers --path for the commands whose positional argument is
+// something else (undo takes a session id, clean reads --from).
+func addPathFlag(cmd *cobra.Command, a *app) {
+	cmd.Flags().StringVar(&a.flags.path, "path", "", "work on this folder or repository instead of the current one")
+}
+
+// rootPathArg accepts at most one argument for the bare command. A word that
+// is neither an existing directory nor spelled like a path is a mistyped or
+// removed subcommand (`brooom sweeep`, `brooom branches`), and saying so beats
+// "no such directory".
+func rootPathArg(cmd *cobra.Command, args []string) error {
+	if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
+		return err
+	}
+	if len(args) == 0 || looksLikePath(args[0]) {
+		return nil
+	}
+	if fi, err := os.Stat(args[0]); err == nil && fi.IsDir() {
+		return nil
+	}
+	return fmt.Errorf("unknown command %q for %q", args[0], cmd.CommandPath())
+}
+
+// looksLikePath reports whether s is spelled like a path rather than a
+// command name: it has a separator or starts with "." or "~".
+func looksLikePath(s string) bool {
+	return strings.ContainsAny(s, `/\`) || strings.HasPrefix(s, ".") || strings.HasPrefix(s, "~")
 }
 
 // addApplyFlags registers the flags of commands that can modify things.

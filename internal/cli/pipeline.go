@@ -67,9 +67,6 @@ func (a *app) scan(ctx context.Context, opts scanOptions, onFinding func(finding
 // newScanRequest validates flags and loads the configuration. Cheap usage
 // checks come first so a typo fails before the config is read.
 func (a *app) newScanRequest(opts scanOptions) (*scanRequest, error) {
-	if len(a.flags.roots) > 0 && !a.flags.workspaces {
-		return nil, usageError{errors.New("--root only narrows --workspaces; add --workspaces or drop --root")}
-	}
 	detectors, err := selectDetectors(a.flags.detectors, opts.detectors)
 	if err != nil {
 		return nil, err
@@ -124,6 +121,7 @@ func (a *app) loadConfig() (*config.Config, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	a.noteDeprecatedConfig(cfg)
 	return cfg, path, nil
 }
 

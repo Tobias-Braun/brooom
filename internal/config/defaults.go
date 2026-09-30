@@ -9,7 +9,6 @@ package config
 func Default() *Config {
 	return &Config{
 		Version: CurrentVersion,
-		Roots:   []Root{},
 		Thresholds: Thresholds{
 			MinAgeDays:   DefaultMinAgeDays,
 			MinSizeBytes: 0,

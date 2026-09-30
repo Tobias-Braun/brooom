@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -30,8 +31,7 @@ const (
 // the file REPLACE the default value entirely (they are not merged); for
 // example git.protected_branches in the file is the complete list, and
 // trash.per_detector is not combined with defaults. A JSON null for a slice
-// or map yields an empty one. Root paths are kept as written (see
-// Root.ResolvedPath), so Save round-trips them.
+// or map yields an empty one.
 //
 // The loaded configuration is validated; the error lists every problem.
 func Load(path string) (*Config, error) {
@@ -47,9 +47,9 @@ func Load(path string) (*Config, error) {
 
 // Parse decodes and validates config file content exactly like Load does
 // after reading the file; label (normally the path) prefixes every error.
-// It exists so callers that rewrite the file (`brooom roots add`) can check
-// the bytes they are about to write with the very same rules as Load, before
-// anything reaches the disk.
+// It exists so callers that rewrite the file can check the bytes they are
+// about to write with the very same rules as Load, before anything reaches
+// the disk.
 func Parse(label string, data []byte) (*Config, error) {
 	if len(data) > maxConfigBytes {
 		return nil, fmt.Errorf("%s: content is larger than the %d KiB limit", label, maxConfigBytes>>10)
@@ -59,6 +59,7 @@ func Parse(label string, data []byte) (*Config, error) {
 		return nil, err
 	}
 	normalizeNulls(cfg)
+	noteDeprecated(cfg)
 	if cfg.Version < 1 || cfg.Version > CurrentVersion {
 		return nil, fmt.Errorf("%s: version: %s", label, versionMessage(cfg.Version, CurrentVersion))
 	}
@@ -71,14 +72,24 @@ func Parse(label string, data []byte) (*Config, error) {
 // normalizeNulls turns the nil slices produced by an explicit JSON null into
 // empty ones, so callers never see a difference between "[]" and "null".
 func normalizeNulls(c *Config) {
-	if c.Roots == nil {
-		c.Roots = []Root{}
-	}
 	if c.Git.ProtectedBranches == nil {
 		c.Git.ProtectedBranches = []string{}
 	}
 	if c.Git.BaseBranches == nil {
 		c.Git.BaseBranches = []string{}
+	}
+}
+
+// noteDeprecated records the keys of earlier releases the file still sets.
+// They are accepted so an old file keeps loading, but have no effect.
+//
+// `config init` wrote an empty "roots" list into every file, so an empty or
+// null list is dropped silently: it never had an effect.
+func noteDeprecated(c *Config) {
+	roots := bytes.TrimSpace(c.LegacyRoots)
+	c.LegacyRoots = nil
+	if len(roots) > 0 && !bytes.Equal(roots, []byte("null")) && !bytes.Equal(bytes.Join(bytes.Fields(roots), nil), []byte("[]")) {
+		c.Deprecated = append(c.Deprecated, "roots: the root registry was removed and the key is ignored; pass a path instead, e.g. `brooom sweep ~/code`")
 	}
 }
 

@@ -74,7 +74,9 @@ type ScopeType string
 const (
 	// ScopeRepo is a single git repository (the default, detected from cwd).
 	ScopeRepo ScopeType = "repo"
-	// ScopeRoot is a configured workspace root (used with --workspaces).
+	// ScopeRoot is a folder given as the path argument, below which
+	// repositories and project folders were discovered. The value "root" is
+	// kept from the workspace roots of earlier releases for schema stability.
 	ScopeRoot ScopeType = "root"
 	// ScopeUser is a well-known user-level location from the embedded tool
 	// catalog (e.g. ~/.cache/<tool>); only scanned when explicitly enabled.

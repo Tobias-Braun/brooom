@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 )
@@ -183,38 +186,21 @@ func TestCompleteSessionIDsDegradeToEmpty(t *testing.T) {
 	}
 }
 
-func TestCompleteRoots(t *testing.T) {
+// TestCompletePathArguments: the path argument and --path let the shell
+// complete directories; the first argument of sweep is a preset.
+func TestCompletePathArguments(t *testing.T) {
 	emptyHome(t)
 	t.Setenv(NoUpdateCheckEnv, "1")
-	a, b := t.TempDir(), t.TempDir()
-	if code, _, errOut := run(t, "roots", "add", a, b); code != ExitOK {
-		t.Fatalf("roots add: %d %s", code, errOut)
-	}
-	for _, args := range [][]string{{"roots", "remove", ""}, {"scan", "--root", ""}} {
-		lines, directive := complete(t, args...)
-		if directive != noFileComp {
-			t.Errorf("%q: directive %q", args, directive)
-		}
-		got := values(lines)
-		if !sameTwo(got, a, b) {
-			t.Errorf("%q: roots = %q, want %q and %q", args, got, a, b)
+	dirs := fmt.Sprintf(":%d", cobra.ShellCompDirectiveFilterDirs)
+	for _, args := range [][]string{{""}, {"scan", ""}, {"git", "purge", ""}, {"sweep", "tidy", ""}, {"undo", "--path", ""}, {"clean", "--path", ""}} {
+		if _, directive := complete(t, args...); directive != dirs {
+			t.Errorf("%q: directive %q, want %q", args, directive, dirs)
 		}
 	}
-}
-
-// sameTwo reports whether got consists of exactly a and b.
-func sameTwo(got []string, a, b string) bool {
-	return len(got) == 2 && contains(got, a) && contains(got, b)
-}
-
-func TestCompleteRootsBrokenConfig(t *testing.T) {
-	home := emptyHome(t)
-	// An unreadable config yields no candidates, never an error.
-	if err := os.WriteFile(filepath.Join(home, config.ConfigFileName), []byte("{not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if lines, directive := complete(t, "roots", "remove", ""); len(lines) != 0 || directive != noFileComp {
-		t.Errorf("broken config: %q %q", lines, directive)
+	for _, args := range [][]string{{"scan", "a", ""}, {"sweep", "tidy", "a", ""}} {
+		if lines, directive := complete(t, args...); len(lines) != 0 || directive != noFileComp {
+			t.Errorf("%q: %q %q, want nothing", args, lines, directive)
+		}
 	}
 }
 
@@ -222,7 +208,6 @@ func TestCompletionNeverWrites(t *testing.T) {
 	home := emptyHome(t)
 	complete(t, "--detector", "")
 	complete(t, "undo", "")
-	complete(t, "roots", "remove", "")
 	entries, err := os.ReadDir(home)
 	if err != nil {
 		t.Fatal(err)
@@ -265,23 +250,5 @@ func TestCompletionCommand(t *testing.T) {
 
 	if _, out, _ := run(t, "--help"); !strings.Contains(out, "completion") {
 		t.Errorf("root help does not list the completion command")
-	}
-}
-
-// TestCompleteRootsWithComma covers a root whose path contains a comma: the
-// positional argument of `roots remove` is one path, only --root is a list.
-func TestCompleteRootsWithComma(t *testing.T) {
-	emptyHome(t)
-	t.Setenv(NoUpdateCheckEnv, "1")
-	root := filepath.Join(t.TempDir(), "a,b")
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if code, _, errOut := run(t, "roots", "add", root); code != ExitOK {
-		t.Fatalf("roots add: %d %s", code, errOut)
-	}
-	lines, _ := complete(t, "roots", "remove", root)
-	if got := values(lines); len(got) != 1 || got[0] != root {
-		t.Errorf("roots remove completion = %q, want %q", got, root)
 	}
 }

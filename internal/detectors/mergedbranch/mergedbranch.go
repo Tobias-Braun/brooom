@@ -167,7 +167,7 @@ func (s *scan) joined(err error) error {
 // load gathers the per-target state. It returns a nil scan without error when
 // the repository has no base branch, since nothing can be merged into it.
 func (d *Detector) load(ctx context.Context, env *detect.Env, target scope.Target, emit func(findings.Finding)) (*scan, error) {
-	cfg, err := env.Config.ForTarget(target.Scope.Path, target.Path)
+	cfg, err := env.Config.ForTarget(target.Path)
 	if err != nil {
 		return nil, fmt.Errorf("merged-branch: config for %q: %w", target.Path, err)
 	}

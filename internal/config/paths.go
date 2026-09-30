@@ -97,61 +97,16 @@ func isNameByte(c byte) bool {
 	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
-// ResolvedPath expands and cleans the root path. It is what code should use
-// to locate the root; Path itself stays as the user wrote it so Save
-// round-trips "~/Developer" instead of a machine-specific absolute path.
-func (r Root) ResolvedPath() (string, error) {
-	p, err := ExpandPath(r.Path)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(p), nil
-}
-
 // IsFilesystemRoot reports whether path, after cleaning, is the root of a
 // filesystem: "/" on unix; on Windows also a volume root ("C:\", "C:") or a
-// UNC share root (`\\server\share`, `\\?\C:\`). Brooom refuses such roots
-// because a workspace scan from there would cover the whole machine.
+// UNC share root (`\\server\share`, `\\?\C:\`). Brooom refuses such paths
+// because a scan from there would cover the whole machine.
 //
-// This is the shared helper for every check of that kind (config validation
-// and `brooom roots add`); do not reimplement it elsewhere.
+// This is the shared helper for every check of that kind (the path argument);
+// do not reimplement it elsewhere.
 func IsFilesystemRoot(path string) bool {
 	if path == "" {
 		return false
 	}
 	return isRootPath(filepath.Clean(path))
-}
-
-// pathKey normalises a cleaned path for equality comparison: the default
-// filesystems of Windows and macOS are case-insensitive.
-func pathKey(p string) string {
-	p = filepath.Clean(p)
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		return strings.ToLower(p)
-	}
-	return p
-}
-
-// pathWithin reports whether target equals or lies below root, comparing
-// whole components ("/a/b" does not contain "/a/bc").
-//
-// It is only a selector for configuration overrides and approximates
-// containment lexically (plus best-effort symlink resolution by callers); the
-// security boundary for scanned paths remains scope.Guard.
-func pathWithin(root, target string) bool {
-	rel, err := filepath.Rel(pathKey(root), pathKey(target))
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-// canonicalPath cleans p and resolves symlinks on a best-effort basis: if the
-// path does not exist (yet) the cleaned path is used.
-func canonicalPath(p string) string {
-	p = filepath.Clean(p)
-	if r, err := filepath.EvalSymlinks(p); err == nil {
-		return r
-	}
-	return p
 }

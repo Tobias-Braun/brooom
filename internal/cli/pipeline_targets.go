@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -23,9 +22,8 @@ import (
 // Messages of the usage errors of target selection. They say how to fix the
 // invocation because these are the errors a new user meets first.
 var (
-	errNotInRepo  = fmt.Errorf("%w; run it inside a repo, use --workspaces, or configure roots with `brooom roots add <path>`", scope.ErrNotInRepo)
-	errBareAnchor = errors.New("this folder is the bare repository of a bare plus linked worktrees layout and has no working tree; run brooom inside one of its worktrees or use --workspaces")
-	errNoRoots    = errors.New("no workspace roots available for --workspaces; add one with `brooom roots add <path>`")
+	errNotInRepo  = fmt.Errorf("%w; run it inside a repo, or pass a folder to scan every repository below it (for example `brooom sweep ~/code`)", scope.ErrNotInRepo)
+	errBareAnchor = errors.New("this folder is the bare repository of a bare plus linked worktrees layout and has no working tree; run brooom inside one of its worktrees or pass the folder above it as the path")
 )
 
 // targetSet is what target building produces: the targets to scan, the
@@ -40,6 +38,10 @@ type targetSet struct {
 	// main worktree of a linked worktree. Nothing below them is in scope.
 	repoMeta []string
 	errs     []findings.ScanError
+	// discovered is set when the targets were found by walking a folder
+	// (the path argument outside a repository). The allowed location is then
+	// that folder, not a repository.
+	discovered bool
 }
 
 // newGuard builds the scan guard: the allowed locations plus the repository
@@ -78,25 +80,30 @@ func (ts *targetSet) allow(path, what string, quiet bool) (string, bool) {
 }
 
 // buildTargets selects the targets for the request: the repository around
-// the working directory by default, the configured roots with --workspaces.
+// the working directory by default, or what the path argument names.
 func (a *app) buildTargets(ctx context.Context, req *scanRequest, runner gitx.Runner) (*targetSet, error) {
-	if a.flags.workspaces {
-		return a.workspaceTargets(ctx, req.cfg)
+	if a.flags.path != "" {
+		return a.pathTargets(ctx, req.cfg, runner, a.flags.path)
 	}
-	return repoTargets(ctx, runner)
-}
-
-// repoTargets builds the single repo target of the working directory. Inside
-// a linked worktree the repository's main worktree is additionally accepted
-// as repository metadata location (never scanned, and nothing below it is in
-// scope) so the branch and worktree detectors can resolve the repository
-// that their git commands run in.
-func repoTargets(ctx context.Context, runner gitx.Runner) (*targetSet, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("determine working directory: %w", err)
 	}
-	root, err := scope.FindRepoRoot(cwd)
+	return repoTargets(ctx, runner, cwd)
+}
+
+// repoTargets builds the repo target of the repository containing dir.
+//
+// Inside a linked worktree the repository's main worktree becomes a second
+// repo target: the scope is the whole repository, so a sweep run from one of
+// the worktrees an agent left behind also sees its siblings (typically below
+// .claude/worktrees of the main checkout). Findings of the same branch reached
+// through both targets carry one ID and are deduplicated by the engine, and
+// the worktree the command runs in is never removed (it is in use). The main
+// worktree is also registered as repository metadata location, which the git
+// detectors resolve before they run git in it.
+func repoTargets(ctx context.Context, runner gitx.Runner, dir string) (*targetSet, error) {
+	root, err := scope.FindRepoRoot(dir)
 	if errors.Is(err, scope.ErrNotInRepo) {
 		return nil, usageError{errNotInRepo}
 	}
@@ -104,11 +111,7 @@ func repoTargets(ctx context.Context, runner gitx.Runner) (*targetSet, error) {
 		return nil, err
 	}
 	ts := &targetSet{
-		targets: []scope.Target{{
-			Kind:  scope.TargetRepo,
-			Path:  root,
-			Scope: findings.Scope{Type: findings.ScopeRepo, Path: root},
-		}},
+		targets: []scope.Target{repoTarget(root)},
 		allowed: []string{root},
 	}
 	if !isLinkedWorktree(root) {
@@ -123,8 +126,45 @@ func repoTargets(ctx context.Context, runner gitx.Runner) (*targetSet, error) {
 	return ts, nil
 }
 
-// allowMainWorktree registers the main worktree of the linked worktree at root
-// as a repository metadata location.
+// repoTarget is the repo target of a repository top-level directory, scoped
+// to itself.
+func repoTarget(root string) scope.Target {
+	return scope.Target{
+		Kind:  scope.TargetRepo,
+		Path:  root,
+		Scope: findings.Scope{Type: findings.ScopeRepo, Path: root},
+	}
+}
+
+// pathTargets resolves the path argument. A path inside a repository scans
+// that repository, exactly like running from there; any other folder is
+// walked and every repository and project folder below it is scanned, with
+// the folder as the only location the guard allows. Filesystem roots are
+// refused: a scan of a whole disk is never what a typo meant.
+func (a *app) pathTargets(ctx context.Context, cfg *config.Config, runner gitx.Runner, raw string) (*targetSet, error) {
+	expanded, err := config.ExpandPath(raw)
+	if err != nil {
+		return nil, usageError{fmt.Errorf("path %q: %w", raw, err)}
+	}
+	resolved, err := resolveExistingDir(expanded)
+	if err != nil {
+		return nil, usageError{fmt.Errorf("path %q: %w", raw, err)}
+	}
+	if config.IsFilesystemRoot(resolved) {
+		return nil, usageError{fmt.Errorf("path %q is a filesystem root; pass a workspace folder instead", raw)}
+	}
+	if _, err := scope.FindRepoRoot(resolved); err == nil {
+		return repoTargets(ctx, runner, resolved)
+	}
+	targets, errs := discoverPath(ctx, cfg, resolved)
+	if ctx.Err() != nil {
+		return nil, errScanInterrupted
+	}
+	return &targetSet{targets: mergeTargets(targets), allowed: []string{resolved}, errs: errs, discovered: true}, nil
+}
+
+// allowMainWorktree adds the main worktree of the linked worktree at root as
+// a second repo target and as repository metadata location (see repoTargets).
 // A failed listing is a scan error, not a failure: scanning continues with
 // the linked worktree only.
 func (ts *targetSet) allowMainWorktree(ctx context.Context, runner gitx.Runner, root string) {
@@ -138,7 +178,22 @@ func (ts *targetSet) allowMainWorktree(ctx context.Context, runner gitx.Runner, 
 		ts.errs = append(ts.errs, findings.ScanError{Path: main, Message: fmt.Sprintf("main worktree not allowed: %v", err)})
 		return
 	}
-	ts.repoMeta = append(ts.repoMeta, g.Allowed()[0])
+	main = g.Allowed()[0]
+	ts.repoMeta = append(ts.repoMeta, main)
+	// A bare repository (the .bare of a bare plus linked worktrees layout)
+	// has no working tree to scan; it stays a metadata location only.
+	if canonical(main) == canonical(root) || !hasGitEntry(main) {
+		return
+	}
+	ts.allowed = append(ts.allowed, main)
+	ts.targets = append(ts.targets, repoTarget(main))
+}
+
+// hasGitEntry reports whether dir holds a .git entry (directory or file), which
+// a working tree has and a bare repository does not.
+func hasGitEntry(dir string) bool {
+	_, err := os.Lstat(filepath.Join(dir, ".git"))
+	return err == nil
 }
 
 // isLinkedWorktree reports whether root's .git is a regular file, which is
@@ -169,62 +224,9 @@ func linkedWorktreeMain(ctx context.Context, runner gitx.Runner, root string) (s
 	return "", errors.New("git worktree list returned no worktree")
 }
 
-// configuredRoot is a configured root with its expanded path.
-type configuredRoot struct {
-	root config.Root
-	path string
-}
-
-// workspaceTargets discovers repositories and project folders below the
-// selected configured roots. Roots that are missing or unusable become scan
-// errors and are skipped; only existing roots reach the guard.
-func (a *app) workspaceTargets(ctx context.Context, cfg *config.Config) (*targetSet, error) {
-	if len(cfg.Roots) == 0 {
-		return nil, usageError{errNoRoots}
-	}
-	selected, err := selectRoots(cfg.Roots, a.flags.roots)
-	if err != nil {
-		return nil, err
-	}
-	ts := &targetSet{}
-	var found []scope.Target
-	for _, r := range selected {
-		resolved, err := resolveExistingDir(r.path)
-		if err != nil {
-			ts.errs = append(ts.errs, findings.ScanError{Path: r.path, Message: "root skipped: " + err.Error()})
-			continue
-		}
-		targets, errs := discoverRoot(ctx, cfg, r, resolved)
-		if ctx.Err() != nil {
-			return nil, errScanInterrupted
-		}
-		found = append(found, targets...)
-		ts.errs = append(ts.errs, errs...)
-		ts.allowed = append(ts.allowed, resolved)
-	}
-	if len(ts.allowed) == 0 {
-		return nil, usageError{noUsableRootsError(ts.errs)}
-	}
-	ts.targets = mergeTargets(found)
-	return ts, nil
-}
-
-// noUsableRootsError is errNoRoots plus the reasons the configured roots
-// were skipped, so a stale path in the config is easy to spot.
-func noUsableRootsError(errs []findings.ScanError) error {
-	if len(errs) == 0 {
-		return errNoRoots
-	}
-	parts := make([]string, len(errs))
-	for i, e := range errs {
-		parts[i] = e.Path + ": " + e.Message
-	}
-	return fmt.Errorf("%w (%s)", errNoRoots, strings.Join(parts, "; "))
-}
-
-// discoverRoot runs scope.Discover for one root so its own excludes apply.
-// Unreadable directories and root-level failures come back as scan errors.
-func discoverRoot(ctx context.Context, cfg *config.Config, r configuredRoot, resolved string) ([]scope.Target, []findings.ScanError) {
+// discoverPath runs scope.Discover below the path argument. Unreadable
+// directories and failures of the walk come back as scan errors.
+func discoverPath(ctx context.Context, cfg *config.Config, resolved string) ([]scope.Target, []findings.ScanError) {
 	var (
 		mu   sync.Mutex
 		errs []findings.ScanError
@@ -236,7 +238,6 @@ func discoverRoot(ctx context.Context, cfg *config.Config, r configuredRoot, res
 	}
 	targets, err := scope.Discover(ctx, []string{resolved}, scope.DiscoverOptions{
 		MaxDepth:    cfg.Scan.MaxDepth,
-		Exclude:     r.root.Exclude,
 		SkipDirs:    cfg.Scan.SkipDirs,
 		Concurrency: cfg.Scan.Concurrency,
 		OnError:     func(path string, err error) { add(path, err.Error()) },
@@ -247,9 +248,8 @@ func discoverRoot(ctx context.Context, cfg *config.Config, r configuredRoot, res
 	return targets, errs
 }
 
-// mergeTargets deduplicates targets found under several roots by path and
-// kind, preferring the innermost root as scope, and sorts them so the order
-// is stable across runs.
+// mergeTargets deduplicates targets by path and kind, preferring the
+// innermost scope, and sorts them so the order is stable across runs.
 func mergeTargets(in []scope.Target) []scope.Target {
 	type key struct {
 		path string
@@ -295,70 +295,6 @@ func resolveExistingDir(path string) (string, error) {
 		return "", errors.New("not a directory")
 	}
 	return resolved, nil
-}
-
-// selectRoots returns the configured roots to scan: all of them, or with
-// --root only those the given values name. A value must match a configured
-// root after expansion and symlink resolution; ad-hoc scanning of
-// unconfigured directories is deliberately impossible.
-func selectRoots(roots []config.Root, wanted []string) ([]configuredRoot, error) {
-	all := make([]configuredRoot, 0, len(roots))
-	for i, r := range roots {
-		p, err := r.ResolvedPath()
-		if err != nil {
-			return nil, fmt.Errorf("roots[%d].path: %w", i, err)
-		}
-		all = append(all, configuredRoot{root: r, path: p})
-	}
-	if len(wanted) == 0 {
-		return all, nil
-	}
-	var out []configuredRoot
-	picked := map[int]bool{}
-	for _, w := range wanted {
-		idx, err := matchRoot(all, w)
-		if err != nil {
-			return nil, err
-		}
-		if !picked[idx] {
-			picked[idx] = true
-			out = append(out, all[idx])
-		}
-	}
-	return out, nil
-}
-
-// matchRoot finds the configured root that value names.
-func matchRoot(all []configuredRoot, value string) (int, error) {
-	expanded, err := config.ExpandPath(value)
-	if err != nil {
-		return 0, usageError{fmt.Errorf("--root %q: %w", value, err)}
-	}
-	for i, r := range all {
-		if sameDir(expanded, r.path) {
-			return i, nil
-		}
-	}
-	paths := make([]string, len(all))
-	for i, r := range all {
-		paths[i] = r.path
-	}
-	return 0, usageError{fmt.Errorf("--root %q is not a configured root (configured: %s); add it with `brooom roots add <path>`", value, strings.Join(paths, ", "))}
-}
-
-// sameDir reports whether a and b name the same directory: by os.SameFile
-// when both exist, otherwise by their cleaned absolute spelling.
-func sameDir(a, b string) bool {
-	ra, rb := canonical(a), canonical(b)
-	if fa, err := os.Stat(ra); err == nil {
-		if fb, err := os.Stat(rb); err == nil {
-			return os.SameFile(fa, fb)
-		}
-	}
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		return strings.EqualFold(ra, rb)
-	}
-	return ra == rb
 }
 
 // canonical returns the absolute, symlink-resolved (where possible) and
@@ -448,11 +384,7 @@ func effectiveConfigs(cfg *config.Config, targets []scope.Target) (map[string]*c
 			kept = append(kept, t)
 			continue
 		}
-		hint := ""
-		if t.Scope.Type == findings.ScopeRoot {
-			hint = t.Scope.Path
-		}
-		c, err := cfg.ForTarget(hint, t.Path)
+		c, err := cfg.ForTarget(t.Path)
 		if err != nil {
 			errs = append(errs, findings.ScanError{Path: t.Path, Message: "target skipped: " + err.Error()})
 			continue

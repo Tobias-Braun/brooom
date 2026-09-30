@@ -25,10 +25,6 @@ Every command that changes something shows its plan and asks once before it acts
 - [`brooom git`](#brooom-git)
 - [`brooom git purge`](#brooom-git-purge)
 - [`brooom purge`](#brooom-purge)
-- [`brooom roots`](#brooom-roots)
-- [`brooom roots add`](#brooom-roots-add)
-- [`brooom roots list`](#brooom-roots-list)
-- [`brooom roots remove`](#brooom-roots-remove)
 - [`brooom scan`](#brooom-scan)
 - [`brooom sessions`](#brooom-sessions)
 - [`brooom sweep`](#brooom-sweep)
@@ -40,7 +36,7 @@ Every command that changes something shows its plan and asks once before it acts
 
 These flags are accepted where they are meaningful. A command that would ignore a
 flag rejects it with exit code 2 instead of silently doing nothing (for example
-`--format` on `undo`, or `--workspaces` on `version`). `completion` and `help`
+`--format` on `undo`, or `--detector` on `version`). `completion` and `help`
 accept every global flag, because the shell passes them on while completing.
 
 | Flag | Default | Description |
@@ -51,16 +47,14 @@ accept every global flag, because the shell passes them on while completing.
 | `--no-color` | - | disable colors (also honours NO_COLOR) |
 | `--progress` | `auto` | live progress display on stderr: auto (terminals only), always, never |
 | `-q`, `--quiet` | - | print only essential output |
-| `--root` | - | limit --workspaces to these roots (repeatable) |
 | `-v`, `--verbose` | - | print progress and diagnostics to stderr |
-| `-w`, `--workspaces` | - | scan all configured workspace roots instead of the current repo |
 
 ## `brooom`
 
 Sweep disk clutter from AI-assisted development
 
 ```text
-brooom [flags]
+brooom [path] [flags]
 ```
 
 ```text
@@ -77,14 +71,16 @@ Brooom never removes a directory that contains version control metadata (.git,
 outside a git repository and whenever git cannot confirm that a path holds no
 untracked files.
 
-Without flags Brooom only looks at the git repository you are in. Use
---workspaces to scan every repository below your configured roots.
+Without a path Brooom only looks at the git repository you are in. Pass a
+folder (brooom ~/code, brooom sweep tidy ~/code) to work on every repository
+below it.
 ```
 
 **Examples**
 
 ```sh
 brooom
+brooom ~/code
 brooom sweep
 brooom sweep after-agents
 brooom undo
@@ -97,7 +93,6 @@ brooom undo
 - [`brooom config`](#brooom-config): Create, show, edit and validate the configuration
 - [`brooom git`](#brooom-git): Git history maintenance
 - [`brooom purge`](#brooom-purge): Permanently delete quarantined sessions past their retention and stale scan caches
-- [`brooom roots`](#brooom-roots): Manage workspace roots used by --workspaces
 - [`brooom scan`](#brooom-scan): Scan for clutter and report findings (never modifies anything)
 - [`brooom sessions`](#brooom-sessions): List applied sessions, or show one session's manifest
 - [`brooom sweep`](#brooom-sweep): Scan, show what to clean, ask once, then clean
@@ -120,7 +115,7 @@ Apply the suggested actions of a findings file produced with
 what gets cleaned. Every finding is re-validated before anything is done.
 
 The file is untrusted input. The scope comes from this invocation (the current
-repository, or the configured roots with --workspaces), never from the file:
+repository, or the folder --path names), never from the file:
 findings outside it are refused and make the command exit with 1. User-level
 locations are only accepted with --user. The action in the file only selects
 which action to run; risk flags, sizes and ages in the file are never trusted,
@@ -164,6 +159,7 @@ brooom scan --format json | brooom clean --from - --yes
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
 | `--from` | - | findings file ('-' for stdin) |
 | `--id` | - | only act on these finding IDs (repeatable, comma-separated) |
+| `--path` | - | work on this folder or repository instead of the current one |
 | `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `--user` | - | also accept findings in user-level tool locations |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
@@ -563,7 +559,7 @@ brooom git purge --gc
 Report git bloat and run gc, prune and reflog expiry (each opt-in)
 
 ```text
-brooom git purge [flags]
+brooom git purge [path] [flags]
 ```
 
 ```text
@@ -593,7 +589,7 @@ Dates use git's syntax, e.g. '90.days.ago', '2.weeks.ago' or '2026-01-01'. The o
 expiry, then prune, then gc, so later steps see the expired reflog. A
 repository with a rebase, merge, cherry-pick, revert or bisect in progress is
 skipped. Large blobs need a history rewrite (git filter-repo), which Brooom
-does not do. Use --workspaces for all repositories below the configured roots.
+does not do. Pass a folder as the path for all repositories below it.
 ```
 
 **Examples**
@@ -654,97 +650,17 @@ brooom purge --dry-run
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
-## `brooom roots`
-
-Manage workspace roots used by --workspaces
-
-```text
-brooom roots [flags]
-```
-
-```text
-Workspace roots are the only locations --workspaces may touch. Each root
-must be an existing directory; filesystem roots such as / or C:\ are refused.
-Roots are edited in place in the config file: every other key is preserved.
-```
-
-**Examples**
-
-```sh
-brooom roots list
-brooom roots add ~/code
-brooom roots remove ~/code
-```
-
-**Subcommands**
-
-- [`brooom roots add`](#brooom-roots-add): Add workspace roots
-- [`brooom roots list`](#brooom-roots-list): List workspace roots
-- [`brooom roots remove`](#brooom-roots-remove): Remove workspace roots
-
-
-## `brooom roots add`
-
-Add workspace roots
-
-```text
-brooom roots add <path>... [flags]
-```
-
-**Examples**
-
-```sh
-brooom roots add ~/code ~/work
-brooom roots add .
-```
-
-
-## `brooom roots list`
-
-List workspace roots
-
-```text
-brooom roots list [flags]
-```
-
-```text
-List the configured roots with their status. Supports --format table (default), plain, json and ndjson.
-```
-
-**Examples**
-
-```sh
-brooom roots list
-brooom roots list --format json
-```
-
-
-## `brooom roots remove`
-
-Remove workspace roots
-
-```text
-brooom roots remove <path>... [flags]
-```
-
-**Examples**
-
-```sh
-brooom roots remove ~/work
-```
-
-
 ## `brooom scan`
 
 Scan for clutter and report findings (never modifies anything)
 
 ```text
-brooom scan [flags]
+brooom scan [path] [flags]
 ```
 
 ```text
-Scan the current repository (or, with --workspaces, every repository and
-project below the configured roots) and report findings. Scanning never
+Scan the current repository (or the repository or folder the path names;
+below a folder every repository and project is scanned) and report findings. Scanning never
 modifies anything; use 'brooom sweep' or 'brooom clean --from <file>' to act
 on findings. -d/--detector limits the scan to single detectors, including the
 ones no sweep preset runs (stale-branch, large-untracked).
@@ -762,7 +678,7 @@ flag then suggest their action, so the file can be given to 'brooom clean
 
 ```sh
 brooom scan
-brooom scan --workspaces --format json > findings.json
+brooom scan ~/code --format json > findings.json
 brooom scan --detector merged-branch,worktrees --format plain
 brooom scan --force --format json > findings.json
 ```
@@ -803,11 +719,13 @@ brooom sessions --format json
 Scan, show what to clean, ask once, then clean
 
 ```text
-brooom sweep [preset] [flags]
+brooom sweep [preset] [path] [flags]
 ```
 
 ```text
-Scan the repository, show what would be cleaned, ask once and then clean.
+Scan the repository (or the repository or folder the path names; below a
+folder every repository and project is swept), show what would be cleaned, ask
+once and then clean.
 Answer y to clean everything listed; anything else changes nothing. --yes
 skips the question (for scripts), --dry-run only shows the plan.
 
@@ -850,7 +768,7 @@ Removed files go to the trash and everything is recorded for 'brooom undo'.
 ```sh
 brooom sweep
 brooom sweep after-agents
-brooom sweep tidy --dry-run
+brooom sweep tidy ~/code --dry-run
 brooom sweep everything --yes
 ```
 
@@ -881,10 +799,10 @@ skips the question.
 Nothing is ever overwritten: an entry whose original location exists again is
 reported as a conflict and stays as it was. Entries are only restored inside
 the current scope, because manifests are files that can be edited. The scope
-is the repository you are in; for a session that was applied with --workspaces
-it is the configured roots (--root narrows them). Entries outside the scope
-are reported as skipped, not as lost: run undo from the repository they belong
-to or with --workspaces.
+is the repository you are in, or the folder --path names (the undo command
+printed after a sweep of a folder carries it). Entries outside the scope are
+reported as skipped, not as lost: run undo from the repository they belong to
+or with --path.
 
 Exit status: 0 when every restorable entry was restored, 1 when one conflicted
 or failed, 2 when confirmation is needed but stdin is not a terminal (pass
@@ -897,6 +815,7 @@ or failed, 2 when confirmation is needed but stdin is not a terminal (pass
 brooom undo
 brooom undo 20260929-224501-3f9a
 brooom undo --dry-run
+brooom undo --path ~/code
 ```
 
 **Flags**
@@ -905,6 +824,7 @@ brooom undo --dry-run
 | --- | --- | --- |
 | `--dry-run` | - | only show what would be done and change nothing |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
+| `--path` | - | work on this folder or repository instead of the current one |
 | `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 

@@ -17,7 +17,7 @@ Implementation: `internal/config` (`Load`, `Save`, `SaveFull`, `Marshal`,
   (likely a truncated write); `{}` is valid. A UTF-8 BOM is tolerated.
 - Errors name the full key path, for example
   `config.json: unknown key "detectors.merged-branch.mdoe" (did you mean "mode"?)`
-  or `config.json: roots[1].path: expected string, got number`. Syntax errors
+  or `config.json: git.protected_branches[1]: expected string, got number`. Syntax errors
   report line and column.
 - `version`: missing means the current version (1). A newer version is
   rejected with a request to upgrade Brooom; `version < 1` is rejected.
@@ -41,11 +41,7 @@ mode `0600`, rename) and never writes an invalid configuration.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `version` | `1` | File format version. |
-| `roots[]` | `[]` | Workspace roots scanned with `--workspaces`. |
-| `roots[].path` | | Root directory; `~`, `$VAR`, `${VAR}` (and `%VAR%` on Windows) are expanded on use, the file keeps the text as written. |
-| `roots[].exclude[]` | | Globs (relative to the root, forward slashes only, a backslash is rejected because it is a glob escape; `**` segments allowed) that discovery and detectors skip. |
-| `roots[].thresholds` | | Overrides for `min_age_days`, `min_size_bytes`, `recent_days`; absent fields inherit the global value. Not tighten-only. |
-| `roots[].detectors` | | `{"<detector>": true/false}` enables or disables a detector for this root. |
+| `roots[]` | | Removed. The root registry of earlier releases is ignored (a non-empty list prints a one-line note); pass a folder as the path argument instead, e.g. `brooom sweep ~/code`. |
 | `thresholds.min_age_days` | `14` | Findings younger than this are not reported. Honoured by `ai-artifacts` and `log-and-runtime-files` (file age, unless the detector or catalog entry sets its own), and, as a floor, by `stale-branch` and `worktrees` (own `min_age_days` = max of both), `merged-branch` (tip commit age) and remote merged branches. The branch and worktree detectors apply it (`Thresholds.AgeFloor`) only when it is raised above the built-in `14`: a value of `14` or lower never floors `stale-branch`, `worktrees` or `merged-branch`, so the default never hides a recently merged branch or lowers a deliberately short per-detector age. `build-artifacts` (`inactive_days`) and `git-bloat` have no age filter; `large-untracked` reports files whatever their age. |
 | `thresholds.min_size_bytes` | `0` | Findings smaller than this are not reported. Sizes are allocated bytes including the blocks of the directories themselves, so an empty directory has a non-zero size (typically one filesystem block, 4 KiB) and is only hidden by a `min_size_bytes` above that. Honoured by `ai-artifacts`, `log-and-runtime-files`, `build-artifacts` and, as a floor over its own `min_size_bytes`, `large-untracked`. Branch, worktree and `git-bloat` findings have no size filter (`git-bloat` uses its own count and byte thresholds). |
 | `thresholds.recent_days` | `2` | Window for the `recently_modified` risk flag. Informational only; it never withholds or lowers a worktree removal. |
@@ -114,8 +110,7 @@ more than two segments and invalid globs are rejected by validation. See
 `os.UserHomeDir`, so `HOME`/`USERPROFILE` overrides apply), `$VAR`, `${VAR}`
 and on Windows `%VAR%`. An undefined or empty variable is an error: it never
 expands to an empty string, which would turn `$WORK/x` into `/x`. `~user` is
-not supported. `Root.ResolvedPath()` expands and cleans a root; `Load` does
-not rewrite roots.
+not supported. The path argument of the CLI is expanded the same way.
 
 ## Validation
 
@@ -123,10 +118,6 @@ not rewrite roots.
 config.ErrInvalid)`) listing every problem as `Problems[]{Field, Message}` in
 deterministic order. It checks:
 
-- roots: non-empty path, absolute after expansion, not a filesystem or volume
-  root (`config.IsFilesystemRoot`: `/`, `C:\`, `C:`, `\\server\share`,
-  `\\?\C:\`), no duplicates after cleaning, valid `exclude` globs, known
-  detector names, non-negative thresholds;
 - all thresholds and detector numbers non-negative;
 - allowed values for `output.format`, `output.color`, `trash.strategy`,
   `trash.per_detector`, `detectors.merged-branch.mode`, `agent.provider`;
@@ -140,30 +131,16 @@ deterministic order. It checks:
 
 ## Effective configuration: `ForTarget`
 
-`cfg.ForTarget(root, target)` returns the configuration for a directory
-`target`, in three layers: global, then the selected root, then
-`<target>/.brooom.json`. The receiver is never modified.
-
-`root` is a **hint**, never an error. If it equals a configured root
-(compared after expansion, cleaning and best-effort symlink resolution) that
-root is used. Otherwise, including an empty hint, the longest configured root
-that contains `target` component-wise is selected (`/a/b` does not contain
-`/a/bc`). If no root contains `target`, the root layer is skipped. So repo
-mode (hint = the repository root) and workspace mode produce the same overlay
-for the same directory. The root's `thresholds` replace the global values and
-its `detectors` toggle `enabled`.
+`cfg.ForTarget(target)` returns the configuration for a directory `target`:
+the global configuration overlaid with `<target>/.brooom.json`. The receiver is
+never modified. A relative target is an error.
 
 ### Exclude contract for detectors
 
-The effective config carries three fields that are never stored in a file:
-
-- `RootPath`: the resolved (symlink-resolved) selected root, `""` if none;
-- `RootExclude`: the selected root's `exclude` globs, relative to `RootPath`;
-- `RepoExclude`: the `.brooom.json` `exclude` globs, relative to the target.
-
-Detectors must skip directories matching `RootExclude` (relative to
-`RootPath`) or `RepoExclude` (relative to the target) using `scope.Excluded`.
-`internal/config` only validates and carries the patterns.
+The effective config carries `RepoExclude`, never stored in a file: the
+`.brooom.json` `exclude` globs, relative to the target. Detectors must skip
+directories matching them using `scope.Excluded`. `internal/config` only
+validates and carries the patterns.
 
 ## Per-repo `.brooom.json`
 
@@ -193,7 +170,7 @@ repository may come from anywhere. It can only make Brooom more careful.
   existing and repo value).
 - `protected_branches` are appended to the global list (deduplicated, order
   kept). `exclude` globs are validated and collected in `RepoExclude`.
-- Everything else (enabling detectors, `trash`, `roots`, removing protected
+- Everything else (enabling detectors, `trash`, removing protected
   branches, ...) cannot be expressed and is rejected by strict decoding with
   the key path.
 

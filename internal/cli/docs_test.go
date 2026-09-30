@@ -93,7 +93,7 @@ func TestExampleExtraction(t *testing.T) {
 // TestExamplesRejectUnknowns proves the example check has teeth: an unknown
 // flag or command must fail the same resolution the real test uses.
 func TestExamplesRejectUnknowns(t *testing.T) {
-	for _, ex := range []string{"brooom scan --no-such-flag", "brooom nosuchcommand", "brooom scan extra"} {
+	for _, ex := range []string{"brooom scan --no-such-flag", "brooom nosuchcommand", "brooom scan a b", "brooom sweep tidy a b"} {
 		args := strings.Fields(ex)[1:]
 		target, rest, err := NewRootCommand().Find(args)
 		if err == nil {

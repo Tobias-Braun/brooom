@@ -12,7 +12,6 @@ import (
 )
 
 func isWindows() bool { return runtime.GOOS == "windows" }
-func isDarwin() bool  { return runtime.GOOS == "darwin" }
 
 func intp(v int) *int       { return &v }
 func int64p(v int64) *int64 { return &v }
@@ -24,7 +23,6 @@ func TestDefaultIsValid(t *testing.T) {
 }
 
 func TestValidateRejects(t *testing.T) {
-	abs := t.TempDir()
 	tests := []struct {
 		name   string
 		mutate func(*Config)
@@ -34,27 +32,6 @@ func TestValidateRejects(t *testing.T) {
 		{"version zero", func(c *Config) { c.Version = 0 }, "version"},
 		{"unknown sweep preset", func(c *Config) { c.Sweep.Preset = "reckless" }, "sweep.preset"},
 		{"empty sweep preset", func(c *Config) { c.Sweep.Preset = "" }, "sweep.preset"},
-		{"root empty", func(c *Config) { c.Roots = []Root{{Path: ""}} }, "roots[0].path"},
-		{"root relative", func(c *Config) { c.Roots = []Root{{Path: "rel/dir"}} }, "roots[0].path"},
-		{"root undefined var", func(c *Config) { c.Roots = []Root{{Path: "$BROOOM_TEST_UNSET_VAR/x"}} }, "roots[0].path"},
-		{"root duplicate after cleaning", func(c *Config) {
-			c.Roots = []Root{{Path: abs}, {Path: filepath.Join(abs, "sub", "..")}}
-		}, "roots[1].path"},
-		{"root bad glob", func(c *Config) { c.Roots = []Root{{Path: abs, Exclude: []string{"[a"}}} }, "roots[0].exclude[0]"},
-		{"root backslash glob", func(c *Config) { c.Roots = []Root{{Path: abs, Exclude: []string{`vendor\legacy`}}} }, "roots[0].exclude[0]"},
-		{"root empty glob", func(c *Config) { c.Roots = []Root{{Path: abs, Exclude: []string{""}}} }, "roots[0].exclude[0]"},
-		{"root unknown detector", func(c *Config) {
-			c.Roots = []Root{{Path: abs, Detectors: map[string]bool{"nope": false}}}
-		}, "roots[0].detectors.nope"},
-		{"root negative threshold", func(c *Config) {
-			c.Roots = []Root{{Path: abs, Thresholds: &ThresholdOverrides{MinAgeDays: intp(-1)}}}
-		}, "roots[0].thresholds.min_age_days"},
-		{"root negative size", func(c *Config) {
-			c.Roots = []Root{{Path: abs, Thresholds: &ThresholdOverrides{MinSizeBytes: int64p(-1)}}}
-		}, "roots[0].thresholds.min_size_bytes"},
-		{"root negative recent", func(c *Config) {
-			c.Roots = []Root{{Path: abs, Thresholds: &ThresholdOverrides{RecentDays: intp(-1)}}}
-		}, "roots[0].thresholds.recent_days"},
 		{"negative min age", func(c *Config) { c.Thresholds.MinAgeDays = -1 }, "thresholds.min_age_days"},
 		{"negative min size", func(c *Config) { c.Thresholds.MinSizeBytes = -1 }, "thresholds.min_size_bytes"},
 		{"negative recent", func(c *Config) { c.Thresholds.RecentDays = -1 }, "thresholds.recent_days"},
@@ -173,7 +150,6 @@ func TestValidateCatalogExtra(t *testing.T) {
 }
 
 func TestValidateAccepts(t *testing.T) {
-	abs := t.TempDir()
 	tests := []struct {
 		name   string
 		mutate func(*Config)
@@ -184,12 +160,6 @@ func TestValidateAccepts(t *testing.T) {
 			c.Trash.AllowDelete = true
 			c.Trash.PerDetector = map[string]TrashStrategy{"worktrees": StrategyDelete}
 		}},
-		{"double star glob", func(c *Config) { c.Roots = []Root{{Path: abs, Exclude: []string{"**/vendor", "a/**/b"}}} }},
-		{"root with overrides", func(c *Config) {
-			c.Roots = []Root{{Path: abs, Detectors: map[string]bool{"build-artifacts": false},
-				Thresholds: &ThresholdOverrides{MinAgeDays: intp(0)}}}
-		}},
-		{"tilde root", func(c *Config) { c.Roots = []Root{{Path: "~/dev"}} }},
 		{"agent openai", func(c *Config) { c.Agent = Agent{Provider: "openai-compatible", APIKeyEnv: "MY_KEY_1"} }},
 		{"expiry with dots", func(c *Config) { c.Detectors.GitBloat.PruneExpire = "now" }},
 	}
@@ -226,19 +196,6 @@ func TestValidateListsEveryProblemInOrder(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "3 problems") {
 		t.Errorf("summary missing: %v", err)
-	}
-}
-
-func TestValidateRootFilesystemRoot(t *testing.T) {
-	root := "/"
-	if isWindows() {
-		root = `C:\`
-	}
-	cfg := Default()
-	cfg.Roots = []Root{{Path: root}}
-	err := cfg.Validate()
-	if err == nil || !strings.Contains(err.Error(), "roots[0].path") || !strings.Contains(err.Error(), "filesystem root") {
-		t.Fatalf("want filesystem root problem, got %v", err)
 	}
 }
 

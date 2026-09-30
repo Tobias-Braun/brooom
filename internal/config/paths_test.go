@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -71,19 +70,6 @@ func TestExpandPathUsesHomeOverride(t *testing.T) {
 	}
 }
 
-func TestResolvedPath(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("HOME", h)
-	t.Setenv("USERPROFILE", h)
-	got, err := Root{Path: "~/x/../y"}.ResolvedPath()
-	if err != nil || got != filepath.Join(h, "y") {
-		t.Errorf("got %q, %v", got, err)
-	}
-	if _, err := (Root{Path: "$BROOOM_TEST_UNSET_VAR"}).ResolvedPath(); err == nil {
-		t.Error("undefined variable must be an error")
-	}
-}
-
 func TestIsFilesystemRoot(t *testing.T) {
 	type row struct {
 		path string
@@ -105,45 +91,5 @@ func TestIsFilesystemRoot(t *testing.T) {
 		if got := IsFilesystemRoot(r.path); got != r.want {
 			t.Errorf("IsFilesystemRoot(%q) = %v, want %v", r.path, got, r.want)
 		}
-	}
-}
-
-func TestPathWithin(t *testing.T) {
-	sep := string(filepath.Separator)
-	p := func(s string) string { return filepath.FromSlash(s) }
-	base := sep + "tmp"
-	if isWindows() {
-		base = `C:\tmp`
-	}
-	tests := []struct {
-		name, root, target string
-		want               bool
-	}{
-		{"equal", base + p("/a/b"), base + p("/a/b"), true},
-		{"child", base + p("/a/b"), base + p("/a/b/c/d"), true},
-		{"sibling prefix", base + p("/a/b"), base + p("/a/bc"), false},
-		{"parent", base + p("/a/b"), base + p("/a"), false},
-		{"dotdot cleaned", base + p("/a/b"), base + p("/a/b/../c"), false},
-		{"unrelated", base + p("/a/b"), base + p("/x"), false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := pathWithin(tt.root, tt.target); got != tt.want {
-				t.Errorf("pathWithin(%q, %q) = %v", tt.root, tt.target, got)
-			}
-		})
-	}
-}
-
-func TestPathWithinCaseFolding(t *testing.T) {
-	if !isWindows() && !isDarwin() {
-		t.Skip("case-sensitive filesystem on this OS")
-	}
-	base := "/Tmp"
-	if isWindows() {
-		base = `C:\Tmp`
-	}
-	if !pathWithin(filepath.Join(base, "Proj"), filepath.Join(strings.ToLower(base), "proj", "x")) {
-		t.Error("case must be ignored on case-insensitive platforms")
 	}
 }

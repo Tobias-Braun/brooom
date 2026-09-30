@@ -275,7 +275,7 @@ func TestUndoRejectsFormatAndDetector(t *testing.T) {
 		{"format short", []string{"undo", "-f", "json"}, ExitUsage, "--format has no effect on 'undo'"},
 		{"format long", []string{"undo", "--format", "plain"}, ExitUsage, "--format has no effect on 'undo'"},
 		{"detector", []string{"undo", "-d", "build-artifacts"}, ExitUsage, "--detector has no effect on 'undo'"},
-		{"workspaces stays valid", []string{"undo", "--workspaces", "--dry-run"}, ExitOK, ""},
+		{"path stays valid", []string{"undo", "--path", ".", "--dry-run"}, ExitOK, ""},
 		{"plain undo", []string{"undo", "--dry-run"}, ExitOK, ""},
 	}
 	for _, tt := range tests {

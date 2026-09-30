@@ -152,15 +152,9 @@ func matchedPattern(e catalog.Entry, rel string, fold bool) string {
 	return e.Patterns[0]
 }
 
-// excluded applies the two exclude lists of the effective configuration: the
-// selected root's (relative to the root) and the repository's (relative to
-// the target).
+// excluded applies the exclude list of the repository's .brooom.json
+// (relative to the target).
 func (r *run) excluded(e walk.Entry) bool {
-	if r.cfg.RootPath != "" && len(r.cfg.RootExclude) > 0 {
-		if rel, err := filepath.Rel(r.cfg.RootPath, e.Path); err == nil && scope.Excluded(r.cfg.RootExclude, filepath.ToSlash(rel)) {
-			return true
-		}
-	}
 	return scope.Excluded(r.cfg.RepoExclude, e.Rel)
 }
 

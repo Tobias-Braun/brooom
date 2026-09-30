@@ -25,12 +25,12 @@ func TestOutsideScopeWorktreeIsShownWithoutVerbose(t *testing.T) {
 	// plain is an xargs-style path pipe that lists actionable findings only, so
 	// it must stay silent about the worktree.
 	formats := map[string][]string{
-		"table":   {name, "roots add"},
-		"tree":    {name, "roots add"},
+		"table":   {name, "as the path"},
+		"tree":    {name, "as the path"},
 		"plain":   nil,
 		"summary": nil,
-		"json":    {name, "roots add", "outside_scope"},
-		"ndjson":  {name, "roots add", "outside_scope"},
+		"json":    {name, "as the path", "outside_scope"},
+		"ndjson":  {name, "as the path", "outside_scope"},
 	}
 	for format, wants := range formats {
 		t.Run(format, func(t *testing.T) {
@@ -58,11 +58,11 @@ func TestOutsideScopeWorktreeIsShownWithoutVerbose(t *testing.T) {
 	}
 }
 
-// TestLinkedWorktreeRunNeverRemovesSiblings pins the least-privilege rule: run
-// from a linked worktree the scope is that worktree, so a merged sibling
-// worktree below the main checkout must not be offered or removed. The main
-// worktree is only reachable as the repository that git commands run in.
-func TestLinkedWorktreeRunNeverRemovesSiblings(t *testing.T) {
+// TestLinkedWorktreeRunCleansTheRepository covers the after-agents case: run
+// from one of the worktrees an agent left behind, the sweep covers the whole
+// repository, so a merged sibling worktree below the main checkout is
+// removed, while the worktree the command runs in stays (it is in use).
+func TestLinkedWorktreeRunCleansTheRepository(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.feature("feat/own")
 	f.feature("feat/sibling")
@@ -77,13 +77,10 @@ func TestLinkedWorktreeRunNeverRemovesSiblings(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
-	if _, err := os.Stat(sibling); err != nil {
-		t.Errorf("sibling worktree below the main checkout was removed: %v\n%s", err, out)
+	if _, err := os.Stat(sibling); !os.IsNotExist(err) {
+		t.Errorf("merged sibling worktree below the main checkout was not removed (%v)\n%s", err, out)
 	}
 	if _, err := os.Stat(own); err != nil {
 		t.Errorf("the worktree the command runs in was removed: %v", err)
-	}
-	if strings.Contains(out, sibling) {
-		t.Errorf("sibling worktree was offered:\n%s", out)
 	}
 }
