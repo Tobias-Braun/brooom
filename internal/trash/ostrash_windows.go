@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -235,10 +234,7 @@ func checkBinOwner(p string) error {
 	if err != nil {
 		return err
 	}
-	if dir := filepath.Base(filepath.Dir(p)); !strings.EqualFold(dir, sid) {
-		return fmt.Errorf("refusing %q: it is not in the Recycle Bin of the current user", p)
-	}
-	return nil
+	return checkBinOwnerSID(p, sid)
 }
 
 // search finds the bin item of a record without StoredPath.

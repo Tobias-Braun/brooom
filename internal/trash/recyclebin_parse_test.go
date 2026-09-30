@@ -299,3 +299,27 @@ func TestNormalizeWinPath(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckBinOwnerSID covers the SID comparison of checkBinOwner without
+// needing the real current user.
+func TestCheckBinOwnerSID(t *testing.T) {
+	const sid = "S-1-5-21-1-2-3-1001"
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{"own bin", `C:\$Recycle.Bin\` + sid + `\$RABC.txt`, false},
+		{"case differs", `C:\$Recycle.Bin\s-1-5-21-1-2-3-1001\$RABC.txt`, false},
+		{"other user", `C:\$Recycle.Bin\S-1-5-21-1-2-3-1002\$RABC.txt`, true},
+		{"no sid directory", `C:\$RABC.txt`, true},
+		{"sid is the item", `C:\$Recycle.Bin\` + sid, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := checkBinOwnerSID(tt.path, sid); (err != nil) != tt.wantErr {
+				t.Errorf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

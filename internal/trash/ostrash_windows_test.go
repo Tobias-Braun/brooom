@@ -390,7 +390,7 @@ func TestNukeSituationKeepsItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := time.Now()
-	code, aborted := shellDelete(from)
+	code, aborted := shellDeleteWithTimeout(t, from, nukeCallTimeout)
 	t.Logf("shell result: code=0x%X aborted=%v", code, aborted)
 
 	if _, statErr := os.Lstat(p); statErr == nil {
@@ -407,6 +407,33 @@ func TestNukeSituationKeepsItem(t *testing.T) {
 	}
 	cleanupBin(t, Record{StoredPath: filepath.Join(dir, storedName(m.Name)), InfoPath: filepath.Join(dir, m.Name)})
 	t.Logf("observed: the item was moved to the bin in spite of the lowered limit")
+}
+
+// nukeCallTimeout bounds the direct shell call of the nuke test. A shell that
+// waits for a dialog nobody can answer would otherwise hang the whole CI job.
+const nukeCallTimeout = 60 * time.Second
+
+// shellDeleteWithTimeout runs shellDelete in a goroutine and fails the test if
+// it does not return in time. The stuck goroutine is abandoned on purpose: a
+// blocked shell call cannot be cancelled, and the test binary exits anyway.
+func shellDeleteWithTimeout(t *testing.T, from []uint16, d time.Duration) (int, bool) {
+	t.Helper()
+	type result struct {
+		code    int
+		aborted bool
+	}
+	done := make(chan result, 1)
+	go func() {
+		code, aborted := shellDelete(from)
+		done <- result{code, aborted}
+	}()
+	select {
+	case r := <-done:
+		return r.code, r.aborted
+	case <-time.After(d):
+		t.Fatalf("SHFileOperationW did not return within %v: the shell most likely waits for a dialog (FOF_WANTNUKEWARNING?)", d)
+		return 0, false
+	}
 }
 
 // setBinCapacity sets MaxCapacity (MB) of the volume's bin key and restores

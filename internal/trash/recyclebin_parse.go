@@ -311,7 +311,8 @@ func infoNameOf(storedItem string) string { return "$I" + strings.TrimPrefix(sto
 
 // matchTolerance is how far a $I deletion time may differ from the time of
 // the call. The shell stamps it a moment after brooom read the clock.
-// It is generous because the shell stamps the time only after it has walked
+// Issue #24 asks for "a few seconds"; this deliberately deviates to 30 s
+// (it was 5 s at first). It is generous because the shell stamps the time only after it has walked
 // and moved the whole tree, which takes long for a large directory. A wider
 // window stays safe: the original path must match too and the newest match wins.
 const matchTolerance = 30 * time.Second
@@ -335,6 +336,25 @@ func chooseRecycled(entries []binEntry, orig string, at time.Time, tol time.Dura
 		}
 	}
 	return best, found
+}
+
+// winParentName returns the name of the directory that directly contains the
+// last component of a Windows path, or "" if there is none.
+func winParentName(p string) string {
+	_, rest, _ := winSplit(p)
+	if len(rest) < 2 {
+		return ""
+	}
+	return rest[len(rest)-2]
+}
+
+// checkBinOwnerSID is the pure part of checkBinOwner: it compares the SID
+// directory of p (case-insensitively) with sid.
+func checkBinOwnerSID(p, sid string) error {
+	if dir := winParentName(p); !strings.EqualFold(dir, sid) {
+		return fmt.Errorf("refusing %q: it is not in the Recycle Bin of the current user", p)
+	}
+	return nil
 }
 
 // checkBinInfoPath verifies that info is exactly the $I file that belongs to
