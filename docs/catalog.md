@@ -311,6 +311,49 @@ Notes on the shape of the data:
 | Poetry `virtualenvs` | skipped | Environments of projects may be in use; only Poetry's `cache` and `artifacts` are listed. |
 | `*.ips` (blanket) | skipped | Would match crash reports of every application; only named dev tool prefixes are listed. |
 
+## Build artifacts (`build_artifacts.json`)
+
+`internal/catalog/data/build_artifacts.json` lists dependency and build output
+directories for the `build-artifacts` detector. It has its own schema and its
+own strict decoder, `catalog.BuildArtifacts()`; the tools loader never reads it
+(only the files in `toolFiles` are loaded) and `BuildArtifacts()` rejects a file
+in the tools format, because unknown fields are errors in both decoders.
+
+```json
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "rust-target",
+      "ecosystem": "rust",
+      "dir": "target",
+      "markers": ["Cargo.toml"],
+      "marker_mode": "any",
+      "confidence_cap": "high",
+      "description": "Cargo build output; rebuilt by cargo build"
+    }
+  ]
+}
+```
+
+| Field | Values |
+| --- | --- |
+| `id` | Unique kebab-case id, reported as evidence. |
+| `ecosystem` | Kebab-case tool family (`node`, `rust`, `python`, ...); becomes `Tool` of the finding. |
+| `dir` | Directory name or a glob on the base name (`*.egg-info`), or `parent/name` (`.angular/cache`, at most two segments). |
+| `markers` | File names or globs that must exist next to the directory (in its parent). Empty means no marker is required. |
+| `marker_mode` | `any` (default, one marker is enough) or `all` (every marker must exist; used for `vendor`). |
+| `confidence_cap` | `high` (default), `medium` or `low`: the highest confidence the entry can produce. |
+| `require_file_inside` | Optional literal file name that must exist inside the directory (`pyvenv.cfg` for virtual environments). |
+| `description` | Required, one sentence on what it is and how it regenerates. |
+
+Generic names (`dist`, `build`, `out`, `bin`, `obj`, `target`, `deps`) always
+carry markers, `vendor` is capped at `low` and needs both files of a lock pair,
+and `.terraform` is capped at `medium`. When several entries share a `dir`, the
+first one whose markers fit wins, so put specific entries (`gradle-build`)
+before generic ones (`build`). How findings are produced from these entries is
+described in [build-artifacts.md](build-artifacts.md).
+
 ## How to contribute an entry
 
 1. Find the tool's real behaviour and note a documentation URL (or issue or

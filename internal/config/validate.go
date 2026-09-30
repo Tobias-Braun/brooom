@@ -227,6 +227,8 @@ func validateDetectors(p *problemList, d *Detectors) {
 	validateOptionalAge(p, "detectors.log-and-runtime-files.min_age_days", d.Logs.MinAgeDays)
 	validateCatalog(p, "detectors.log-and-runtime-files.extra", d.Logs.Extra)
 	p.nonNeg("detectors.build-artifacts.inactive_days", int64(d.BuildArtifacts.InactiveDays))
+	validateBuildDirs(p, "detectors.build-artifacts.dirs", d.BuildArtifacts.Dirs)
+	validateBuildDirs(p, "detectors.build-artifacts.extra_dirs", d.BuildArtifacts.ExtraDirs)
 }
 
 func validateOptionalAge(p *problemList, field string, v *int) {
