@@ -29,29 +29,29 @@ var (
 type measurement struct {
 	size   int64
 	newest time.Time
-	// nestedGit is the smallest relative path of a nested repository marker
+	// nestedVCS is the smallest relative path of a nested repository marker
 	// (VCS metadata entry or bare repository directory, "" when none) and
 	// nestedWhy the skip reason describing it.
-	nestedGit string
+	nestedVCS string
 	nestedWhy string
 }
 
-// sizeAndNestedGit measures a target and looks for nested repositories
-// in one pass. Files and symlinks are sized from their own lstat data. A
-// directory is walked once with Fresh options, following the same rules as
-// walk.DirSize (links are never followed, hard links count once, symlinks
-// count as their own size), so the size matches what the rest of Brooom
-// reports for the same directory.
+// sizeAndNestedVCS measures a target and looks for nested repositories in one
+// pass. Files and symlinks are sized from their own lstat data. A directory is
+// walked once with Fresh options, following the same rules as walk.DirSize
+// (links are never followed, hard links count once, symlinks count as their
+// own size), so the size matches what the rest of Brooom reports for the same
+// directory.
 //
 // walk.Walk visits VCS metadata entries (.git as file or directory, so nested
-// repos, linked worktrees and submodules alike, plus .hg, .jj and .svn) and
+// repos, linked worktrees and submodules alike, plus .hg, .jj and .svn), and
 // bare repository shapes (HEAD, objects/, refs/ in one directory) come from
 // the per-directory entry sets, so the nested-repository check costs no extra
-// traversal. The reported
-// nestedGit is the smallest relative path so the reason is deterministic
-// although the walk is parallel. A directory that cannot be read completely
-// is an error: an unreadable subtree could hide a repository.
-func sizeAndNestedGit(ctx context.Context, path string) (measurement, error) {
+// traversal. The reported nestedVCS is the smallest relative path so the
+// reason is deterministic although the walk is parallel. A directory that
+// cannot be read completely is an error: an unreadable subtree could hide a
+// repository.
+func sizeAndNestedVCS(ctx context.Context, path string) (measurement, error) {
 	root, err := statRoot(path)
 	if err != nil {
 		return measurement{}, err
@@ -130,8 +130,8 @@ func nestedReason(name, rel string) string {
 // relative path so the reason is deterministic although the walk is
 // parallel. The caller holds the lock or the walk has finished.
 func (t *treeMeter) markNested(rel, why string) {
-	if t.m.nestedGit == "" || rel < t.m.nestedGit {
-		t.m.nestedGit, t.m.nestedWhy = rel, why
+	if t.m.nestedVCS == "" || rel < t.m.nestedVCS {
+		t.m.nestedVCS, t.m.nestedWhy = rel, why
 	}
 }
 
@@ -200,7 +200,7 @@ func measureWith(ctx context.Context, t *treeMeter, path string, rootMTime time.
 		return measurement{}, err
 	}
 	if len(t.errs) > 0 {
-		return measurement{}, fmt.Errorf("cannot inspect the whole directory, so a nested git repository cannot be ruled out: %w", t.errs[0])
+		return measurement{}, fmt.Errorf("cannot inspect the whole directory, so a nested repository cannot be ruled out: %w", t.errs[0])
 	}
 	t.markBareRepos()
 	if t.m.newest.IsZero() {
@@ -213,13 +213,13 @@ func measureWith(ctx context.Context, t *treeMeter, path string, rootMTime time.
 // resolved path, the freshly measured size and the newest mtime. It fails
 // with a skip when the path is gone or holds a git repository.
 func refreshFinding(ctx context.Context, f findings.Finding, path string) (findings.Finding, error) {
-	m, err := sizeAndNestedGit(ctx, path)
+	m, err := sizeAndNestedVCS(ctx, path)
 	switch {
 	case isGone(err):
 		return f, skipf("already gone")
 	case err != nil:
 		return f, skipf("cannot inspect %s: %v", path, err)
-	case m.nestedGit != "":
+	case m.nestedVCS != "":
 		return f, skipf("%s", m.nestedWhy)
 	}
 	f.Path = path

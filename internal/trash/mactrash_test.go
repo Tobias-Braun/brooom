@@ -476,3 +476,76 @@ func TestRestoreMkdirFailureIsReported(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// runRemoveManyWithin runs RemoveMany and fails the test if it does not return
+// within a few seconds, which is how a missing deadline shows up.
+func runRemoveManyWithin(t *testing.T, m *macTrash, paths []string) ([]Record, []error) {
+	t.Helper()
+	type out struct {
+		recs []Record
+		errs []error
+	}
+	ch := make(chan out, 1)
+	go func() {
+		recs, errs := m.RemoveMany(context.Background(), paths)
+		ch <- out{recs, errs}
+	}()
+	select {
+	case o := <-ch:
+		return o.recs, o.errs
+	case <-time.After(5 * time.Second):
+		t.Fatal("RemoveMany blocked on the hung native call")
+		return nil, nil
+	}
+}
+
+// TestHungNativeCallIsPendingNotSuccess injects a native call that blocks
+// forever: the batch must return after the deadline, report the hung item as
+// possibly pending without a record and without a ~/.Trash fallback, and skip
+// the remaining items.
+func TestHungNativeCallIsPendingNotSuccess(t *testing.T) {
+	m, _, home := newFakeTrash(t)
+	m.nativeTimeout = 50 * time.Millisecond
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	calls := make(chan string, 4)
+	m.native = func(p string) (string, error) {
+		calls <- p
+		<-release
+		return "", errors.New("late")
+	}
+	dir := t.TempDir()
+	paths := []string{filepath.Join(dir, "a.txt"), filepath.Join(dir, "b.txt")}
+	for _, p := range paths {
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	recs, errs := runRemoveManyWithin(t, m, paths)
+
+	if !errors.Is(errs[0], errNativePending) || recs[0].StoredPath != "" {
+		t.Errorf("hung item: rec %+v err %v, want pending error and no record", recs[0], errs[0])
+	}
+	if errs[1] == nil || !strings.Contains(errs[1].Error(), "still pending") || recs[1].StoredPath != "" {
+		t.Errorf("following item: rec %+v err %v, want skipped", recs[1], errs[1])
+	}
+	if n := len(calls); n != 1 {
+		t.Errorf("native called %d times, want 1", n)
+	}
+	assertNothingMoved(t, paths, home)
+}
+
+// assertNothingMoved checks that the originals are still in place and that no
+// ~/.Trash fallback created the Trash directory.
+func assertNothingMoved(t *testing.T, paths []string, home string) {
+	t.Helper()
+	for _, p := range paths {
+		if _, err := os.Lstat(p); err != nil {
+			t.Errorf("%s must be untouched: %v", p, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".Trash")); err == nil {
+		t.Error("no ~/.Trash fallback may run after a pending call")
+	}
+}

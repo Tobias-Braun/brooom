@@ -296,13 +296,13 @@ type DirSummary struct {
 	// (directories included). Unless the call used Options.Fresh it is a
 	// lower-bound hint: see the package documentation.
 	NewestModTime time.Time
-	// HasGit is true when any directory of the tree (the root included)
+	// HasVCS is true when any directory of the tree (the root included)
 	// is a repository: it directly contains VCS metadata (.git as directory
 	// or file, or .hg, .jj, .svn) or has the shape of a bare git
-	// repository. It is gathered by the size pass
-	// itself and survives the cache, so callers that must refuse trees
-	// holding a repository need no second traversal.
-	HasGit bool
+	// repository. It is gathered by the size pass itself and survives the
+	// cache, so callers that must refuse trees holding a repository need no
+	// second traversal.
+	HasVCS bool
 	// Incomplete is true when some directory or entry of the tree could not
 	// be read (permissions, I/O errors). The sizes are then a lower bound and
 	// must not be presented as the size of the tree.

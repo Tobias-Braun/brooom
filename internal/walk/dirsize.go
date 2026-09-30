@@ -166,7 +166,7 @@ func (s *sizer) aggregate() DirSummary {
 	for rel, rec := range s.recs {
 		sum.SizeBytes += rec.DirectBytes
 		sum.Files += rec.DirectFiles
-		sum.HasGit = sum.HasGit || rec.HasVCS
+		sum.HasVCS = sum.HasVCS || rec.HasVCS
 		sum.Incomplete = sum.Incomplete || rec.Incomplete
 		newest = max(newest, rec.DirectNewest)
 		if rel != "" {

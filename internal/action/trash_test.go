@@ -577,7 +577,7 @@ func TestTrashHardLinksCountedOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := sizeAndNestedGit(context.Background(), fx.path("out"))
+	m, err := sizeAndNestedVCS(context.Background(), fx.path("out"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -598,7 +598,7 @@ func TestTrashUnreadableDirectoryIsRefused(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
 	_, err := trashAction{}.Plan(context.Background(), fx.env, trashFinding(fx.path("out")))
-	wantSkip(t, err, "nested git repository cannot be ruled out")
+	wantSkip(t, err, "nested repository cannot be ruled out")
 }
 
 // stubTrasher is a scriptable trash.Trasher.

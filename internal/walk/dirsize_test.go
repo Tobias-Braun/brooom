@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// TestDirSizeHasGit proves that the size pass reports a .git entry (directory
+// TestDirSizeHasVCS proves that the size pass reports a .git entry (directory
 // or file, at any depth) and that the answer survives the cache.
-func TestDirSizeHasGit(t *testing.T) {
+func TestDirSizeHasVCS(t *testing.T) {
 	cases := []struct {
 		name  string
 		setup func(t *testing.T, root string)
@@ -39,8 +39,8 @@ func TestDirSizeHasGit(t *testing.T) {
 			ageTree(t, root)
 			for _, opts := range []Options{{}, {CacheDir: cache}, {CacheDir: cache}, {CacheDir: cache, Fresh: true}} {
 				sum := mustSize(t, root, opts)
-				if sum.HasGit != tc.want {
-					t.Fatalf("HasGit = %v, want %v (opts %+v)", sum.HasGit, tc.want, opts)
+				if sum.HasVCS != tc.want {
+					t.Fatalf("HasVCS = %v, want %v (opts %+v)", sum.HasVCS, tc.want, opts)
 				}
 			}
 		})

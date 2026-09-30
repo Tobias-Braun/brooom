@@ -28,6 +28,18 @@ import (
 // works, so removal succeeds while restore may not.
 const trashAccessDenied = "macOS denies access to the Trash; restore with Finder 'Put Back' or grant Full Disk Access to your terminal"
 
+// defaultNativeTimeout bounds one native trash call. trashItemAtURL has no
+// timeout of its own, so a hung volume (an unresponsive network share, a stuck
+// disk) would otherwise block RemoveMany forever. Generous, because trashing a
+// large directory tree on a slow volume is legitimately slow.
+const defaultNativeTimeout = 2 * time.Minute
+
+// errNativePending marks a native trash call that did not return in time. The
+// call cannot be cancelled, so it may still complete later: the item may
+// already be in the Trash, be moved any moment, or stay where it is. It is
+// neither success nor a clean failure, hence no Record and no fallback.
+var errNativePending = errors.New("the native trash call did not return in time and may still be pending")
+
 // maxUniqueName bounds the "name N" search so a pathological Trash cannot
 // loop forever.
 const maxUniqueName = 100000
@@ -46,8 +58,10 @@ type macTrash struct {
 	// native, lstat and move are seams for tests: they replace the
 	// NSFileManager call, the Trash inspection (TCC) and the move helper.
 	native nativeTrashFunc
-	lstat  func(string) (fs.FileInfo, error)
-	move   func(ctx context.Context, src, dst string) error
+	// nativeTimeout bounds one native call; tests shorten it.
+	nativeTimeout time.Duration
+	lstat         func(string) (fs.FileInfo, error)
+	move          func(ctx context.Context, src, dst string) error
 	// mkdirAll recreates missing parents on Restore.
 	mkdirAll func(path string, perm fs.FileMode) error
 }
@@ -55,12 +69,13 @@ type macTrash struct {
 // newMacTrash returns a macTrash using the real NSFileManager and filesystem.
 func newMacTrash(home string) *macTrash {
 	return &macTrash{
-		home:     home,
-		now:      time.Now,
-		native:   nativeTrashItem,
-		lstat:    os.Lstat,
-		move:     moveTree,
-		mkdirAll: os.MkdirAll,
+		home:          home,
+		now:           time.Now,
+		native:        nativeTrashItem,
+		nativeTimeout: defaultNativeTimeout,
+		lstat:         os.Lstat,
+		move:          moveTree,
+		mkdirAll:      os.MkdirAll,
 	}
 }
 
@@ -83,18 +98,27 @@ type pendingItem struct {
 }
 
 // RemoveMany trashes several paths. The returned slices are as long as paths;
-// a failing item never stops the others. The error of an item that was moved
+// a failing item never stops the others, with one exception: once a native
+// call is left pending (see errNativePending) the remaining items are not
+// attempted, because the volume that hung would most likely hang again and
+// every further call would leak another blocked goroutine. The error of an item that was moved
 // but whose source cleanup failed is returned together with its record.
 func (m *macTrash) RemoveMany(ctx context.Context, paths []string) ([]Record, []error) {
 	recs := make([]Record, len(paths))
 	errs := make([]error, len(paths))
+	pending := false
 	for i, p := range paths {
+		if pending {
+			errs[i] = fmt.Errorf("cannot trash %q: skipped because an earlier native trash call is still pending", p)
+			continue
+		}
 		it, err := m.prepare(i, p)
 		if err != nil {
 			errs[i] = err
 			continue
 		}
 		m.trashItem(ctx, it, recs, errs)
+		pending = errors.Is(errs[i], errNativePending)
 	}
 	return recs, errs
 }
@@ -122,12 +146,19 @@ func (m *macTrash) prepare(idx int, path string) (pendingItem, error) {
 // means nothing was moved, so the item takes the ~/.Trash fallback, except
 // when the caller gave up (cancelled context) or the original has vanished in
 // the meantime, in which case a fallback could only fail or hide a lost item.
+// A call that timed out (errNativePending) may still move the item, so it is
+// reported as an error without a Record and without a fallback: moving the item
+// a second time could race with the pending call.
 func (m *macTrash) trashItem(ctx context.Context, it pendingItem, recs []Record, errs []error) {
 	if cerr := ctx.Err(); cerr != nil {
 		errs[it.idx] = fmt.Errorf("cannot trash %q: %w", it.path, cerr)
 		return
 	}
-	resulting, err := m.native(it.path)
+	resulting, err := m.callNative(ctx, it.path)
+	if errors.Is(err, errNativePending) {
+		errs[it.idx] = fmt.Errorf("cannot trash %q: %w; check ~/.Trash before retrying (brooom does not know whether the item was moved)", it.path, err)
+		return
+	}
 	if err == nil && !filepath.IsAbs(resulting) {
 		err = fmt.Errorf("cannot trash %q: the system returned no usable trash path", it.path)
 	}
@@ -140,6 +171,33 @@ func (m *macTrash) trashItem(ctx context.Context, it pendingItem, recs []Record,
 		return
 	}
 	m.fallback(ctx, it, err, recs, errs)
+}
+
+// callNative runs the native trash call in its own goroutine and waits for it
+// at most nativeTimeout, or until ctx is done. On expiry it returns
+// errNativePending and leaves the goroutine running (a blocked system call
+// cannot be interrupted); its late result is discarded through the buffered
+// channel, so the goroutine ends as soon as the system call returns.
+func (m *macTrash) callNative(ctx context.Context, path string) (string, error) {
+	type result struct {
+		resulting string
+		err       error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		r, err := m.native(path)
+		ch <- result{r, err}
+	}()
+	timer := time.NewTimer(m.nativeTimeout)
+	defer timer.Stop()
+	select {
+	case res := <-ch:
+		return res.resulting, res.err
+	case <-timer.C:
+		return "", errNativePending
+	case <-ctx.Done():
+		return "", fmt.Errorf("%w: %w", errNativePending, ctx.Err())
+	}
 }
 
 // originalGone returns a non-nil error when path is no longer present, or

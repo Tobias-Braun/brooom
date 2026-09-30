@@ -107,7 +107,7 @@ func measureFile(it *item) bool {
 
 // measureDir applies the directory-specific safety rules and sizes it. The
 // size pass is Fresh because transcripts and logs are written in place, which
-// leaves cached mtimes stale; its HasGit signal replaces a second traversal
+// leaves cached mtimes stale; its HasVCS signal replaces a second traversal
 // for the nested-repository rule.
 func (r *run) measureDir(ctx context.Context, it *item) (bool, error) {
 	protected, err := r.containsProtected(ctx, it.path)
@@ -122,7 +122,7 @@ func (r *run) measureDir(ctx context.Context, it *item) (bool, error) {
 	if err != nil {
 		return false, ctx.Err()
 	}
-	if sum.HasGit {
+	if sum.HasVCS {
 		return false, nil
 	}
 	it.size, it.mod = sum.SizeBytes, sum.NewestModTime

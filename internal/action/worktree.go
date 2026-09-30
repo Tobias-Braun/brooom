@@ -254,8 +254,8 @@ func (ev *removeEval) inspect(ctx context.Context, env *Env) error {
 		return skipf("directory is missing; prune-worktrees handles missing directories")
 	case err != nil:
 		return skipf("cannot inspect %s: %v", ev.path, err)
-	case m.nestedGit != "":
-		return skipf("contains a git repository (.git at %s)", m.nestedGit)
+	case m.nestedVCS != "":
+		return skipf("%s", m.nestedWhy)
 	}
 	if ev.dirty, err = ev.repo.IsDirty(ctx, ev.path); err != nil {
 		return fmt.Errorf("worktree: check %s for uncommitted changes: %w", ev.path, err)

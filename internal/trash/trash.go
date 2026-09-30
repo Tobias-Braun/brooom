@@ -26,6 +26,11 @@
 // with Finder's "Put Back" or grant Full Disk Access to the terminal. Items
 // moved by the ~/.Trash fallback (used when the native call is unavailable or fails
 // for an item) have no Put Back metadata; only brooom's own undo restores them.
+//
+// The native call has no timeout of its own, so it runs under a deadline. A
+// call that does not return in time is reported as an error saying it may still
+// be pending: it is never treated as success and never followed by the
+// ~/.Trash fallback, and the rest of the batch is skipped.
 package trash
 
 import (
@@ -82,10 +87,11 @@ type Trasher interface {
 }
 
 // BatchTrasher is an optional extension of Trasher for strategies where one
-// call can dispose of many items much faster than one call per item (the
-// macOS Trash spawns a process per call). Callers use it when a Trasher
-// implements it and fall back to per-item Remove otherwise; Remove stays fully
-// functional on every implementation.
+// call can dispose of many items with less overhead than one call per item
+// (the macOS trasher shares one loop and stops early when a native call
+// hangs). Callers use it when a Trasher implements it and fall back to
+// per-item Remove otherwise; Remove stays fully functional on every
+// implementation.
 type BatchTrasher interface {
 	Trasher
 	// RemoveMany removes every path like Remove would. Both returned slices
