@@ -7,6 +7,21 @@
 // must be validated through a Guard: the path is made absolute, symlinks are
 // resolved and the result must lie inside one of the allowed locations.
 // Anything outside is refused with ErrOutsideScope.
+//
+// # Known limitation (TOCTOU)
+//
+// Guard.Resolve is a check at call time. Between the check and the use of the
+// returned path another process can swap a directory for a symlink. Actions
+// must therefore call Resolve (or ResolveParent) again immediately before they
+// touch anything and must use Guard.IsAllowedRoot to refuse removing an
+// allowed location itself. Closing the window completely (openat or
+// handle-based removal) is not attempted.
+//
+// # Refusal by default
+//
+// Errors other than ErrOutsideScope (symlink loops, permission errors,
+// malformed paths) are refusals too. They stay distinct so messages are
+// accurate, but callers must never fall back to "allow" on any error.
 package scope
 
 import (
@@ -52,44 +67,6 @@ type Target struct {
 	Scope findings.Scope
 	// Tool is set for TargetUser: the catalog tool the location belongs to.
 	Tool string
-}
-
-// Guard validates that paths lie inside the allowed locations.
-type Guard struct {
-	allowed []string
-}
-
-// NewGuard returns a guard that allows the given locations and everything
-// below them. Each location is made absolute and symlink-resolved.
-func NewGuard(allowed ...string) (*Guard, error) {
-	return nil, errNotImplemented
-}
-
-// Resolve makes path absolute, resolves all symlinks in it and verifies the
-// result lies inside (or equals) an allowed location. Containment is checked
-// component-wise, case-insensitively on case-insensitive filesystems
-// (Windows, default macOS). It returns the resolved path or ErrOutsideScope.
-func (g *Guard) Resolve(path string) (string, error) {
-	return "", errNotImplemented
-}
-
-// ResolveParent is like Resolve but resolves only the parent directory and
-// keeps the final path element as is. Use it for paths that are themselves
-// symlinks which must be removed without following them.
-func (g *Guard) ResolveParent(path string) (string, error) {
-	return "", errNotImplemented
-}
-
-// Allowed returns the resolved allowed locations.
-func (g *Guard) Allowed() []string {
-	return append([]string(nil), g.allowed...)
-}
-
-// FindRepoRoot walks up from start to the nearest directory containing a
-// .git entry (directory, or file for linked worktrees and submodules) and
-// returns its absolute, symlink-resolved path, or ErrNotInRepo.
-func FindRepoRoot(start string) (string, error) {
-	return "", errNotImplemented
 }
 
 // DiscoverOptions controls workspace discovery.
