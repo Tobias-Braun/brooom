@@ -1,9 +1,22 @@
-# Brooom
+<div align="center">
+  <img src=".github/assets/logo.svg" alt="Brooom logo" width="96">
+  <h1>Brooom</h1>
+  <p><strong>Sweep your workspace clean, fast, so your agent fleet can run again.</strong></p>
 
-**Sweep your workspace clean, fast — so your agent fleet can run again.**
+  [![CI](https://github.com/Tobias-Braun/brooom/actions/workflows/ci.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/ci.yml)
+  [![Release](https://github.com/Tobias-Braun/brooom/actions/workflows/release.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/release.yml)
+  [![Release check](https://github.com/Tobias-Braun/brooom/actions/workflows/release-check.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/release-check.yml)
+  [![Site](https://github.com/Tobias-Braun/brooom/actions/workflows/site.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/site.yml)
+  [![Repo sync](https://github.com/Tobias-Braun/brooom/actions/workflows/repo-sync.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/repo-sync.yml)
+  [![License: MIT](https://img.shields.io/badge/license-MIT-a78bfa)](LICENSE)
+  [![Go 1.24](https://img.shields.io/badge/go-1.24-60a5fa)](go.mod)
+</div>
 
-Brooom is a fast, safe, cross-platform CLI that finds and cleans the disk
-clutter modern AI-assisted development leaves behind:
+## About
+
+Brooom finds and cleans the disk clutter that agent tools, parallel branches
+and forgotten projects leave behind. It is a fast, safe, cross-platform CLI,
+and every command is a dry run until you say `--apply`. It sweeps:
 
 - **Agent artifacts** — run logs, JSONL transcripts, caches and scratch files
   from Claude Code, Cursor, Aider, Copilot and friends
