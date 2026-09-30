@@ -228,12 +228,46 @@ type BuildArtifacts struct {
 
 // CatalogTool is a custom tool/location entry (same schema as the embedded
 // catalogs, documented in docs/catalog.md).
+//
+// Project and User are the original shorthand: each location becomes an entry
+// of kind "any" (file or directory). Category, Homepage, Entries and Protect
+// are the full catalog format; both shapes may be combined. Only the presence
+// of at least one location is checked here; the catalog validates the details
+// of the new fields when it loads the extras.
 type CatalogTool struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Project     []string `json:"project,omitempty"`
-	User        []string `json:"user,omitempty"`
-	Description string   `json:"description,omitempty"`
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Project     []string         `json:"project,omitempty"`
+	User        []string         `json:"user,omitempty"`
+	Description string           `json:"description,omitempty"`
+	Category    string           `json:"category,omitempty"`
+	Homepage    string           `json:"homepage,omitempty"`
+	Entries     []CatalogEntry   `json:"entries,omitempty"`
+	Protect     []CatalogProtect `json:"protect,omitempty"`
+}
+
+// CatalogEntry is one location group of a catalog tool. It mirrors the
+// embedded catalog format as plain strings so that config does not depend on
+// the catalog package (the catalog imports config, never the reverse).
+type CatalogEntry struct {
+	Scope       string   `json:"scope"`
+	Patterns    []string `json:"patterns"`
+	OS          []string `json:"os,omitempty"`
+	Kind        string   `json:"kind,omitempty"`
+	Confidence  string   `json:"confidence,omitempty"`
+	MinAgeDays  *int     `json:"min_age_days,omitempty"`
+	Description string   `json:"description"`
+	Source      string   `json:"source,omitempty"`
+}
+
+// CatalogProtect lists paths of a tool that are never clutter (settings,
+// instructions, skills, ...). Extras can add protect rules but never remove
+// embedded ones.
+type CatalogProtect struct {
+	Scope    string   `json:"scope"`
+	Patterns []string `json:"patterns"`
+	OS       []string `json:"os,omitempty"`
+	Reason   string   `json:"reason"`
 }
 
 // TrashStrategy selects how removed files are disposed of.

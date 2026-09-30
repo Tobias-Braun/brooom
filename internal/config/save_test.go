@@ -23,7 +23,17 @@ func roundTripConfigs(t *testing.T) map[string]*Config {
 	custom.Detectors.StaleBranch.MinAgeDays = 10
 	custom.Detectors.AIArtifacts.MinAgeDays = intp(3)
 	custom.Detectors.AIArtifacts.Tools = map[string]bool{"cursor": false}
-	custom.Detectors.Logs.Extra = []CatalogTool{{ID: "x-y", Name: "X", Project: []string{"a/b"}}}
+	custom.Detectors.Logs.Extra = []CatalogTool{
+		{ID: "x-y", Name: "X", Project: []string{"a/b"}},
+		{
+			ID: "full-shape", Name: "Full", Category: "cache", Homepage: "https://example.com",
+			Entries: []CatalogEntry{{
+				Scope: "project", Patterns: []string{".full/*.log"}, OS: []string{"linux"}, Kind: "file",
+				Confidence: "high", MinAgeDays: intp(0), Description: "logs", Source: "https://example.com/docs",
+			}},
+			Protect: []CatalogProtect{{Scope: "project", Patterns: []string{".full/config.json"}, Reason: "config"}},
+		},
+	}
 	custom.Trash = Trash{Strategy: StrategyQuarantine, PerDetector: map[string]TrashStrategy{"worktrees": StrategyTrash}, QuarantineRetentionDays: 0}
 	custom.Output.Format = "json"
 	custom.Scan.SkipDirs = []string{"cache"}

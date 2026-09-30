@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "tools": [
+    {
+      "id": "npm",
+      "name": "npm",
+      "category": "logs",
+      "homepage": "https://www.npmjs.com",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": ["npm-debug.log*"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Debug logs npm leaves behind after a failed command",
+          "source": "https://docs.npmjs.com/cli/v10/using-npm/logging"
+        },
+        {
+          "scope": "user",
+          "patterns": ["~/.npm/_logs"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Timestamped npm debug logs in the npm cache",
+          "source": "https://docs.npmjs.com/cli/v10/using-npm/logging"
+        }
+      ]
+    },
+    {
+      "id": "macos-finder",
+      "name": "macOS Finder",
+      "category": "os-junk",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".DS_Store"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 0,
+          "description": "Finder view metadata that is recreated on demand",
+          "source": "https://en.wikipedia.org/wiki/.DS_Store"
+        }
+      ]
+    }
+  ]
+}

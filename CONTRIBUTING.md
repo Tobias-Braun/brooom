@@ -37,5 +37,5 @@ conventions every change follows.
 
 ## Adding a tool to the AI artifacts catalog
 
-Tool locations are data, not code: see `docs/catalog.md` (added with the
-ai-artifacts detector) for the entry format.
+Tool locations are data, not code: see [docs/catalog.md](docs/catalog.md)
+for the entry format and the step-by-step contribution checklist.

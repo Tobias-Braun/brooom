@@ -79,8 +79,11 @@ mode `0600`, rename) and never writes an invalid configuration.
 
 Entries in `detectors.ai-artifacts.extra` and
 `detectors.log-and-runtime-files.extra` need a unique kebab-case `id`, a
-non-empty `name` and at least one location in `project` or `user`. `project`
-paths are relative to the project and must not contain `..`.
+non-empty `name` and at least one location in `project`, `user` or `entries`.
+`project` paths are relative to the project and must not contain `..`. The
+optional `category`, `homepage`, `entries` and `protect` fields use the catalog
+format; the catalog validates them when it loads the extras. See
+[catalog.md](catalog.md).
 
 ## Paths: `~` and environment variables
 
