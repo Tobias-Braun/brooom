@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/session"
 )
 
@@ -54,7 +55,7 @@ func (a *app) listSessions(store *session.Store, format string) error {
 		return writeJSON(a.io.Out, map[string]any{"sessions": list, "problems": problems})
 	}
 	for _, p := range problems {
-		fmt.Fprintf(a.io.Err, "warning: skipping %s: %v\n", p.File, p.Err)
+		fmt.Fprintf(a.io.Err, "warning: skipping %s: %v\n", output.Sanitize(p.File), output.Sanitize(p.Err.Error()))
 	}
 	if len(list) == 0 {
 		_, err := fmt.Fprintln(a.io.Out, "No sessions yet.")
@@ -89,21 +90,21 @@ func renderSessionTable(w io.Writer, list []*session.Manifest, now time.Time) er
 		if m.FinishedAt.IsZero() {
 			cmdText += " (unfinished)"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%s\t%d\n", m.ID, formatStarted(m.StartedAt, now),
-			cmdText, c.Applied, c.Failed, humanBytes(m.ReclaimedBytes), c.Restorable)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%s\t%d\n", output.Sanitize(m.ID), formatStarted(m.StartedAt, now),
+			output.Sanitize(cmdText), c.Applied, c.Failed, humanBytes(m.ReclaimedBytes), c.Restorable)
 	}
 	return tw.Flush()
 }
 
 func renderSessionDetail(w io.Writer, m *session.Manifest, now time.Time) error {
-	fmt.Fprintf(w, "Session:   %s\n", m.ID)
+	fmt.Fprintf(w, "Session:   %s\n", output.Sanitize(m.ID))
 	fmt.Fprintf(w, "Started:   %s\n", formatStarted(m.StartedAt, now))
 	if m.FinishedAt.IsZero() {
 		fmt.Fprintln(w, "Finished:  (unfinished)")
 	} else {
 		fmt.Fprintf(w, "Finished:  %s\n", m.FinishedAt.Local().Format("2006-01-02 15:04:05"))
 	}
-	fmt.Fprintf(w, "Command:   %s\n", m.Command)
+	fmt.Fprintf(w, "Command:   %s\n", output.Sanitize(m.Command))
 	fmt.Fprintf(w, "Reclaimed: %s\n", humanBytes(m.ReclaimedBytes))
 	if len(m.Entries) == 0 {
 		_, err := fmt.Fprintln(w, "\nNo entries.")
@@ -117,17 +118,17 @@ func renderSessionDetail(w io.Writer, m *session.Manifest, now time.Time) error 
 }
 
 func writeEntry(w io.Writer, n int, e session.Entry) {
-	fmt.Fprintf(w, "\n%d. [%s] %s  %s\n", n, e.Status, e.Action, e.Path)
+	fmt.Fprintf(w, "\n%d. [%s] %s  %s\n", n, output.Sanitize(string(e.Status)), output.Sanitize(string(e.Action)), output.Sanitize(e.Path))
 	fmt.Fprintf(w, "   size:       %s\n", humanBytes(e.SizeBytes))
 	fmt.Fprintf(w, "   restorable: %t\n", e.Restorable)
 	if e.Error != "" {
-		fmt.Fprintf(w, "   error:      %s\n", e.Error)
+		fmt.Fprintf(w, "   error:      %s\n", output.Sanitize(e.Error))
 	}
 	if e.Trash != nil {
-		fmt.Fprintf(w, "   trash:      strategy=%s stored=%s\n", e.Trash.Strategy, e.Trash.StoredPath)
+		fmt.Fprintf(w, "   trash:      strategy=%s stored=%s\n", output.Sanitize(string(e.Trash.Strategy)), output.Sanitize(e.Trash.StoredPath))
 	}
 	if e.RecoveryHint != "" {
-		fmt.Fprintf(w, "   recovery:   %s\n", e.RecoveryHint)
+		fmt.Fprintf(w, "   recovery:   %s\n", output.Sanitize(e.RecoveryHint))
 	}
 }
 

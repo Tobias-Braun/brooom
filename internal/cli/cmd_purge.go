@@ -128,7 +128,7 @@ func (a *app) applyCachePrune(stale []walk.StaleCacheFile) error {
 // total, or why there is nothing to list.
 func (a *app) printPurgeListing(l *trash.QuarantineListing, days int, now time.Time) {
 	for _, p := range l.Skipped {
-		fmt.Fprintf(a.io.Err, "brooom: skipping %s: a symlink is never followed or deleted\n", p)
+		fmt.Fprintf(a.io.Err, "brooom: skipping %s: a symlink is never followed or deleted\n", output.Sanitize(p))
 	}
 	switch {
 	case days == 0:
@@ -140,7 +140,7 @@ func (a *app) printPurgeListing(l *trash.QuarantineListing, days int, now time.T
 	}
 	fmt.Fprintf(a.io.Out, "quarantined sessions older than %d days:\n", days)
 	for _, s := range l.Expired {
-		fmt.Fprintf(a.io.Out, "  %s  %d days old  %s\n", s.ID, int(s.Age(now).Hours()/24), output.FormatSize(s.SizeBytes))
+		fmt.Fprintf(a.io.Out, "  %s  %d days old  %s\n", output.Sanitize(s.ID), int(s.Age(now).Hours()/24), output.FormatSize(s.SizeBytes))
 	}
 	fmt.Fprintf(a.io.Out, "total: %d session(s), %s\n", len(l.Expired), output.FormatSize(l.TotalBytes()))
 }
@@ -155,7 +155,7 @@ func (a *app) applyPurge(dirs config.Dirs, l *trash.QuarantineListing, now time.
 	for _, r := range trash.Purge(dirs.Quarantine, l.Expired) {
 		if r.Err != nil {
 			failed++
-			fmt.Fprintf(a.io.Err, "brooom: %v\n", r.Err)
+			fmt.Fprintf(a.io.Err, "brooom: %s\n", output.Sanitize(r.Err.Error()))
 			continue
 		}
 		purged = append(purged, r.Session.Dir)

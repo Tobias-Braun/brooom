@@ -52,7 +52,7 @@ func renderSummaryTable(buf *bytes.Buffer, p painter, t findings.Totals) {
 	rows := []summaryRow{{"DETECTOR", "FINDINGS", "ACTIONABLE", "RECLAIMABLE"}}
 	for _, n := range names {
 		d := t.ByDetector[n]
-		rows = append(rows, summaryRow{n, strconv.Itoa(d.Findings), strconv.Itoa(d.Actionable), FormatSize(d.ReclaimableBytes)})
+		rows = append(rows, summaryRow{Sanitize(n), strconv.Itoa(d.Findings), strconv.Itoa(d.Actionable), FormatSize(d.ReclaimableBytes)})
 	}
 	rows = append(rows, summaryRow{"TOTAL", strconv.Itoa(t.Findings), strconv.Itoa(t.Actionable), FormatSize(t.ReclaimableBytes)})
 

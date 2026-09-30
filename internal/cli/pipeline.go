@@ -411,7 +411,7 @@ func (a *app) verboseOn() bool { return a.flags.verbose && !a.flags.quiet }
 // never goes to stdout, which keeps json, ndjson and plain pipe-safe.
 func (a *app) progressf(format string, args ...any) {
 	if a.verboseOn() {
-		fmt.Fprintf(a.io.Err, format+"\n", args...)
+		fmt.Fprintln(a.io.Err, output.Sanitize(fmt.Sprintf(format, args...)))
 	}
 }
 
@@ -453,7 +453,7 @@ func formatScanError(e findings.ScanError) string {
 		parts = append(parts, e.Path)
 	}
 	parts = append(parts, e.Message)
-	return strings.Join(parts, ": ")
+	return output.Sanitize(strings.Join(parts, ": "))
 }
 
 // outputOptions resolves rendering options: color from flag, config and

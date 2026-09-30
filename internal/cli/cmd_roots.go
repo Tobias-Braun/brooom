@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/output"
 )
 
 func newRootsCmd(a *app) *cobra.Command {
@@ -231,7 +232,7 @@ func (a *app) runRootsAdd(args []string) error {
 			roots = append(roots, config.Root{Path: c.stored})
 			added = append(added, c.stored)
 			if home != "" && c.key == home {
-				fmt.Fprintf(a.io.Err, homeWarning, c.abs)
+				fmt.Fprintf(a.io.Err, homeWarning, output.Sanitize(c.abs))
 			}
 		}
 		return roots, len(added) > 0, nil
@@ -240,10 +241,10 @@ func (a *app) runRootsAdd(args []string) error {
 		return err
 	}
 	for _, p := range existing {
-		a.say("%s is already a workspace root, nothing to do\n", p)
+		a.say("%s is already a workspace root, nothing to do\n", output.Sanitize(p))
 	}
 	for _, p := range added {
-		a.say("added root %s\n", p)
+		a.say("added root %s\n", output.Sanitize(p))
 	}
 	return nil
 }
@@ -298,7 +299,7 @@ func (a *app) runRootsRemove(args []string) error {
 		return err
 	}
 	for _, p := range removed {
-		a.say("removed root %s\n", p)
+		a.say("removed root %s\n", output.Sanitize(p))
 	}
 	return nil
 }
@@ -535,7 +536,7 @@ func renderRoots(w io.Writer, format string, infos []rootInfo) error {
 		return writeJSON(w, infos)
 	case "plain":
 		for _, i := range infos {
-			fmt.Fprintln(w, i.Path)
+			fmt.Fprintln(w, output.Sanitize(i.Path))
 		}
 		return nil
 	}
@@ -546,7 +547,7 @@ func renderRoots(w io.Writer, format string, infos []rootInfo) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "PATH\tRESOLVED\tSTATUS")
 	for _, i := range infos {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", i.Path, i.Resolved, i.status)
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", output.Sanitize(i.Path), output.Sanitize(i.Resolved), output.Sanitize(i.status))
 	}
 	return tw.Flush()
 }

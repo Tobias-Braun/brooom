@@ -579,6 +579,13 @@ is; `ndjson` is one `Finding` per line; `plain` is paths only (for branches:
 `<repo>\t<branch>`), one per line. Formats never write ANSI codes when
 `Options.Color` is false.
 
+Every human-readable output (table, tree, summary, sessions, executor plans,
+prompts and summaries, undo plans, error printing) passes untrusted text
+(paths, refs, reasons, error messages) through `output.Sanitize`, which
+replaces control runes with visible escapes (`\n`, `\x1b`, ` `). Backslashes
+are left alone so Windows paths stay readable. `plain`, `json` and `ndjson` are
+machine formats and are not altered. New human output must use it too.
+
 ### Completions and the CLI reference (`internal/cli`)
 
 `completion.go` registers the dynamic shell completions (`--detector` with
