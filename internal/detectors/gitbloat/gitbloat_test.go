@@ -223,12 +223,34 @@ func TestLooseObjectsUsesConfiguredPrune(t *testing.T) {
 	}
 }
 
+// packSince writes one new pack holding everything reachable from HEAD but
+// not from prev (all of it when prev is empty) and drops the loose copies.
+// Unlike "git repack -d", whose consolidation behaviour differs between git
+// versions, pack-objects always yields exactly one additional pack.
+func packSince(t *testing.T, r *testutil.Repo, prev string) {
+	t.Helper()
+	in := "HEAD\n"
+	if prev != "" {
+		in += "^" + prev + "\n"
+	}
+	cmd := exec.Command("git", "pack-objects", "--revs", "-q", ".git/objects/pack/pack")
+	cmd.Dir = r.Dir
+	cmd.Env = r.Env(testutil.BaseTime)
+	cmd.Stdin = strings.NewReader(in)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git pack-objects: %v\n%s", err, out)
+	}
+	r.Git("prune-packed")
+}
+
 func TestPacksFinding(t *testing.T) {
 	r := testutil.NewRepo(t)
+	prev := ""
 	for i := 0; i < 4; i++ {
 		r.WriteFile(fmt.Sprintf("f%d.txt", i), strings.Repeat(fmt.Sprintf("content %d\n", i), 200))
 		r.CommitAll(fmt.Sprintf("c%d", i), testutil.BaseTime.Add(time.Duration(i)*time.Hour))
-		r.Git("-c", "gc.auto=0", "repack", "-d", "-q")
+		packSince(t, r, prev)
+		prev = r.Head()
 	}
 	f := newFixture(t, tune{packs: 2}, r.Dir)
 	got, err := f.run(t, New(), repoTarget(r.Dir))
