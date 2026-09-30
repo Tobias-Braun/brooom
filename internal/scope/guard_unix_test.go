@@ -286,3 +286,25 @@ func TestNewGuardRefusesLinkToRoot(t *testing.T) {
 		t.Fatalf("NewGuard(link to /) = %v, want error", g.Allowed())
 	}
 }
+
+// TestOutsideNoteIgnoresOtherRefusals makes sure the hint is reserved for real
+// scope violations: a link loop or an unreadable directory is refused too, but
+// telling the user to add a root would not fix either.
+func TestOutsideNoteIgnoresOtherRefusals(t *testing.T) {
+	lt := newLinkTree(t)
+	if got := lt.guard.OutsideNote(filepath.Join(lt.allowed, "self")); got != "" {
+		t.Errorf("loop got hint %q", got)
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	locked := mkdir(t, lt.allowed, "locked-note")
+	touch(t, locked, "inner")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	if got := lt.guard.OutsideNote(filepath.Join(locked, "inner")); got != "" {
+		t.Errorf("permission error got hint %q", got)
+	}
+}

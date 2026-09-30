@@ -1075,7 +1075,10 @@ brooom worktrees [flags]
 ```text
 Report worktrees whose branch is merged, stale or deleted, and worktree
 metadata whose directory is gone. Dirty or locked worktrees are reported but
-never suggested for removal. With --apply, worktrees are removed with
+never suggested for removal. Linked worktrees outside the scanned scope (for
+example ../repo-wt) are listed as informational findings with the hint to run
+'brooom roots add <parent>' or use --workspaces; they are never examined or
+removed. With --apply, worktrees are removed with
 'git worktree remove' and metadata is pruned with 'git worktree prune'.
 ```
 

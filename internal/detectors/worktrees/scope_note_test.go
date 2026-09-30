@@ -23,10 +23,35 @@ func (h *harness) runErr(target scope.Target) ([]findings.Finding, error) {
 	return out, err
 }
 
-// TestOutOfScopeWorktreeIsReportedAsNote pins the visibility rule: a linked
-// worktree outside the guard is still never listed, but the scan says why and
-// names the way forward instead of printing "nothing to clean".
-func TestOutOfScopeWorktreeIsReportedAsNote(t *testing.T) {
+// assertOutsideFinding checks that fs holds exactly one informational finding
+// for path: no action, low confidence, the outside_scope evidence and the hint.
+func assertOutsideFinding(t *testing.T, fs []findings.Finding, path string) {
+	t.Helper()
+	if len(fs) != 1 {
+		t.Fatalf("got %d findings, want the one informational finding: %+v", len(fs), fs)
+	}
+	f := fs[0]
+	if f.SuggestedAction.Type != findings.ActionNone || f.Actionable() || f.SuggestedAction.Command != "" {
+		t.Errorf("finding suggests an action: %+v", f.SuggestedAction)
+	}
+	if f.Confidence != findings.ConfidenceLow || f.Path != path {
+		t.Errorf("confidence %q path %q, want low and %q", f.Confidence, f.Path, path)
+	}
+	if len(f.Evidence) != 1 || f.Evidence[0].Code != "outside_scope" {
+		t.Fatalf("evidence = %+v, want one outside_scope entry", f.Evidence)
+	}
+	for _, want := range []string{path, scope.OutsideWorktreeHint} {
+		if !strings.Contains(f.Evidence[0].Message, want) {
+			t.Errorf("evidence lacks %q: %s", want, f.Evidence[0].Message)
+		}
+	}
+}
+
+// TestOutOfScopeWorktreeIsReportedAsFinding pins the visibility rule: a linked
+// worktree outside the guard is never examined or offered for removal, but it
+// is reported as an informational finding (visible without --verbose) that
+// names the way forward instead of leaving the scan looking empty.
+func TestOutOfScopeWorktreeIsReportedAsFinding(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	outside := repo.AddWorktree("outside", "feat-outside")
 	// The guard only allows the repository, like default single-repo mode;
@@ -34,15 +59,27 @@ func TestOutOfScopeWorktreeIsReportedAsNote(t *testing.T) {
 	h := newHarness(t, repo)
 
 	fs, err := h.runErr(repoTarget(repo.Dir))
-	if len(fs) != 0 {
-		t.Errorf("reported %+v", fs)
+	if err != nil {
+		t.Fatalf("outside worktree is not an error: %v", err)
 	}
-	if err == nil {
-		t.Fatal("no note for the worktree outside the scope")
+	assertOutsideFinding(t, fs, gitx.NormalizePath(outside))
+}
+
+// TestMergedOutOfScopeWorktreeIsNeverSuggested makes sure the informational
+// finding replaces classification: even a worktree whose branch is merged
+// gets no removal action while it is outside the guard.
+func TestMergedOutOfScopeWorktreeIsNeverSuggested(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	outside := repo.AddWorktree("outside", "feat-merged")
+	h := newHarness(t, repo)
+
+	fs, err := h.runErr(repoTarget(repo.Dir))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, want := range []string{gitx.NormalizePath(outside), scope.OutsideWorktreeHint} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("note lacks %q: %v", want, err)
+	for _, f := range fs {
+		if f.Actionable() {
+			t.Errorf("out-of-scope worktree %s suggested: %+v", outside, f.SuggestedAction)
 		}
 	}
 }
@@ -96,15 +133,19 @@ func metaHarness(t *testing.T) (h *harness, own, sibling string) {
 
 // TestSiblingBelowMainIsNotedFromLinkedWorktree is the detector side of the
 // least-privilege rule: a sibling below the main checkout is not offered and
-// gets a note, while a missing sibling is still reported as prunable.
+// gets an informational finding, while a missing sibling is still reported as prunable.
 func TestSiblingBelowMainIsNotedFromLinkedWorktree(t *testing.T) {
 	h, own, sibling := metaHarness(t)
 
 	fs, err := h.runErr(repoTarget(own))
-	if len(fs) != 1 || fs[0].Kind != findings.KindWorktreeMissing {
-		t.Errorf("want only the missing sibling, got %+v", fs)
+	if len(fs) == 0 || fs[0].Kind != findings.KindWorktreeMissing {
+		t.Errorf("want the missing sibling first, got %+v", fs)
 	}
-	if err == nil || !strings.Contains(err.Error(), gitx.NormalizePath(sibling)) {
-		t.Errorf("note = %v, want one naming the sibling", err)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
+	if len(fs) != 2 {
+		t.Fatalf("want the missing sibling and the note, got %+v", fs)
+	}
+	assertOutsideFinding(t, fs[1:], gitx.NormalizePath(sibling))
 }

@@ -22,6 +22,9 @@ clutter modern AI-assisted development leaves behind:
 - Applying asks for confirmation (skip with `--yes` in scripts).
 - Files go to your **OS trash** (or a quarantine folder); branches are
   deleted with `git branch -d`; worktrees with `git worktree remove`.
+  Linked worktrees outside the scanned repository (such as `../repo-wt`) are
+  never touched; `brooom worktrees` lists them with a hint to run
+  `brooom roots add <parent>` or use `--workspaces`.
   On Windows the Recycle Bin cannot take paths longer than 259 characters
   (the shell API rejects `\\?\` paths) or items larger than the bin limit;
   Brooom refuses those instead of letting Windows delete them permanently and
