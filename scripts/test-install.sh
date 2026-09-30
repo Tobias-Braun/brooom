@@ -52,10 +52,19 @@ port_file="$work/port"
 # stdin, and its stderr goes to a log that is only shown when startup fails.
 server_log="$work/server.log"
 cat > "$work/server.py" <<'PY'
-import functools, http.server, sys
+import functools, http.server, socketserver, sys
+
+# HTTPServer.server_bind resolves the bound address with socket.getfqdn, a
+# reverse DNS lookup that hangs for many seconds on macOS runners. Only the
+# port is needed here, so bind through TCPServer directly.
+class Server(http.server.ThreadingHTTPServer):
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_port = self.socket.getsockname()[1]
+
 handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[1])
 handler.log_message = lambda *a, **k: None
-srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+srv = Server(("127.0.0.1", 0), handler)
 with open(sys.argv[2], "w") as f:
     f.write(str(srv.server_address[1]))
 srv.serve_forever()
