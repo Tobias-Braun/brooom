@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Merge detection methods reported in MergeResult.Method.
@@ -36,14 +38,6 @@ type MergeResult struct {
 	Method string
 	// Truncated is set when a safety cap made the check give up.
 	Truncated bool
-}
-
-type patchKey struct{ base, mergeBase string }
-
-// patchSet is the set of patch ids of the base commits since the merge base.
-type patchSet struct {
-	ids       map[string]struct{}
-	truncated bool
 }
 
 type mergeKey struct {
@@ -121,7 +115,7 @@ func (r *Repo) MergedInto(ctx context.Context, base, branch string, includeSquas
 }
 
 func (r *Repo) mergedInto(ctx context.Context, base, branch string, includeSquash bool) (MergeResult, error) {
-	ok, err := r.IsAncestor(ctx, branch, base)
+	ok, err := r.isMergedAncestor(ctx, base, branch)
 	if err != nil {
 		return MergeResult{}, err
 	}
@@ -171,7 +165,7 @@ func (r *Repo) SquashMerged(ctx context.Context, base, branch string) (MergeResu
 	if err != nil {
 		return MergeResult{}, err
 	}
-	tip, err := r.resolveCommit(ctx, branch)
+	tip, err := r.branchTip(ctx, branch)
 	if err != nil {
 		return MergeResult{}, err
 	}
@@ -181,19 +175,19 @@ func (r *Repo) SquashMerged(ctx context.Context, base, branch string) (MergeResu
 		// ancestor check owns.
 		return MergeResult{}, err
 	}
-	set, err := cached(r, &r.patchIDs, patchKey{baseSHA, mb}, func() (patchSet, error) {
-		return r.basePatchIDs(ctx, baseSHA, mb)
-	})
+	set, tooBig, err := r.basePatchIDs(ctx, baseSHA, mb)
 	if errors.Is(err, ErrInputUnsupported) {
 		return MergeResult{}, nil
 	}
 	if err != nil {
 		return MergeResult{}, err
 	}
-	if set.truncated {
+	if tooBig {
 		return MergeResult{Truncated: true}, nil
 	}
-	if len(set.ids) == 0 {
+	if len(set) == 0 {
+		// Nothing on base since the fork point can be equal to the branch,
+		// so the diffs of the branch need not be computed at all.
 		return MergeResult{}, nil
 	}
 	return r.matchBranch(ctx, set, mb, tip)
@@ -213,32 +207,28 @@ func (r *Repo) mergeBase(ctx context.Context, a, b string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-// basePatchIDs collects the patch ids of the non-merge commits of base since
-// the merge base.
-func (r *Repo) basePatchIDs(ctx context.Context, base, mb string) (patchSet, error) {
-	out, err := r.run(ctx, "rev-list", "--count", base, "^"+mb)
+// basePatchIDs returns the patch ids of the non-merge commits of base since
+// the merge base. The commits are listed per branch (one cheap rev-list, capped
+// at maxBaseCommits so a branch is only Truncated by its own distance from
+// base), but the expensive part, the patch ids, is looked up in a per-commit
+// cache and computed only for commits not seen before. A base commit is
+// therefore diffed once per scan, however many distinct fork points the
+// branches have, instead of once per fork point.
+func (r *Repo) basePatchIDs(ctx context.Context, base, mb string) (ids map[string]struct{}, tooBig bool, err error) {
+	out, err := r.run(ctx, "rev-list", "--no-merges", "--max-count="+strconv.Itoa(maxBaseCommits+1), base, "^"+mb)
 	if err != nil {
-		return patchSet{}, err
+		return nil, false, err
 	}
-	if n := countOr(out, maxBaseCommits+1); n > maxBaseCommits {
-		return patchSet{truncated: true}, nil
+	commits := Lines(out)
+	if len(commits) > maxBaseCommits {
+		return nil, true, nil
 	}
-	args := append([]string{"log", "-p", "--no-merges"}, diffFlags...)
-	args = append(args, base, "^"+mb)
-	ids, tooBig, err := r.diffPatchIDs(ctx, args)
-	if err != nil || tooBig {
-		return patchSet{truncated: tooBig}, err
-	}
-	set := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		set[id] = struct{}{}
-	}
-	return patchSet{ids: set}, nil
+	return r.commitPatchIDs(ctx, commits)
 }
 
 // matchBranch compares the branch against the base patch ids: combined diff
 // first (squash), then commit by commit (rebase).
-func (r *Repo) matchBranch(ctx context.Context, set patchSet, mb, tip string) (MergeResult, error) {
+func (r *Repo) matchBranch(ctx context.Context, set map[string]struct{}, mb, tip string) (MergeResult, error) {
 	diffArgs := append([]string{"diff"}, diffFlags...)
 	diffArgs = append(diffArgs, mb, tip)
 	combined, tooBig, err := r.diffPatchIDs(ctx, diffArgs)
@@ -249,7 +239,7 @@ func (r *Repo) matchBranch(ctx context.Context, set patchSet, mb, tip string) (M
 		return MergeResult{Truncated: true}, nil
 	}
 	if len(combined) == 1 {
-		if _, ok := set.ids[combined[0]]; ok {
+		if _, ok := set[combined[0]]; ok {
 			return MergeResult{Merged: true, Method: MethodSquash}, nil
 		}
 	}
@@ -266,19 +256,38 @@ func (r *Repo) matchBranch(ctx context.Context, set patchSet, mb, tip string) (M
 		return MergeResult{}, nil
 	}
 	for _, id := range perCommit {
-		if _, ok := set.ids[id]; !ok {
+		if _, ok := set[id]; !ok {
 			return MergeResult{}, nil
 		}
 	}
 	return MergeResult{Merged: true, Method: MethodRebase}, nil
 }
 
+// patchPair is one line of `git patch-id` output.
+type patchPair struct{ id, commit string }
+
 // diffPatchIDs runs a diff-producing git command and pipes its output through
 // `git patch-id --stable`, returning the patch ids in order. tooBig reports
 // that the diff exceeded maxDiffBytes. A patch-id failure is an error, which
 // callers treat as unknown.
 func (r *Repo) diffPatchIDs(ctx context.Context, args []string) (ids []string, tooBig bool, err error) {
-	diff, err := r.run(ctx, args...)
+	pairs, tooBig, err := r.diffPatchPairs(ctx, nil, args)
+	for _, p := range pairs {
+		ids = append(ids, p.id)
+	}
+	return ids, tooBig, err
+}
+
+// diffPatchPairs is diffPatchIDs keeping the commit id next to each patch id.
+// A non-nil stdin is fed to the diff command (revisions for `log --stdin`),
+// which needs a runner with input support.
+func (r *Repo) diffPatchPairs(ctx context.Context, stdin io.Reader, args []string) (pairs []patchPair, tooBig bool, err error) {
+	var diff string
+	if stdin != nil {
+		diff, err = RunInput(ctx, r.Runner, r.Dir, stdin, args...)
+	} else {
+		diff, err = r.run(ctx, args...)
+	}
 	if err != nil {
 		return nil, false, err
 	}
@@ -292,29 +301,74 @@ func (r *Repo) diffPatchIDs(ctx context.Context, args []string) (ids []string, t
 	if err != nil {
 		return nil, false, err
 	}
-	return parsePatchIDs(out), false, nil
+	return parsePatchPairs(out), false, nil
 }
 
-// parsePatchIDs extracts the first field of every `patch-id` output line and
-// drops all-zero ids, which git prints for diffs without content.
-func parsePatchIDs(out string) []string {
-	var ids []string
+// parsePatchPairs extracts "patchid commitid" from every `patch-id` output
+// line and drops all-zero ids, which git prints for diffs without content.
+func parsePatchPairs(out string) []patchPair {
+	var pairs []patchPair
 	for _, line := range Lines(out) {
-		id, _, _ := strings.Cut(line, " ")
+		id, rest, _ := strings.Cut(line, " ")
 		if id == "" || strings.Trim(id, "0") == "" {
 			continue
 		}
-		ids = append(ids, id)
+		pairs = append(pairs, patchPair{id: id, commit: strings.TrimSpace(rest)})
 	}
-	return ids
+	return pairs
 }
 
-// countOr parses a count printed by git, returning def when malformed so an
-// unparseable count is treated as "over the cap" by the caller.
-func countOr(s string, def int) int {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil {
-		return def
+// patchCache maps a commit to its patch id ("" for a commit whose diff is
+// empty), so every commit is diffed at most once per handle.
+type patchCache struct {
+	mu  sync.Mutex
+	ids map[string]string
+}
+
+// commitPatchIDs returns the set of patch ids of commits, diffing only the
+// commits missing from the cache (one `log -p --no-walk --stdin` for all of
+// them). tooBig reports that the diff text of the missing commits exceeded
+// maxDiffBytes; nothing is cached then.
+func (r *Repo) commitPatchIDs(ctx context.Context, commits []string) (map[string]struct{}, bool, error) {
+	var missing []string
+	r.patches.mu.Lock()
+	for _, c := range commits {
+		if _, ok := r.patches.ids[c]; !ok {
+			missing = append(missing, c)
+		}
 	}
-	return n
+	r.patches.mu.Unlock()
+	if len(missing) > 0 {
+		args := append([]string{"log", "-p", "--no-merges", "--no-walk=unsorted", "--stdin"}, diffFlags...)
+		pairs, tooBig, err := r.diffPatchPairs(ctx, strings.NewReader(strings.Join(missing, "\n")+"\n"), args)
+		if err != nil || tooBig {
+			return nil, tooBig, err
+		}
+		r.storePatchIDs(missing, pairs)
+	}
+	set := make(map[string]struct{}, len(commits))
+	r.patches.mu.Lock()
+	defer r.patches.mu.Unlock()
+	for _, c := range commits {
+		if id := r.patches.ids[c]; id != "" {
+			set[id] = struct{}{}
+		}
+	}
+	return set, false, nil
+}
+
+// storePatchIDs records the computed ids; requested commits without a line in
+// the output have an empty diff and are cached as "".
+func (r *Repo) storePatchIDs(requested []string, pairs []patchPair) {
+	r.patches.mu.Lock()
+	defer r.patches.mu.Unlock()
+	if r.patches.ids == nil {
+		r.patches.ids = make(map[string]string)
+	}
+	for _, c := range requested {
+		r.patches.ids[c] = ""
+	}
+	for _, p := range pairs {
+		r.patches.ids[p.commit] = p.id
+	}
 }

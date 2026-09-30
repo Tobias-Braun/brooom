@@ -116,7 +116,10 @@ func TestMergedCheckErrorIsSurfaced(t *testing.T) {
 	f := newFixture(t, true)
 	f.pushed("feat/x", f.daysAgo(100))
 	got, err := f.detectFailing(func(args []string) bool {
-		return args[0] == "merge-base" && slices.Contains(args, "--is-ancestor") && args[len(args)-1] == "refs/remotes/origin/main"
+		// Both the batched ancestry query and its per-branch fallback fail.
+		batch := args[0] == "for-each-ref" && slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "--merged=") })
+		single := args[0] == "merge-base" && slices.Contains(args, "--is-ancestor") && args[len(args)-1] == "refs/remotes/origin/main"
+		return batch || single
 	})
 	if err == nil || !strings.Contains(err.Error(), `"feat/x"`) {
 		t.Fatalf("error = %v, want one naming the branch", err)

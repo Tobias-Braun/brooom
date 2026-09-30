@@ -97,7 +97,7 @@ func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args 
 	cmd.Env = Env(os.Environ())
 	// A killed git can leave a child (hook, alias) holding the output pipes;
 	// without a delay Wait would block until that child exits too.
-	cmd.WaitDelay = 2 * time.Second
+	cmd.WaitDelay = waitDelay
 	// Only set Stdin when input was given: an unset Stdin reads the null
 	// device, so git can never block waiting on the terminal.
 	if stdin != nil {
