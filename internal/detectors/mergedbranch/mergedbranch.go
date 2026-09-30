@@ -77,11 +77,13 @@ func (*Detector) Category() detect.Category { return detect.CategoryGit }
 // scan holds everything that is loaded once per target so the per-branch
 // helpers stay small.
 type scan struct {
-	env      *detect.Env
-	target   scope.Target
-	cfg      *config.Config
-	repo     *gitx.Repo
-	base     gitx.Base
+	env    *detect.Env
+	target scope.Target
+	cfg    *config.Config
+	repo   *gitx.Repo
+	base   gitx.Base
+	// bases lists every candidate a merge counts against, base first.
+	bases    []gitx.Base
 	baseTip  string
 	path     string
 	squash   bool
@@ -181,7 +183,7 @@ func (d *Detector) load(ctx context.Context, env *detect.Env, target scope.Targe
 	if err != nil {
 		return nil, fmt.Errorf("merged-branch: main worktree %q of target %q is outside the allowed scope: %w", main, target.Path, err)
 	}
-	base, err := repo.DefaultBase(ctx, cfg.Git.BaseBranches)
+	bases, err := repo.BaseCandidates(ctx, cfg.Git.BaseBranches)
 	if errors.Is(err, gitx.ErrNoBase) {
 		return nil, nil
 	}
@@ -195,7 +197,7 @@ func (d *Detector) load(ctx context.Context, env *detect.Env, target scope.Targe
 	branches = slices.Clone(branches)
 	sort.Slice(branches, func(i, j int) bool { return branches[i].Name < branches[j].Name })
 	s := &scan{
-		env: env, target: target, cfg: cfg, repo: repo, base: base, path: path,
+		env: env, target: target, cfg: cfg, repo: repo, base: bases[0], bases: bases, path: path,
 		squash:   cfg.Detectors.MergedBranch.Mode == config.MergeAncestorSquash,
 		prCheck:  prCheckDisabled,
 		branches: branches,
@@ -252,7 +254,7 @@ func (s *scan) localBranch(ctx context.Context, b gitx.Branch) outcome {
 	if skip || s.belowAgeFloor(b.Date) {
 		return outcome{errs: errorsOf(err)}
 	}
-	res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/heads/"+b.Name, s.squash)
+	matched, res, err := s.repo.MergedIntoAny(ctx, s.bases, "refs/heads/"+b.Name, s.squash)
 	if err != nil {
 		// One unclassifiable branch must not hide the others, but it must
 		// not vanish silently either.
@@ -261,7 +263,7 @@ func (s *scan) localBranch(ctx context.Context, b gitx.Branch) outcome {
 	if !res.Merged {
 		return outcome{}
 	}
-	f := s.buildFinding(ctx, b, res.Method)
+	f := s.buildFinding(ctx, b, matched, res.Method)
 	return outcome{finding: &f}
 }
 
@@ -306,7 +308,7 @@ func (s *scan) unstarted(ctx context.Context, b gitx.Branch) (bool, error) {
 	return created, nil
 }
 
-func (s *scan) newFinding(ref, tip string, date time.Time) findings.Finding {
+func (s *scan) newFinding(ref, tip string, date time.Time, base gitx.Base) findings.Finding {
 	f := findings.Finding{
 		ID:         findings.NewID(Name, findings.KindBranch, s.path, ref),
 		Detector:   Name,
@@ -316,7 +318,7 @@ func (s *scan) newFinding(ref, tip string, date time.Time) findings.Finding {
 		Ref:        ref,
 		AgeDays:    s.env.AgeDays(date),
 		Confidence: findings.ConfidenceHigh,
-		Meta:       map[string]string{"tip": tip, "base": s.base.Ref},
+		Meta:       map[string]string{"tip": tip, "base": base.Ref},
 		RiskFlags:  []findings.RiskFlag{},
 	}
 	if !date.IsZero() {
@@ -327,21 +329,21 @@ func (s *scan) newFinding(ref, tip string, date time.Time) findings.Finding {
 }
 
 // buildFinding assembles the complete finding of a merged local branch.
-func (s *scan) buildFinding(ctx context.Context, b gitx.Branch, method string) findings.Finding {
-	f := s.newFinding(b.Name, b.Tip, b.Date)
+func (s *scan) buildFinding(ctx context.Context, b gitx.Branch, base gitx.Base, method string) findings.Finding {
+	f := s.newFinding(b.Name, b.Tip, b.Date, base)
 	f.Meta["merge_method"] = method
 	f.Meta["open_pr_check"] = s.prCheck
 	if b.Upstream != "" {
 		f.Meta["upstream"] = b.Upstream
 	}
-	f.Evidence = s.evidence(b, method)
+	f.Evidence = s.evidence(b, base, method)
 	f.RiskFlags = s.riskFlags(ctx, b)
-	f.SuggestedAction = s.action(b, method, f.RiskFlags)
+	f.SuggestedAction = s.action(b, base, method, f.RiskFlags)
 	return f
 }
 
-func (s *scan) evidence(b gitx.Branch, method string) []findings.Evidence {
-	ev := []findings.Evidence{mergedEvidence(method, s.base.Ref, "Branch")}
+func (s *scan) evidence(b gitx.Branch, base gitx.Base, method string) []findings.Evidence {
+	ev := []findings.Evidence{mergedEvidence(method, base.Display(), "Branch")}
 	days := s.env.AgeDays(b.Date)
 	ev = append(ev, findings.Evidence{
 		Code: "last_commit_age", Message: "Last commit is " + strconv.Itoa(days) + " days old.", Value: days,
@@ -414,14 +416,19 @@ func (s *scan) recent(date time.Time) bool {
 }
 
 // action decides the suggestion for a merged branch given its risk flags.
-func (s *scan) action(b gitx.Branch, method string, flags []findings.RiskFlag) findings.SuggestedAction {
+func (s *scan) action(b gitx.Branch, base gitx.Base, method string, flags []findings.RiskFlag) findings.SuggestedAction {
 	name := b.Name
+	// The action refuses such names at plan time; offering the deletion would
+	// count the finding as actionable and then skip it.
+	if reason := gitx.RefusedBranchName(name); reason != "" {
+		return findings.RefusedBranchDelete(name, reason)
+	}
 	blocking := blockingFlags(flags)
 	if len(blocking) == 0 {
-		return deleteAction(name, method, s.base.Ref)
+		return deleteAction(name, method, base.Display())
 	}
 	if s.env.Force && findings.Actionable(flags, true) {
-		a := deleteAction(name, method, s.base.Ref)
+		a := deleteAction(name, method, base.Display())
 		a.Reason = "forced: overriding " + strings.Join(blocking, ", ") + "; " + a.Reason
 		return a
 	}
@@ -502,7 +509,7 @@ func (s *scan) remoteBranches(ctx context.Context) error {
 		if s.skipRemote(rb) || s.belowAgeFloor(rb.Date) {
 			continue
 		}
-		res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/remotes/"+rb.Name, s.squash)
+		matched, res, err := s.repo.MergedIntoAny(ctx, s.bases, "refs/remotes/"+rb.Name, s.squash)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -511,7 +518,7 @@ func (s *scan) remoteBranches(ctx context.Context) error {
 			continue
 		}
 		if res.Merged {
-			s.emit(s.remoteFinding(rb, res.Method))
+			s.emit(s.remoteFinding(rb, matched, res.Method))
 		}
 	}
 	return nil
@@ -531,12 +538,12 @@ func (s *scan) skipRemote(rb gitx.RemoteBranch) bool {
 		gitx.IsProtected(s.cfg.Git.ProtectedBranches, short)
 }
 
-func (s *scan) remoteFinding(rb gitx.RemoteBranch, method string) findings.Finding {
-	f := s.newFinding(rb.Name, rb.Tip, rb.Date)
+func (s *scan) remoteFinding(rb gitx.RemoteBranch, base gitx.Base, method string) findings.Finding {
+	f := s.newFinding(rb.Name, rb.Tip, rb.Date, base)
 	f.Meta["remote"] = "true"
 	f.Meta["merge_method"] = method
 	f.Evidence = []findings.Evidence{
-		mergedEvidence(method, s.base.Ref, "Remote branch"),
+		mergedEvidence(method, base.Display(), "Remote branch"),
 		{Code: "last_commit_age", Message: "Last commit is " + strconv.Itoa(f.AgeDays) + " days old.", Value: f.AgeDays},
 	}
 	f.SuggestedAction = findings.SuggestedAction{

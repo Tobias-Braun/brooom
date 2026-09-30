@@ -19,7 +19,9 @@ import (
 // finding) must survive, since its admin dir holds HEAD, the reflog and the
 // staged index. --force is needed for git to accept a missing directory and
 // does not lift locks (that would take a second --force, which is never
-// passed). As a safety net Apply lists the worktrees before and after and
+// passed). Where git itself refuses on a missing path the verified fallback
+// of remove-worktree (deregisterMissing) drops just that entry's admin dir.
+// As a safety net Apply lists the worktrees before and after and
 // fails loudly if anything other than the target disappeared.
 type pruneWorktrees struct{}
 
@@ -112,8 +114,8 @@ func (pruneWorktrees) Apply(ctx context.Context, env *Env, s Step) (session.Entr
 	if err != nil {
 		return failedTrash(en, fmt.Errorf("worktree: list worktrees of %s before pruning: %w", repo.Dir, err))
 	}
-	if _, err := env.Git.Run(ctx, repo.Dir, "worktree", "remove", "--force", "--", wt.Path); err != nil {
-		return failedTrash(en, fmt.Errorf("git worktree remove --force %s: %w", wt.Path, err))
+	if err := deregisterMissing(ctx, env, repo, wt.Path, true); err != nil {
+		return failedTrash(en, err)
 	}
 	after, err := repo.ListWorktrees(ctx)
 	if err != nil {

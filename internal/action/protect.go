@@ -2,7 +2,6 @@ package action
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -59,11 +58,7 @@ func newProtection(env *Env, path string) (*protection, error) {
 
 // projectRoot is the directory relative project patterns are matched against.
 func projectRoot(env *Env, path string) string {
-	start := path
-	if fi, err := os.Lstat(path); err != nil || !fi.IsDir() {
-		start = filepath.Dir(path)
-	}
-	root, err := scope.FindRepoRoot(start)
+	root, err := scope.FindRepoRoot(repoLookupStart(path))
 	if err == nil {
 		return root
 	}

@@ -52,12 +52,47 @@ func undoTarget(env *Env, e session.Entry) (undoData, error) {
 	if !filepath.IsAbs(d.path) || !filepath.IsAbs(d.repo) {
 		return undoData{}, fmt.Errorf("worktree undo: refusing relative path in manifest (%q, %q)", d.repo, d.path)
 	}
-	resolved, err := env.Guard.ResolveParent(d.path)
+	resolved, err := resolveUndoPath(env, d.path)
 	if err != nil {
-		return undoData{}, fmt.Errorf("worktree undo: refusing to restore to %s: %w", d.path, err)
+		return undoData{}, err
 	}
 	d.path = resolved
 	return d, nil
+}
+
+// resolveUndoPath resolves the restore target through the guard and applies
+// the write-target refusals. The guard only enforces allowed roots; a forged
+// manifest could still aim inside .git (a checkout at .git/hooks makes
+// tracked files live hooks) or Brooom's own state, so the refusals of the
+// trash undo apply here too.
+func resolveUndoPath(env *Env, path string) (string, error) {
+	resolved, err := env.Guard.ResolveParent(path)
+	if err != nil {
+		return "", fmt.Errorf("worktree undo: refusing to restore to %s: %w", path, err)
+	}
+	if err := refuseRestoreTarget(resolved); err != nil {
+		return "", err
+	}
+	return resolved, nil
+}
+
+// checkUndoRepo verifies the opened repository against the manifest: the
+// recorded repo must be the main worktree of a repository (a linked worktree
+// or subdirectory would make git add worktrees relative to the wrong tree),
+// and the target must not lie in the repository's common git directory, which
+// differs from <repo>/.git for a --separate-git-dir repository.
+func checkUndoRepo(ctx context.Context, repo *gitx.Repo, d undoData) error {
+	list, err := repo.ListWorktrees(ctx)
+	if err != nil {
+		return fmt.Errorf("worktree undo: list worktrees: %w", err)
+	}
+	if len(list) == 0 || !list[0].Main || !gitx.SamePath(list[0].Path, repo.Dir) {
+		return fmt.Errorf("worktree undo: refusing %s: the recorded repository is not the main worktree of a repository", d.repo)
+	}
+	if covers(gitx.NormalizePath(repo.Common), d.path) {
+		return fmt.Errorf("undo: refusing to restore to %s: inside the repository's git directory", d.path)
+	}
+	return nil
 }
 
 // Undo implements Action. Clean removals are re-added from the recorded
@@ -70,6 +105,9 @@ func (removeWorktree) Undo(ctx context.Context, env *Env, e session.Entry) error
 	repo, err := openRepoDir(ctx, env, d.repo)
 	if err != nil {
 		return fmt.Errorf("worktree undo: %w", err)
+	}
+	if err := checkUndoRepo(ctx, repo, d); err != nil {
+		return err
 	}
 	if e.Trash != nil {
 		return undoTrashed(ctx, env, repo, *e.Trash, d)

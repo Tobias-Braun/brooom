@@ -16,6 +16,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 // metaUserDataRisk is the finding Meta key the large-untracked detector uses
@@ -147,6 +148,19 @@ func openFilesFor(ctx context.Context, path string) (map[string]bool, error) {
 	return openFilesFn(ctx, []string{path})
 }
 
+// repoLookupStart is where the repository lookup for a target begins: the
+// target itself when it is a real directory, otherwise its parent. The
+// classification is walk.IsDirNoFollow, so a symlink, and on Windows a
+// junction or other name-surrogate reparse point, counts as a file (the
+// entry that is removed) exactly as walk and the trashers see it, instead of
+// being looked through into whatever it points to.
+func repoLookupStart(path string) string {
+	if walk.IsDirNoFollow(path) {
+		return path
+	}
+	return filepath.Dir(path)
+}
+
 // checkTracked reports whether the target holds files tracked by git. It
 // returns true when tracked files were found (or could not be ruled out) and
 // --force allows going on; without force those cases are skips. Targets
@@ -156,7 +170,7 @@ func checkTracked(ctx context.Context, env *Env, path string) (bool, error) {
 	if ans, ok := trackedBatchFrom(ctx).lookup(path); ok {
 		return trackedVerdict(ctx, env, ans)
 	}
-	root, err := scope.FindRepoRoot(trackedStart(path))
+	root, err := scope.FindRepoRoot(repoLookupStart(path))
 	if errors.Is(err, scope.ErrNotInRepo) {
 		return false, nil
 	}
@@ -171,15 +185,6 @@ func checkTracked(ctx context.Context, env *Env, path string) (bool, error) {
 		tracked: strings.Trim(out, "\x00 \n") != "",
 		err:     err,
 	})
-}
-
-// trackedStart is where the repository lookup for a target begins: the
-// directory itself, or the parent of a file or symlink.
-func trackedStart(path string) string {
-	if fi, err := os.Lstat(path); err != nil || !fi.IsDir() {
-		return filepath.Dir(path)
-	}
-	return path
 }
 
 // trackedVerdict applies the policy to a (batched or single) answer: errors
@@ -252,11 +257,7 @@ func planStrategy(ctx context.Context, env *Env, f findings.Finding, path string
 // files are recoverable from history; anything else may be the only copy.
 func proveNoUntracked(ctx context.Context, env *Env, path string) error {
 	const refuse = "refusing to permanently delete %s; use --trash-strategy trash or quarantine"
-	start := path
-	if fi, err := os.Lstat(path); err != nil || !fi.IsDir() {
-		start = filepath.Dir(path)
-	}
-	root, err := scope.FindRepoRoot(start)
+	root, err := scope.FindRepoRoot(repoLookupStart(path))
 	if err != nil || env.Git == nil {
 		return skipf(refuse, "a path outside a git repository (cannot show that it holds no untracked files)")
 	}

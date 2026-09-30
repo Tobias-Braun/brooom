@@ -311,6 +311,7 @@ func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planS
 	}
 	res.SessionID = id
 	res.UndoFlags = e.opts.UndoFlags
+	e.env.plannedDeletes = plannedBranchDeletes(items)
 	rs := &runState{e: e, m: m, res: res}
 	// The live tracked-files check of the re-plan and of Apply is answered
 	// once per repository for the whole run (taken now, after confirmation)
@@ -433,7 +434,10 @@ func (rs *runState) record(en session.Entry) error {
 	default:
 		rs.res.Applied++
 	}
-	if err := rs.e.opts.Store.Save(rs.m); err != nil {
+	// Only the new entry is appended (fsynced) to the session journal; the
+	// full manifest is rewritten once at Finish. Rewriting it here made large
+	// runs quadratic in I/O.
+	if err := rs.e.opts.Store.AppendEntry(rs.m.ID, len(rs.m.Entries)-1, en); err != nil {
 		if en.RecoveryHint != "" {
 			fmt.Fprintf(rs.e.opts.IO.Err, "recovery hint for %s: %s\n", entryLabel(en.Path, en.Ref), output.Sanitize(en.RecoveryHint))
 		}
@@ -465,4 +469,17 @@ func (e *Executor) warnBeforeDelete(plan *Plan) {
 			return
 		}
 	}
+}
+
+// plannedBranchDeletes collects the delete-branch steps of a run, so hints can
+// tell which refs are going away in the same session.
+func plannedBranchDeletes(items []Item) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, it := range items {
+		f := it.Step.Finding
+		if f.SuggestedAction.Type == findings.ActionDeleteBranch {
+			out[plannedKey(f.Path, "refs/heads/"+f.Ref)] = struct{}{}
+		}
+	}
+	return out
 }

@@ -236,7 +236,7 @@ func TestQuietOutputIsExact(t *testing.T) {
 	wantApply := "summary: 2 applied, 0 skipped, 0 failed\n" +
 		"recovery hints:\n" +
 		"  <repo> (feat/merged): run inside the repository: git branch feat/merged <sha>. " +
-		"The commits are still reachable from feat/squash, so git gc will not prune them.\n" +
+		"The commits are still reachable from main, so git gc will not prune them.\n" +
 		"  <repo> (feat/squash): run inside the repository: git branch feat/squash <sha>. " +
 		"The commits are still reachable from origin/feat/squash, so git gc will not prune them.\n" +
 		"undo: brooom undo <session>\n"

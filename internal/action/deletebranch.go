@@ -50,6 +50,8 @@ type decision struct {
 	repo *gitx.Repo
 	cfg  *config.Config
 	name string
+	// path is the finding's repository path, the key of Env.plannedDeletes.
+	path string
 	tip  string
 	flag string
 	// why says what justified the flag, for the step description.
@@ -66,6 +68,10 @@ type mergeFact struct {
 	// heuristic is true when only the patch-id detection (squash or rebase)
 	// found the merge; ancestry is a fact, patch-id equality is a guess.
 	heuristic bool
+	// unpushed is true when the merge exists only in a local base that no
+	// remote has (see gitx.Base.Unpushed); such a merge proves nothing about
+	// the remote, so it needs the same remote containment as a heuristic one.
+	unpushed bool
 }
 
 // command is the exact git invocation for display.
@@ -130,15 +136,27 @@ func (deleteBranch) Apply(ctx context.Context, env *Env, s Step) (session.Entry,
 // reachableFrom names a branch, remote-tracking branch or tag that still
 // holds the deleted tip, or "" when none does or git cannot say (unknown is
 // treated as unreachable, so the warning is only ever dropped on evidence).
-// Stash refs are not consulted: a stash descends from a commit without being
-// a reason to consider it kept.
+// Local branches that this run is going to delete as well (Env.plannedDeletes)
+// do not count: x2 built on x1 keeps x1's commits only until x2 is deleted
+// too, and a hint saying otherwise would mislead. Stash refs are not
+// consulted: a stash descends from a commit without being a reason to consider
+// it kept.
 func (d decision) reachableFrom(ctx context.Context, env *Env, sha string) string {
-	out, err := env.Git.Run(ctx, d.repo.Dir, "for-each-ref", "--count=1", "--contains", sha,
-		"--format=%(refname:short)", "refs/heads", "refs/remotes", "refs/tags")
+	out, err := env.Git.Run(ctx, d.repo.Dir, "for-each-ref", "--contains", sha,
+		"--format=%(refname)%09%(refname:short)", "refs/heads", "refs/remotes", "refs/tags")
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(out)
+	for _, line := range strings.Split(out, "\n") {
+		full, short, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if !ok {
+			continue
+		}
+		if _, planned := env.plannedDeletes[plannedKey(d.path, full)]; !planned {
+			return short
+		}
+	}
+	return ""
 }
 
 func failedBranch(en session.Entry, err error) (session.Entry, error) {
@@ -313,7 +331,7 @@ func evaluate(ctx context.Context, env *Env, f findings.Finding) (decision, erro
 	if err != nil {
 		return decision{}, err
 	}
-	d := decision{repo: repo, cfg: cfg, name: f.Ref}
+	d := decision{repo: repo, cfg: cfg, name: f.Ref, path: f.Path}
 	b, err := d.checkBranch(ctx, f)
 	if err != nil {
 		return decision{}, err
@@ -336,19 +354,11 @@ func checkFinding(f findings.Finding) error {
 	return staticNameCheck(f.Ref)
 }
 
-// staticNameCheck refuses names that are dangerous before git is even asked:
-// a leading dash (option injection), a refs/ prefix (would address another
-// namespace) and revision syntax such as @{-1}.
+// staticNameCheck skips names that are dangerous before git is even asked. The
+// rules live in gitx.RefusedBranchName so the detectors apply the same ones.
 func staticNameCheck(name string) error {
-	switch {
-	case strings.HasPrefix(name, "-"):
-		return skipf("invalid branch name %q: starts with '-'", name)
-	case strings.HasPrefix(name, "refs/"):
-		return skipf("invalid branch name %q: must not start with refs/", name)
-	case strings.Contains(name, "@{"), name == "@", name == "HEAD":
-		return skipf("invalid branch name %q", name)
-	case strings.ContainsAny(name, "\x00\n"):
-		return skipf("invalid branch name: contains control characters")
+	if reason := gitx.RefusedBranchName(name); reason != "" {
+		return skipf("%s", reason)
 	}
 	return nil
 }
@@ -463,10 +473,11 @@ func (d *decision) recheckFlags(ctx context.Context, env *Env) error {
 // Safety policy (pinned by tests, see ARCHITECTURE.md): every justification
 // for -D is re-derived here from the repository, never from the finding. A
 // merge found only by the patch-id heuristic (squash, rebase) justifies -D
-// solely when every commit of the branch is also on a remote; a squash-merged
+// solely when every commit of the branch is also on a remote (the same holds
+// for a merge into a local base no remote has); a squash-merged
 // branch whose commits exist on no remote needs --force, because the heuristic
 // can be wrong and a wrong guess would leave the work only as unreachable
-// objects. The gate is live (UnpushedCount) and not keyed on the detector name
+// objects. The gate is live (ContainedInRemotes) and not keyed on the detector name
 // or the finding's "verified" claim, which a findings file can edit.
 func (d *decision) chooseFlag(ctx context.Context, env *Env, b gitx.Branch, f findings.Finding) error {
 	if target, ok := d.gitAccepts(ctx, b); ok {
@@ -486,19 +497,24 @@ func (d *decision) chooseFlag(ctx context.Context, env *Env, b gitx.Branch, f fi
 }
 
 // refusal is the skip for a branch that no verified fact justifies deleting.
-// A branch only the patch-id heuristic calls merged says so and quotes how
-// many commits would be lost; the sentence uses semicolons only, because the
+// A branch only the patch-id heuristic (or a merge into an unpushed local base)
+// calls merged says so and quotes how many commits would be lost; the sentence uses semicolons only, because the
 // count phrase may already carry a parenthesis.
 func (d *decision) refusal(ctx context.Context) error {
-	if m := d.mergedFact(ctx); !m.ok || !m.heuristic {
+	m := d.mergedFact(ctx)
+	if !m.ok || (!m.heuristic && !m.unpushed) {
 		return skipf("not fully merged; re-run with --force to delete with -D")
+	}
+	found := "the merge is only detected by the patch-id heuristic"
+	if !m.heuristic {
+		found = "the merge exists only in a local base that no remote has"
 	}
 	phrase := "its commits are on no remote"
 	if n, err := d.repo.UniqueCount(ctx, d.name); err == nil {
 		phrase = gitx.OnlyOnBranchPhrase(n)
 	}
-	return skipf("not fully merged; %s; the merge is only detected by the patch-id heuristic and "+
-		"no remote has the commits; re-run with --force to delete with -D", phrase)
+	return skipf("not fully merged; %s; %s and no remote has the commits; "+
+		"re-run with --force to delete with -D", phrase, found)
 }
 
 // gitAccepts predicts git's own merge check for -d: the tip must be reachable
@@ -524,7 +540,7 @@ func (d *decision) gitAccepts(ctx context.Context, b gitx.Branch) (string, bool)
 // taken from the finding. Errors mean unknown, never verified.
 func (d *decision) verifiedWhy(ctx context.Context) (string, bool) {
 	m := d.mergedFact(ctx)
-	if m.ok && !m.heuristic {
+	if m.ok && !m.heuristic && !m.unpushed {
 		return m.why, true
 	}
 	ok, err := d.repo.ContainedInRemotes(ctx, "refs/heads/"+d.name)
@@ -537,35 +553,34 @@ func (d *decision) verifiedWhy(ctx context.Context) (string, bool) {
 	return "all commits contained in remote-tracking branches, re-verified", true
 }
 
-// mergedFact derives from the repository whether the tip is merged into the
-// resolved base: by ancestry, or by the patch-id based squash/rebase
+// mergedFact derives from the repository whether the tip is merged into a
+// base candidate: by ancestry, or by the patch-id based squash/rebase
 // detection. It is computed once per decision.
 func (d *decision) mergedFact(ctx context.Context) mergeFact {
 	if d.merge == nil {
 		d.merge = &mergeFact{}
-		if base, err := d.repo.DefaultBase(ctx, d.cfg.Git.BaseBranches); err == nil {
-			d.merge.why, d.merge.ok = d.mergedWhy(ctx, base)
-			d.merge.heuristic = d.merge.ok && isHeuristic(d.merge.why)
+		if bases, err := d.repo.BaseCandidates(ctx, d.cfg.Git.BaseBranches); err == nil {
+			*d.merge = d.mergedWhy(ctx, bases)
 		}
 	}
 	return *d.merge
 }
 
-// mergedWhy checks ancestry of the tip in the base, then the squash/rebase
-// detection.
-func (d *decision) mergedWhy(ctx context.Context, base gitx.Base) (string, bool) {
-	if ok, err := d.repo.IsAncestor(ctx, d.tip, base.FullRef); err == nil && ok {
-		return "merged into " + base.Ref, true
-	}
-	res, err := d.repo.MergedInto(ctx, base.FullRef, "refs/heads/"+d.name, true)
+// mergedWhy checks ancestry of the tip in every base candidate, then the
+// squash/rebase detection, and words the first match.
+func (d *decision) mergedWhy(ctx context.Context, bases []gitx.Base) mergeFact {
+	base, res, err := d.repo.MergedIntoAny(ctx, bases, "refs/heads/"+d.name, true)
 	if err != nil || !res.Merged {
-		return "", false
+		return mergeFact{}
 	}
-	return res.Method + "-merged into " + base.Ref + ", re-verified", true
+	m := mergeFact{ok: true, unpushed: base.Unpushed, heuristic: res.Method != gitx.MethodAncestor}
+	if m.heuristic {
+		m.why = res.Method + "-merged into " + base.Display() + ", re-verified"
+	} else {
+		m.why = "merged into " + base.Display()
+	}
+	return m
 }
-
-// isHeuristic tells the patch-id based descriptions from ancestry.
-func isHeuristic(why string) bool { return !strings.HasPrefix(why, "merged into ") }
 
 // Undo recreates the branch at the recorded tip. It never overwrites: an
 // existing branch at the same commit counts as done, one elsewhere is an
@@ -694,8 +709,39 @@ func restoreBranch(ctx context.Context, env *Env, dir, name, sha string, up upst
 	if !errors.As(err, &gerr) || gerr.ExitCode != 1 {
 		return fmt.Errorf("undo delete-branch: look up branch %s: %w", name, err)
 	}
+	if err := checkRefCollision(ctx, env, dir, name, full); err != nil {
+		return err
+	}
 	if _, err := env.Git.Run(ctx, dir, "branch", "--", name, full); err != nil {
+		// A branch created between the check above and git branch is the same
+		// conflict; only a failure that is no collision stays an error.
+		if cerr := checkRefCollision(ctx, env, dir, name, full); cerr != nil {
+			return cerr
+		}
 		return fmt.Errorf("undo delete-branch: recreate %s: %w", name, err)
 	}
 	return restoreUpstream(ctx, env, dir, name, up)
+}
+
+// checkRefCollision reports the file/directory clash of ref names as a
+// conflict: git stores refs/heads/<name> as a file, so it cannot coexist with a
+// branch named like a proper prefix of it (a/b needs a to be a directory) or
+// with branches below it (feat needs feat/ not to exist). Creating the branch
+// would fail with git's "cannot lock ref" error, which is not a conflict as far
+// as callers can tell. The hint names a free alternative that keeps the commit.
+func checkRefCollision(ctx context.Context, env *Env, dir, name, sha string) error {
+	hint := fmt.Sprintf("restore it under another name with: git branch %s %s",
+		findings.Quote(name+"-restored"), sha)
+	parts := strings.Split(name, "/")
+	for i := 1; i < len(parts); i++ {
+		prefix := strings.Join(parts[:i], "/")
+		if _, err := env.Git.Run(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+prefix); err == nil {
+			return &undoConflictError{fmt.Sprintf("branch %s exists, so %s cannot be created; %s", prefix, name, hint)}
+		}
+	}
+	out, err := env.Git.Run(ctx, dir, "for-each-ref", "--count=1", "--format=%(refname:short)", "refs/heads/"+name+"/")
+	if err == nil && strings.TrimSpace(out) != "" {
+		return &undoConflictError{fmt.Sprintf("branch %s exists, so %s cannot be created; %s", strings.TrimSpace(out), name, hint)}
+	}
+	return nil
 }

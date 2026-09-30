@@ -247,7 +247,7 @@ reason at the first failure:
 
 Windows specifics: `Guard.ResolveParent` canonicalises the final element with
 `GetLongPathName` (8.3 aliases such as `GIT~1` become `.git`), and step 2 ends
-with `RefuseByIdentity`, which compares file identity (`os.SameFile`) of the
+with `RefuseByIdentity`, which compares file identity (`identityOf`) of the
 path and its ancestors with `.git`, the Brooom home, the user's home and the
 sessions/quarantine dirs; `brooom clean --from` vetting runs it too. Step 3
 treats reparse-point directories that are not name surrogates (OneDrive,
@@ -325,15 +325,33 @@ as merged". Remote containment alone still justifies `-D` (nothing is lost).
 The refusal text is joined with semicolons only, since the commit-count phrase
 can already carry a parenthesis.
 
-Known limitation (deferred from #88, plan item 4): a local branch whose name
-collides with a tag or a remote-tracking name (for example a local branch
-called `origin/main`) is handled safely (detectors and actions address refs
-fully qualified) but is not reported as an informational finding yet. Before deleting,
-`branch.<name>.remote/merge` are recorded in `Entry.Undo`
+Before deleting, `branch.<name>.remote/merge` are recorded in `Entry.Undo`
 (`upstream_remote`, `upstream_merge`). Undo validates them (name shape, git's
 `check-ref-format`), and only when it created the branch restores them with
 `git branch --set-upstream-to` if the remote-tracking ref exists, else by
 writing the two config keys.
+
+Known limitation (deferred from #88, plan item 4): a local branch whose name
+collides with a tag or a remote-tracking name (for example a local branch
+called `origin/main`) is handled safely (detectors and actions address refs
+fully qualified) but is not reported as an informational finding yet.
+
+Base candidates (#204): `gitx.DefaultBase` still names the one primary base
+(origin/HEAD, then origin/<name> before local <name>), and it stays the
+default for safety decisions because a stale local main misses merges. Merge
+detection, however, asks `gitx.BaseCandidates` / `MergedIntoAny`: a tip merged
+into any existing candidate counts, ancestry against every candidate before any
+patch-id guess. A match in a local candidate that ranks behind a remote primary
+is marked `Base.Unpushed` and reported as "local main (not pushed)"; it is not
+remote-verified, so `-D` still needs `ContainedInRemotes` exactly like a
+heuristic merge.
+
+Names the action refuses (`gitx.RefusedBranchName`) are checked by merged-branch
+and stale-branch too: such findings are not actionable and carry a quoted
+`git update-ref -d refs/heads/<name>` hint. The recovery hint stored with a
+deletion ignores branches that the same session deletes as well
+(`Env.plannedDeletes`), and undo reports a ref hierarchy clash (`feat` versus
+`feat/child`) as a conflict with a `git branch <name>-restored <sha>` hint.
 
 Dubious ownership: `gitx.Open` returns `ErrNotRepo` only for git's "not a git
 repository"; a repository git refuses because another user owns it is an
@@ -629,6 +647,16 @@ and `reclaimed_bytes` (sum of `size_bytes` of `applied` entries only; call
 
 `Store.Save` writes atomically (temp file in the same dir, fsync, rename), so
 a crash never leaves a half-written manifest; `*.tmp` files are ignored.
+During a run the executor saves the snapshot once at the start and appends
+one fsynced JSON line per entry to `<id>.journal` (`Store.AppendEntry`), so the
+I/O of an apply is linear instead of rewriting the whole manifest per entry;
+`Finish` saves the full snapshot, which removes the journal. `Load`/`List`
+replay the journal on top of the snapshot (idempotent by entry index, a torn
+last line is ignored). A manifest whose `id` differs from its file name
+(`X.backup.json` holding id `X`) is refused, `List` reports it as a problem.
+The quarantine manifest works the same way: `manifest.json` is written once and
+`manifest.journal` gets one item line per `Remove`; the parsed manifest is
+cached per trasher and `Restore` folds the journal into a rewritten manifest.
 `Load` takes a full id or unique prefix (`ErrNotFound`, `ErrAmbiguous`; ids
 with separators or `..` are refused). `List` returns manifests newest first
 plus `[]Problem` for unreadable, corrupt or unsupported-version files, so one

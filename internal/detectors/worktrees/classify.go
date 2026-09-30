@@ -152,13 +152,14 @@ func (s *scan) mergedRule(ctx context.Context, e *entry) (verdict, bool, error) 
 	if e.wt.Detached || b == "" || !s.hasBase || gitx.IsBaseBranch(s.base, s.cfg.Git.BaseBranches, b) {
 		return verdict{}, false, nil
 	}
-	res, err := s.repo.MergedInto(ctx, s.base.FullRef, e.wt.BranchRef, s.squash)
+	base, res, err := s.repo.MergedIntoAny(ctx, s.bases, e.wt.BranchRef, s.squash)
 	if err != nil || !res.Merged {
 		return verdict{}, false, ctxErr(ctx)
 	}
-	ev := findings.Evidence{Code: evMerged, Message: fmt.Sprintf("branch %s is merged into %s", b, s.base.Ref), Value: s.base.Ref}
+	into := base.Display()
+	ev := findings.Evidence{Code: evMerged, Message: fmt.Sprintf("branch %s is merged into %s", b, into), Value: into}
 	if res.Method != gitx.MethodAncestor {
-		ev = findings.Evidence{Code: evSquashMerged, Message: fmt.Sprintf("branch %s was squash- or rebase-merged into %s", b, s.base.Ref), Value: s.base.Ref}
+		ev = findings.Evidence{Code: evSquashMerged, Message: fmt.Sprintf("branch %s was squash- or rebase-merged into %s", b, into), Value: into}
 	}
 	return s.removeVerdict(findings.ConfidenceHigh, "branch is merged; removing the worktree keeps the branch and its commits", ev), true, nil
 }
@@ -187,13 +188,15 @@ func (s *scan) detachedRule(ctx context.Context, e *entry) (verdict, bool, error
 // when none does (or when that is unknown).
 func (s *scan) containedIn(ctx context.Context, sha string) (string, error) {
 	if s.hasBase {
-		ok, err := s.repo.IsAncestor(ctx, sha, s.base.FullRef)
-		if err != nil {
-			if cerr := ctxErr(ctx); cerr != nil {
-				return "", cerr
+		for _, base := range s.bases {
+			ok, err := s.repo.IsAncestor(ctx, sha, base.FullRef)
+			if err != nil {
+				if cerr := ctxErr(ctx); cerr != nil {
+					return "", cerr
+				}
+			} else if ok {
+				return base.Display(), nil
 			}
-		} else if ok {
-			return s.base.Ref, nil
 		}
 	}
 	all, err := s.repo.ContainedInRemotes(ctx, sha)

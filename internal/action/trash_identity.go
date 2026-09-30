@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"path/filepath"
 	"syscall"
+
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 // isSameEntry reports whether a and b name the same file system object. The
@@ -44,6 +46,36 @@ func ancestorsOf(path string) []string {
 	return out
 }
 
+// refuseVCSAlias refuses a when it is the same object as a VCS metadata entry
+// (".git", ".hg", ".jj", ".svn") next to it. When the comparison only reports
+// "same" because an entry could not be inspected (isSameEntry fails closed),
+// the message names that cause instead of claiming an alias.
+func refuseVCSAlias(a string) error {
+	dir := filepath.Dir(a)
+	for _, name := range walk.VCSNames() {
+		sibling := filepath.Join(dir, name)
+		if !isSameEntry(a, sibling) {
+			continue
+		}
+		if err := inspectError(a, sibling); err != nil {
+			return skipf("refusing to remove %s: cannot tell whether it is an alias of %s: %v", a, name, err)
+		}
+		return skipf("refusing to remove %s or anything inside it (%s is an alias of it)", name, filepath.Base(a))
+	}
+	return nil
+}
+
+// inspectError returns the first failure other than "not there" reading the
+// identity of the paths, or nil when all could be read or are absent.
+func inspectError(paths ...string) error {
+	for _, p := range paths {
+		if _, err := identityOf(p, false); err != nil && !isAbsent(err) {
+			return err
+		}
+	}
+	return nil
+}
+
 // RefuseByIdentity is the spelling-independent half of the static trash
 // refusals. The lexical checks of refuseTarget compare path strings, which an
 // alias defeats: on Windows "C:\repo\GIT~1" is the repository's ".git" and
@@ -63,8 +95,8 @@ func RefuseByIdentity(path string) error {
 		if isGitName(filepath.Base(a)) {
 			continue // the lexical check already handles the real name
 		}
-		if isSameEntry(a, filepath.Join(filepath.Dir(a), ".git")) {
-			return skipf("refusing to remove .git or anything inside it (%s is an alias of it)", filepath.Base(a))
+		if err := refuseVCSAlias(a); err != nil {
+			return err
 		}
 	}
 	for p, why := range protectedPaths() {

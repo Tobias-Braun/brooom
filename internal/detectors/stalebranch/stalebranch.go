@@ -54,12 +54,14 @@ func (*Detector) Category() detect.Category { return detect.CategoryGit }
 
 // scan carries the per-target state shared by all branches of one repository.
 type scan struct {
-	env     *detect.Env
-	cfg     *config.Config
-	repo    *gitx.Repo
-	path    string
-	scope   findings.Scope
-	base    gitx.Base
+	env   *detect.Env
+	cfg   *config.Config
+	repo  *gitx.Repo
+	path  string
+	scope findings.Scope
+	base  gitx.Base
+	// bases lists every candidate a merge counts against, base first.
+	bases   []gitx.Base
 	hasBase bool
 	pr      gitx.PRInfo
 	prCheck string
@@ -143,9 +145,9 @@ func (d *Detector) newScan(ctx context.Context, env *detect.Env, target scope.Ta
 	s := &scan{env: env, cfg: cfg, repo: repo, path: path, scope: target.Scope, prCheck: prCheckDisabled}
 	// A repository without a resolvable base is still scanned: nothing is
 	// merged then, so only the merged check is skipped.
-	switch base, err := repo.DefaultBase(ctx, cfg.Git.BaseBranches); {
+	switch bases, err := repo.BaseCandidates(ctx, cfg.Git.BaseBranches); {
 	case err == nil:
-		s.base, s.hasBase = base, true
+		s.base, s.bases, s.hasBase = bases[0], bases, true
 	case !errors.Is(err, gitx.ErrNoBase):
 		return nil, fmt.Errorf("stale-branch: base branch of %s: %w", path, err)
 	}
@@ -212,7 +214,7 @@ func (s *scan) mergedSkip(ctx context.Context, name string) (skip bool, failure 
 		return false, nil
 	}
 	squash := s.cfg.Detectors.MergedBranch.Mode == config.MergeAncestorSquash
-	res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/heads/"+name, squash)
+	_, res, err := s.repo.MergedIntoAny(ctx, s.bases, "refs/heads/"+name, squash)
 	if err != nil {
 		if ctx.Err() == nil {
 			return false, err

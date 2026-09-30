@@ -201,40 +201,53 @@ func restoreForbiddenDirs() []string {
 // refuseRestoreTarget applies the static refusals that matter for writing:
 // a restore destination must never be git metadata or Brooom's own session or
 // quarantine data, since a forged manifest could otherwise plant hooks or
-// rewrite the undo information itself. The check is lexical first and then
-// identity based (os.SameFile on every existing ancestor), because a name
+// rewrite the undo information itself. It guards every undo that writes
+// (trash and remove-worktree). The check is lexical first and then
+// identity based (identityOf on every existing ancestor), because a name
 // comparison alone misses aliases such as Windows 8.3 short names and
 // symlinks. Known limit: identity is compared per ancestor of dest, so a bind
-// mount or hard link of .git (or of a state directory) that is reached under
-// a different parent is only caught when the aliased directory itself is an
-// ancestor of dest or has a sibling ".git" entry; the scope guard's allowed
-// roots remain the defence for everything else. The error is not a skip: a
-// manifest asking for this is corrupt or forged.
+// mount or hard link of a VCS directory (or of a state directory) that is
+// reached under a different parent is only caught when the aliased directory
+// itself is an ancestor of dest or has a sibling VCS entry; the scope guard's
+// allowed roots remain the defence for everything else. The error is not a
+// skip: a manifest asking for this is corrupt or forged.
 func refuseRestoreTarget(dest string) error {
 	if insideVCSDir(dest) {
-		return fmt.Errorf("trash undo: refusing to restore to %s: inside VCS metadata (.git, .hg, .jj, .svn)", dest)
+		return fmt.Errorf("undo: refusing to restore to %s: inside VCS metadata (.git, .hg, .jj, .svn)", dest)
 	}
 	for _, p := range restoreForbiddenDirs() {
 		if covers(p, dest) {
-			return fmt.Errorf("trash undo: refusing to restore to %s: inside Brooom's own data (home, sessions or quarantine)", dest)
+			return refuseInsideBrooom(dest)
 		}
 	}
 	return refuseRestoreByIdentity(dest)
 }
 
+// refuseInsideBrooom is the refusal for a destination in Brooom's own data.
+func refuseInsideBrooom(dest string) error {
+	return fmt.Errorf("undo: refusing to restore to %s: inside Brooom's own data (home, sessions or quarantine)", dest)
+}
+
 // refuseRestoreByIdentity walks the existing ancestors of dest and compares
-// each with the Brooom state directories and with its sibling ".git" entry by
-// file identity. Missing path elements are skipped: they cannot alias
-// anything yet.
+// each with the Brooom state directories and with its sibling VCS entries by
+// file identity (identityOf: volume and file index on Windows, device and
+// inode elsewhere). Path elements that do not exist are skipped: they cannot
+// alias anything yet. Any other failure (access denied, an I/O error, a
+// delete-pending entry on Windows) means identity is unknown and refuses,
+// like isSameEntry does for removals.
 func refuseRestoreByIdentity(dest string) error {
 	var state []fileID
 	for _, p := range restoreForbiddenDirs() {
-		if id, err := identityOf(p, true); err == nil {
+		id, err := identityOf(p, true)
+		switch {
+		case err == nil:
 			state = append(state, id)
+		case !isAbsent(err):
+			return refuseUninspectable(dest, p, err)
 		}
 	}
 	for cur := dest; ; cur = filepath.Dir(cur) {
-		if err := refuseAncestorIdentity(dest, cur, state); err != nil {
+		if err := refuseAncestor(dest, cur, state); err != nil {
 			return err
 		}
 		if isVolumeRoot(cur) {
@@ -243,39 +256,36 @@ func refuseRestoreByIdentity(dest string) error {
 	}
 }
 
-// refuseAncestorIdentity compares one existing ancestor of dest with the
-// state directories and its sibling ".git". An ancestor whose identity cannot
-// be read although it exists is unknown and refuses, as everywhere else; a
-// missing ancestor cannot alias anything yet.
-func refuseAncestorIdentity(dest, cur string, state []fileID) error {
-	if !statable(cur) {
-		return nil
-	}
+// refuseUninspectable is the fail-closed refusal for an unreadable path.
+func refuseUninspectable(dest, probed string, err error) error {
+	return fmt.Errorf("undo: refusing to restore to %s: cannot inspect %s to rule out git metadata or Brooom data: %w", dest, probed, err)
+}
+
+// refuseAncestor checks one ancestor cur of dest against the state
+// directories and its sibling VCS entries. Symlinks are followed on purpose:
+// an alias must resolve to the object it names.
+func refuseAncestor(dest, cur string, state []fileID) error {
 	id, err := identityOf(cur, true)
 	if err != nil {
 		if isAbsent(err) {
 			return nil
 		}
-		return fmt.Errorf("trash undo: refusing to restore to %s: cannot read the identity of %s", dest, cur)
+		return refuseUninspectable(dest, cur, err)
 	}
 	for _, s := range state {
 		if id.sameAs(s) {
-			return fmt.Errorf("trash undo: refusing to restore to %s: inside Brooom's own data (home, sessions or quarantine)", dest)
+			return refuseInsideBrooom(dest)
 		}
 	}
-	gitPath := filepath.Join(filepath.Dir(cur), ".git")
-	if !statable(gitPath) {
-		return nil
-	}
-	if g, err := identityOf(gitPath, true); err != nil || id.sameAs(g) {
-		return fmt.Errorf("trash undo: refusing to restore to %s: inside .git", dest)
+	for _, name := range walk.VCSNames() {
+		sibling := filepath.Join(filepath.Dir(cur), name)
+		g, err := identityOf(sibling, true)
+		switch {
+		case err == nil && id.sameAs(g):
+			return fmt.Errorf("undo: refusing to restore to %s: inside %s (%s is an alias of it)", dest, name, filepath.Base(cur))
+		case err != nil && !isAbsent(err):
+			return refuseUninspectable(dest, sibling, err)
+		}
 	}
 	return nil
-}
-
-// statable reports whether path exists and can be stat'ed. Callers use it to
-// skip missing path elements, which cannot alias anything yet.
-func statable(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
