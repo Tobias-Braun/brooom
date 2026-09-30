@@ -152,12 +152,13 @@ try {
   $dirI = Join-Path $work 'install-iex'
   $probe = @"
 `$ErrorActionPreference = 'Continue'; `$ProgressPreference = 'Continue'
+`$vars = `$null; `$leaks = `$null
 `$vars = @(Get-Variable | ForEach-Object Name)
 Get-Content -Raw '$installer' | Invoke-Expression
 `$leaks = @()
 if (`$ErrorActionPreference -ne 'Continue') { `$leaks += 'ErrorActionPreference' }
 if (`$ProgressPreference -ne 'Continue') { `$leaks += 'ProgressPreference' }
-`$leaks += @(Get-Variable | ForEach-Object Name | Where-Object { `$vars -notcontains `$_ -and `$_ -ne 'leaks' })
+`$leaks += @(Get-Variable | ForEach-Object Name | Where-Object { `$vars -notcontains `$_ -and @('_', '?', 'args', 'input', 'PSItem') -notcontains `$_ })
 if (Get-Command Get-Arch, Get-LatestTag, Install-Binary -ErrorAction SilentlyContinue) { `$leaks += 'functions' }
 if (`$leaks) { Write-Host ('LEAK: ' + (`$leaks -join ',')); exit 3 }
 "@

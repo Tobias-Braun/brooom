@@ -6,14 +6,15 @@ Installs the latest or a chosen Brooom release.
   irm https://raw.githubusercontent.com/Tobias-Braun/brooom/main/scripts/install.ps1 | iex
 
 Environment: BROOOM_VERSION, BROOOM_INSTALL_DIR, BROOOM_DOWNLOAD_BASE,
-BROOOM_ADD_TO_PATH=1 (same as -AddToPath), BROOOM_LATEST_URL (see scripts/install.sh; here it is a URL answering with the
-GitHub releases/latest JSON, of which only tag_name is read). Resolving the
-latest release calls the GitHub API, which allows 60 unauthenticated requests
-per hour and IP; set GITHUB_TOKEN to authenticate (sent only to the default
-GitHub API URL) or pin BROOOM_VERSION. The zip name must match
-archives.name_template in .goreleaser.yaml. The checksum is verified before
-anything is extracted. The user PATH is only changed with -AddToPath or BROOOM_ADD_TO_PATH=1. With
-iex there is no way to pass a switch, so use:
+BROOOM_ADD_TO_PATH=1 (same as -AddToPath), BROOOM_LATEST_URL (see
+scripts/install.sh; here it is a URL answering with the GitHub releases/latest
+JSON, of which only tag_name is read). Resolving the latest release calls the
+GitHub API, which allows 60 unauthenticated requests per hour and IP; set
+GITHUB_TOKEN to authenticate (sent only to the default GitHub API URL) or pin
+BROOOM_VERSION. The zip name must match archives.name_template in
+.goreleaser.yaml. The checksum is verified before anything is extracted. The
+user PATH is only changed with -AddToPath or BROOOM_ADD_TO_PATH=1. With iex
+there is no way to pass a switch, so use:
   & ([scriptblock]::Create((irm <url>))) -AddToPath
 
 The whole script runs in a child scope so that neither its preferences nor its
@@ -72,22 +73,33 @@ variables and functions leak into the session that ran it through iex.
   # next run, or right away when nothing holds it) and put back if the copy fails.
   function Install-Binary([string]$source, [string]$target) {
     $old = "$target.old"
-    if (Test-Path $old) { Remove-Item -Force $old -ErrorAction SilentlyContinue }
-    $hadOld = Test-Path $target
+    # -LiteralPath everywhere: an install dir containing [ or ] is not a wildcard.
+    if (Test-Path -LiteralPath $old) {
+      Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+      # A stale .old that is still locked would block the rename below.
+      if (Test-Path -LiteralPath $old) {
+        throw "Cannot remove the leftover $old (it is still in use); close any process using it, delete it and run the installer again"
+      }
+    }
+    $hadOld = Test-Path -LiteralPath $target
     if ($hadOld) {
       try {
-        Move-Item -Path $target -Destination $old -Force
+        Move-Item -LiteralPath $target -Destination $old -Force
       } catch {
         throw "Cannot replace $target ($($_.Exception.Message)); close any running brooom and run the installer again"
       }
     }
     try {
-      Copy-Item -Path $source -Destination $target -Force
+      Copy-Item -LiteralPath $source -Destination $target -Force
     } catch {
-      if ($hadOld -and -not (Test-Path $target)) { Move-Item -Path $old -Destination $target -Force -ErrorAction SilentlyContinue }
+      if ($hadOld) {
+        # A failed copy can leave a partial file; drop it so the old binary can be restored.
+        Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+        Move-Item -LiteralPath $old -Destination $target -Force -ErrorAction SilentlyContinue
+      }
       throw
     }
-    if ($hadOld) { Remove-Item -Force $old -ErrorAction SilentlyContinue }
+    if ($hadOld) { Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue }
   }
 
   $arch = Get-Arch
@@ -125,7 +137,7 @@ variables and functions leak into the session that ran it through iex.
   $onPath = ($userPath -split ';') -contains $installDir
   if (-not $onPath) {
     if ($AddToPath) {
-      [Environment]::SetEnvironmentVariable('Path', "$userPath;$installDir", 'User')
+      [Environment]::SetEnvironmentVariable('Path', $(if ($userPath) { "$userPath;$installDir" } else { $installDir }), 'User')
       Write-Host "Added $installDir to your user PATH. Restart your terminal to pick it up."
     } else {
       Write-Host "Warning: $installDir is not in your PATH. Add it with:"
