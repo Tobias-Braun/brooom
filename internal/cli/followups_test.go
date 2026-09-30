@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -82,7 +83,7 @@ func TestScanHintKeepsForce(t *testing.T) {
 		{"scope flags", []string{"scan", "--force", "-w", "--root", "/r"}, "brooom sweep --workspaces --root /r --force --apply"},
 		{"shortcut", []string{"scan", "--force", "-d", "merged-branch"}, "brooom branches --detector merged-branch --force --apply"},
 		{"pipeline forces both ends", []string{"scan", "--force", "-d", "git-bloat,logs"},
-			"brooom scan --detector git-bloat,logs --force --format json | brooom clean --from - --force --apply"},
+			"brooom scan --detector " + findings.Quote("git-bloat,logs") + " --force --format json | brooom clean --from - --force --apply"},
 		{"without force nothing is added", []string{"scan"}, "brooom sweep --apply"},
 	}
 	for _, tt := range tests {
@@ -445,7 +446,14 @@ func TestBackgroundNoticeSanitizesVersion(t *testing.T) {
 // --config path went into the error unescaped.
 func TestExplicitConfigErrorIsSanitized(t *testing.T) {
 	isolate(t)
-	bad := t.TempDir() + "/no\x1b[31msuch\nfake.json"
+	// Windows rejects the C0 controls in file names (Stat then fails with an
+	// invalid-name error instead of not-exist), so it gets a C1 control, which
+	// is a legal name character there but just as unsafe to print raw.
+	name := "/no\x1b[31msuch\nfake.json"
+	if runtime.GOOS == "windows" {
+		name = "/no\u0085such fake.json"
+	}
+	bad := t.TempDir() + name
 	a := &app{}
 	a.flags.configPath = bad
 	err := a.requireExplicitConfig(bad)
@@ -453,7 +461,7 @@ func TestExplicitConfigErrorIsSanitized(t *testing.T) {
 		t.Fatal("no error for a missing config")
 	}
 	for _, r := range err.Error() {
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) || r == ' ' {
 			t.Fatalf("control rune %q in %q", r, err)
 		}
 	}

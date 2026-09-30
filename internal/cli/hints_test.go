@@ -155,7 +155,7 @@ func TestScanApplyHints(t *testing.T) {
 		{"plain", []string{"scan"}, "brooom sweep --apply"},
 		{"scope flags", []string{"scan", "-w", "--root", "/r", "--config", "c.json"}, "brooom sweep --config c.json --workspaces --root /r --apply"},
 		{"one shortcut", []string{"scan", "-d", "merged-branch"}, "brooom branches --detector merged-branch --apply"},
-		{"two detectors of one shortcut", []string{"scan", "-d", "stale-branch,merged-branch"}, "brooom branches --detector stale-branch,merged-branch --apply"},
+		{"two detectors of one shortcut", []string{"scan", "-d", "stale-branch,merged-branch"}, "brooom branches --detector " + findings.Quote("stale-branch,merged-branch") + " --apply"},
 		{"detectors of no shortcut", []string{"scan", "-d", "git-bloat,logs"}, ""},
 	}
 	for _, tt := range tests {
@@ -170,7 +170,7 @@ func TestScanApplyHints(t *testing.T) {
 			if tt.want != "" && got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
-			if tt.want == "" && (!strings.Contains(got, "brooom scan --detector git-bloat,logs --format json | brooom clean --from - --apply")) {
+			if tt.want == "" && (!strings.Contains(got, "brooom scan --detector "+findings.Quote("git-bloat,logs")+" --format json | brooom clean --from - --apply")) {
 				t.Errorf("got %q", got)
 			}
 			for _, c := range hintCommands("`" + got + "`") {
@@ -216,7 +216,7 @@ func TestCleanHintsReplayable(t *testing.T) {
 	path := writeReportFile(t, scanReport(t).Findings...)
 
 	_, out, _ := clean(t, "", "--from", path)
-	if !strings.Contains(out, "re-run 'brooom clean --from "+path+" ") {
+	if !strings.Contains(out, "re-run 'brooom clean --from "+findings.Quote(path)+" ") {
 		t.Fatalf("file hint lost --from:\n%s", out)
 	}
 	for _, c := range hintCommands(out) {
