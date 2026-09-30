@@ -58,28 +58,46 @@ func (s *scan) assessRemote(ctx context.Context, b gitx.Branch) (remoteState, er
 	return st, nil
 }
 
-// assess turns a branch into a finding, or reports false when it is not
+// assessment is the result of assessing one branch. Workers return it instead
+// of touching shared scan state.
+type assessment struct {
+	branch  string
+	finding findings.Finding
+	// ok is true when the branch is reported.
+	ok bool
+	// err is a git failure that made the branch unassessable.
+	err error
+	// mergedErr is a failed merged check, which is unknown and never merged.
+	mergedErr error
+}
+
+// assess turns a branch into a finding, or reports ok=false when it is not
 // reported (too young, base, protected, merged, omitted unpushed work or
-// unassessable). A branch that cannot be assessed returns the git error next
-// to false so the caller can surface it instead of dropping the branch
-// silently.
-func (s *scan) assess(ctx context.Context, b gitx.Branch) (findings.Finding, bool, error) {
+// unassessable). A branch that cannot be assessed carries the git error so the
+// caller can surface it instead of dropping the branch silently. It is safe
+// for concurrent use.
+func (s *scan) assess(ctx context.Context, b gitx.Branch) assessment {
+	a := assessment{branch: b.Name}
 	if !s.isCandidate(b) {
-		return findings.Finding{}, false, nil
+		return a
 	}
-	if s.mergedSkip(ctx, b.Name) {
-		return findings.Finding{}, false, nil
-	}
-	st, err := s.assessRemote(ctx, b)
-	if err != nil {
-		return findings.Finding{}, false, fmt.Errorf("stale-branch: assess branch %q: %w", b.Name, err)
-	}
-	if st.unpushed > 0 && !s.cfg.Detectors.StaleBranch.IncludeUnpushed {
-		return findings.Finding{}, false, nil
+	skip, failure := s.mergedSkip(ctx, b.Name)
+	if skip {
+		return a
 	}
 	// A failed merged check is unknown, never merged: the branch is still
 	// assessed and reported, and the failure is surfaced once by Detect.
-	return s.build(b, st), true, nil
+	a.mergedErr = failure
+	st, err := s.assessRemote(ctx, b)
+	if err != nil {
+		a.err = fmt.Errorf("stale-branch: assess branch %q: %w", b.Name, err)
+		return a
+	}
+	if st.unpushed > 0 && !s.cfg.Detectors.StaleBranch.IncludeUnpushed {
+		return a
+	}
+	a.finding, a.ok = s.build(b, st), true
+	return a
 }
 
 // build assembles the finding for an assessed branch.

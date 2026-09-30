@@ -173,28 +173,67 @@ func (r *Repo) SquashMerged(ctx context.Context, base, branch string) (MergeResu
 	if err != nil {
 		return MergeResult{}, err
 	}
+	if r.verdicts == nil {
+		res, _, err := r.squashMerged(ctx, branch, baseSHA, tip)
+		return res, err
+	}
+	key := verdictKey(baseSHA, tip, r.limit())
+	if res, ok := r.verdicts.get(key); ok {
+		return res, nil
+	}
+	res, definite, err := r.squashMerged(ctx, branch, baseSHA, tip)
+	if err == nil && definite {
+		r.verdicts.put(key, res)
+	}
+	return res, err
+}
+
+// squashMerged is the detection behind SquashMerged for resolved commits.
+// definite is false when the answer only means "unknown" (a cap was hit or the
+// runner cannot feed patch-id), which must never be stored.
+func (r *Repo) squashMerged(ctx context.Context, branch, baseSHA, tip string) (res MergeResult, definite bool, err error) {
+	if r.baseHasNothingNew(ctx, baseSHA, branch) {
+		// Base has no commit the branch lacks, so no base commit can equal
+		// the branch's work: two git processes saved for the very common
+		// fresh agent branch.
+		return MergeResult{}, true, nil
+	}
 	mb, err := r.mergeBase(ctx, baseSHA, tip)
 	if err != nil || mb == "" || mb == tip {
 		// No common history, or the branch is an ancestor, which the
 		// ancestor check owns.
-		return MergeResult{}, err
+		return MergeResult{}, err == nil, err
 	}
 	set, tooBig, err := r.basePatchIDs(ctx, baseSHA, mb)
 	if errors.Is(err, ErrInputUnsupported) {
-		return MergeResult{}, nil
+		return MergeResult{}, false, nil
 	}
 	if err != nil {
-		return MergeResult{}, err
+		return MergeResult{}, false, err
 	}
 	if tooBig {
-		return MergeResult{Truncated: true}, nil
+		return MergeResult{Truncated: true}, false, nil
 	}
 	if len(set) == 0 {
 		// Nothing on base since the fork point can be equal to the branch,
 		// so the diffs of the branch need not be computed at all.
-		return MergeResult{}, nil
+		return MergeResult{}, true, nil
 	}
-	return r.matchBranch(ctx, set, mb, tip)
+	res, err = r.matchBranch(ctx, set, mb, tip)
+	return res, err == nil && !res.Truncated, err
+}
+
+// baseHasNothingNew answers from the batched ahead/behind counts that the
+// branch already contains every commit of base, so nothing on base can be the
+// squash or rebase of the branch. Unknown (no batch, old git, uncached handle)
+// is false and leaves the decision to the exact checks.
+func (r *Repo) baseHasNothingNew(ctx context.Context, baseSHA, branch string) bool {
+	full, _, ok := r.lookupBranch(ctx, branch)
+	if !ok {
+		return false
+	}
+	behind, known := r.behindCounts(ctx, baseSHA)[full]
+	return known && behind == 0
 }
 
 // mergeBase returns the merge base of a and b, or "" when they share no

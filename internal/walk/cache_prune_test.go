@@ -249,6 +249,29 @@ func newPruneDir(t *testing.T) pruneDir {
 	return d
 }
 
+func TestPruneCacheAgesOutVerdictFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cache")
+	vdir := filepath.Join(dir, "verdicts")
+	if err := os.MkdirAll(vdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fresh := writeAged(t, filepath.Join(vdir, "a.json"), "{}", time.Hour)
+	old := writeAged(t, filepath.Join(vdir, "b.json"), "{}", 40*24*time.Hour)
+	oldTmp := writeAged(t, filepath.Join(vdir, "tmp-1"), "x", 3*time.Hour)
+	freshTmp := writeAged(t, filepath.Join(vdir, "tmp-2"), "x", time.Minute)
+	other := writeAged(t, filepath.Join(vdir, "notes.txt"), "mine", 90*24*time.Hour)
+
+	if _, err := PruneCache(dir, PruneOptions{CheckRoots: true}); err != nil {
+		t.Fatal(err)
+	}
+	if exists(old) || exists(oldTmp) {
+		t.Fatal("old verdict and stale tmp file must be pruned")
+	}
+	if !exists(fresh) || !exists(freshTmp) || !exists(other) {
+		t.Fatal("fresh verdicts, running tmp files and foreign files must stay")
+	}
+}
+
 func TestListStaleCacheWithoutRootChecksUsesAgeOnly(t *testing.T) {
 	d := newPruneDir(t)
 	stale, err := ListStaleCache(d.dir, PruneOptions{})

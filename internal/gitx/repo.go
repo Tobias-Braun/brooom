@@ -103,6 +103,14 @@ func (m *memo[K, V]) do(key K, f func() (V, error)) (V, error) {
 	return e.val, e.err
 }
 
+// forget drops the memoized result for key, so the next caller recomputes it.
+// Used when a result only reflects a cancelled context and must not stick.
+func (m *memo[K, V]) forget(key K) {
+	m.mu.Lock()
+	delete(m.m, key)
+	m.mu.Unlock()
+}
+
 // Repo is a handle on one git repository. Handles from Open are uncached:
 // every query hits git, which is what actions need because they must
 // re-validate against the live repository. Handles from Cache.Repo memoize
@@ -118,6 +126,12 @@ type Repo struct {
 	Common string
 
 	memoize bool
+	// known is the git version a Cache resolved once for all its handles;
+	// nil means the handle asks git itself.
+	known *Version
+	// verdicts is the on-disk squash verdict cache of a scan's Cache; nil for
+	// uncached handles, which must always recompute.
+	verdicts *verdictStore
 	// gh is the scan-wide breaker shared by all handles of one Cache; nil
 	// for uncached handles, which always call gh.
 	gh *ghBreaker
@@ -136,6 +150,7 @@ type Repo struct {
 	commits        memo[string, string]
 	refTips        memo[struct{}, map[string]string]
 	mergedRefs     memo[string, map[string]struct{}]
+	behind         memo[string, map[string]int]
 	merged         memo[mergeKey, MergeResult]
 	prs            memo[struct{}, PRInfo]
 	objectStats    memo[struct{}, ObjectStats]
@@ -293,6 +308,15 @@ type Cache struct {
 	byDir map[string]*Repo
 	// gh is the breaker all handles of this scan share.
 	gh *ghBreaker
+
+	// verMu guards ver and verOK. It is separate from mu so resolving the
+	// version never stalls lookups of already known repositories.
+	verMu sync.Mutex
+	ver   Version
+	verOK bool
+
+	// verdicts is the optional on-disk squash verdict cache (nil: off).
+	verdicts *verdictStore
 }
 
 // NewCache returns an empty cache using runner for all repositories.
@@ -301,7 +325,9 @@ func NewCache(runner Runner) *Cache {
 }
 
 // Repo returns the shared handle for the repository containing dir. Linked
-// worktrees of one repository share the handle of the first one seen.
+// worktrees of one repository share the handle of the first one seen. Git is
+// only asked outside the cache lock, so a slow repository never stalls the
+// lookups of the others.
 func (c *Cache) Repo(ctx context.Context, dir string) (*Repo, error) {
 	c.mu.Lock()
 	r, ok := c.byDir[dir]
@@ -314,17 +340,58 @@ func (c *Cache) Repo(ctx context.Context, dir string) (*Repo, error) {
 		return nil, err
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	r, ok = c.repos[common]
+	c.mu.Unlock()
 	if !ok {
-		r = &Repo{Runner: c.runner, Dir: top, Common: common, memoize: true, gh: c.gh}
-		if err := r.requireGit(ctx); err != nil {
+		if r, err = c.newRepo(ctx, top, common); err != nil {
 			return nil, err
 		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Another goroutine may have built the handle meanwhile; keep the first
+	// so every caller shares one set of memos.
+	if existing, ok := c.repos[common]; ok {
+		r = existing
+	} else {
 		c.repos[common] = r
 	}
 	c.byDir[dir] = r
 	return r, nil
+}
+
+// newRepo builds a memoizing handle whose version is pre-seeded from the
+// cache-wide result.
+func (c *Cache) newRepo(ctx context.Context, top, common string) (*Repo, error) {
+	v, err := c.gitVersion(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r := &Repo{Runner: c.runner, Dir: top, Common: common, memoize: true, gh: c.gh, known: &v, verdicts: c.verdicts}
+	if err := r.requireGit(ctx); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// gitVersion runs `git version` once per Cache. Only a success is kept, so a
+// cancelled context fails that one lookup instead of poisoning the scan;
+// concurrent callers wait for the first attempt rather than each spawning git.
+// A waiter blocks on verMu without watching its own ctx: the holder runs one
+// short `git version` bounded by its own ctx, so the wait is brief and making
+// it interruptible would need a channel-based lock for no real gain.
+func (c *Cache) gitVersion(ctx context.Context) (Version, error) {
+	c.verMu.Lock()
+	defer c.verMu.Unlock()
+	if c.verOK {
+		return c.ver, nil
+	}
+	v, err := GitVersion(ctx, c.runner)
+	if err != nil {
+		return Version{}, fmt.Errorf("gitx: cannot determine the git version (Brooom needs git %s or newer): %w", MinGitVersion, err)
+	}
+	c.ver, c.verOK = v, true
+	return v, nil
 }
 
 // gitVersion returns the (memoized) git version, or the zero Version when it
@@ -336,6 +403,9 @@ func (r *Repo) gitVersion(ctx context.Context) Version {
 }
 
 func (r *Repo) gitVersionErr(ctx context.Context) (Version, error) {
+	if r.known != nil {
+		return *r.known, nil
+	}
 	return cached(r, &r.version, struct{}{}, func() (Version, error) {
 		return GitVersion(ctx, r.Runner)
 	})

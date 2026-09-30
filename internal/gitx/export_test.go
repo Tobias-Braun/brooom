@@ -28,5 +28,8 @@ func NewLimitReader(r io.Reader, limit int64, cancel func()) io.Reader {
 	return &limitReader{r: r, left: limit, cancel: cancel}
 }
 
+// ParseBehind exposes the ahead-behind record parser.
+var ParseBehind = parseBehind
+
 // PathWithinOS exposes pathWithinOS for the same reason.
 var PathWithinOS = pathWithinOS
