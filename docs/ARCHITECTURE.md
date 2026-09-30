@@ -96,6 +96,13 @@ Rules:
 - `stale-branch` skips branches that `merged-branch` reports (a branch is
   reported once, as merged).
 
+A detector that needs user-level targets (catalog locations below the home
+directory) additionally implements the optional `detect.TargetSource`
+(`ExtraTargets(ctx, cfg) ([]scope.Target, error)`). The scan pipeline calls it
+once per scan for every selected, globally enabled detector, appends the
+`TargetUser` targets (deduplicated, missing locations dropped) and allows
+their paths in the guard. It only declares locations and never detects.
+
 Detector names (config keys, `--detector` values): `stale-branch`,
 `merged-branch`, `worktrees`, `git-bloat`, `large-untracked`,
 `ai-artifacts`, `log-and-runtime-files`, `build-artifacts`.
