@@ -1,6 +1,7 @@
 package buildartifacts
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Tobias-Braun/brooom/internal/catalog"
 	"github.com/Tobias-Braun/brooom/internal/config"
@@ -67,18 +69,58 @@ type matcher struct {
 	listings map[string][]string
 }
 
+// rulesMemo caches compiled rules per effective dirs/extra_dirs, since a
+// workspace scan builds one matcher per target and the rules are read-only
+// once compiled. Failed compilations are not cached.
+var rulesMemo = struct {
+	sync.Mutex
+	m map[string][]rule
+}{m: map[string][]rule{}}
+
+// compileCalls counts real compilations; tests assert the memo works.
+var compileCalls atomic.Int64
+
+// maxMemoRules bounds rulesMemo for long-lived processes.
+const maxMemoRules = 64
+
 // newMatcher compiles the embedded catalog and the config lists into a
 // matcher for the tree at root.
 func newMatcher(root string, cfg config.BuildArtifacts) (*matcher, error) {
-	entries, err := catalog.BuildArtifacts()
-	if err != nil {
-		return nil, err
-	}
-	rules, err := compileRules(entries, cfg)
+	rules, err := cachedRules(cfg)
 	if err != nil {
 		return nil, err
 	}
 	return &matcher{root: root, rules: rules, listings: map[string][]string{}}, nil
+}
+
+// cachedRules returns the compiled rules for cfg, compiling them once per
+// distinct dirs/extra_dirs pair. The returned slice must not be modified.
+func cachedRules(cfg config.BuildArtifacts) ([]rule, error) {
+	// JSON keeps empty entries and list boundaries distinct, which a plain
+	// join would conflate (extra_dirs [""] versus no extra_dirs).
+	keyBytes, _ := json.Marshal([2][]string{cfg.Dirs, cfg.ExtraDirs})
+	key := string(keyBytes)
+	rulesMemo.Lock()
+	rules, ok := rulesMemo.m[key]
+	rulesMemo.Unlock()
+	if ok {
+		return rules, nil
+	}
+	entries, err := catalog.BuildArtifacts()
+	if err != nil {
+		return nil, err
+	}
+	compileCalls.Add(1)
+	rules, err = compileRules(entries, cfg)
+	if err != nil {
+		return nil, err
+	}
+	rulesMemo.Lock()
+	defer rulesMemo.Unlock()
+	if len(rulesMemo.m) < maxMemoRules {
+		rulesMemo.m[key] = rules
+	}
+	return rules, nil
 }
 
 // compileRules applies the config to the catalog. A non-empty Dirs replaces

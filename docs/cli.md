@@ -94,7 +94,7 @@ brooom undo
 - [`brooom config`](#brooom-config): Create, show, edit and validate the configuration
 - [`brooom git`](#brooom-git): Git history maintenance
 - [`brooom logs`](#brooom-logs): Find (and trash) logs, caches and runtime leftovers of dev tools
-- [`brooom purge`](#brooom-purge): Permanently delete quarantined sessions past their retention
+- [`brooom purge`](#brooom-purge): Permanently delete quarantined sessions past their retention and stale scan caches
 - [`brooom roots`](#brooom-roots): Manage workspace roots used by --workspaces
 - [`brooom scan`](#brooom-scan): Scan for clutter and report findings (never modifies anything)
 - [`brooom sessions`](#brooom-sessions): List applied sessions, or show one session's manifest
@@ -726,7 +726,7 @@ brooom logs --workspaces --format json
 
 ## `brooom purge`
 
-Permanently delete quarantined sessions past their retention
+Permanently delete quarantined sessions past their retention and stale scan caches
 
 ```text
 brooom purge [flags]
@@ -739,6 +739,11 @@ permanently. A retention of 0 means quarantined files never expire, so
 nothing is listed. Only session directories are touched, never anything else
 in the quarantine directory, the OS trash or the session manifests; the
 manifests of purged sessions are marked as not restorable.
+
+The same run also lists and removes stale directory size caches
+(~/.brooom/cache/dirsize-v1-*.json): files unused for 30 days, files of
+folders that no longer exist and leftovers of interrupted writes. The caches
+are rebuilt by the next scan, so this frees disk space only.
 ```
 
 **Examples**

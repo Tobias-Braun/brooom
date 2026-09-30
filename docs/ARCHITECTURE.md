@@ -528,6 +528,30 @@ item may still be moved later, so it is reported as an error without a
 `Record`, is not retried through the `~/.Trash` fallback, and the remaining
 items of the batch are skipped with an explanatory error.
 
+### Performance memos and the scan cache
+
+`catalog.Load` decodes and validates the embedded files once per process
+(`sync.OnceValues`) and memoizes the resulting immutable `Catalog` per option
+set (JSON key, bounded to 64 entries; failed loads are never memoized), so a
+workspace scan pays for user extras only once. `catalog.BuildArtifacts` decodes
+once and hands out copies; `buildartifacts` caches compiled rules per
+`dirs`/`extra_dirs`.
+
+`Executor.Plan` runs one `procs.OpenFiles` call for all trash targets
+(`internal/action/openbatch.go`): targets that fail the static checks and
+targets inside another target are left out, the result travels in the context
+and `checkOpen` reads from it, with the single-path check as fallback. Without
+a deadline the budget is `procs.Budget(n)` (3 s plus 50 ms per additional path,
+at most 30 s).
+
+The `DirSize` cache file is never written when the marshalled document exceeds
+`maxCacheBytes` (an existing file is removed) and not rewritten when no
+directory was re-read or dropped (its mtime is refreshed instead, as the "last
+used" stamp). `walk.PruneCache` deletes `dirsize-v1-*.json` files unused for 30
+days, unreadable or oversized ones, those of vanished roots (`CheckRoots`) and
+old temp files. It runs by age once per process on the first cache write and in
+full via `brooom purge`.
+
 ### Open files (`internal/procs`)
 
 `procs.OpenFiles(ctx, paths)` reports which paths (or directories with an

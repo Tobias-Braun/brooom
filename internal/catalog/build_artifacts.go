@@ -10,6 +10,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 // buildArtifactsFile is the single embedded file in the build artifact
@@ -64,16 +66,40 @@ type buildArtifactsDoc struct {
 	Entries       []BuildArtifactEntry `json:"entries"`
 }
 
+// buildArtifactsDecodes counts decodes of the embedded file for tests.
+var buildArtifactsDecodes atomic.Int64
+
+type buildArtifactsResult struct {
+	entries []BuildArtifactEntry
+	err     error
+}
+
+// embeddedBuildArtifacts decodes the embedded file once per process.
+var embeddedBuildArtifacts = sync.OnceValue(func() buildArtifactsResult {
+	buildArtifactsDecodes.Add(1)
+	sub, err := fs.Sub(dataFS, "data")
+	if err != nil {
+		return buildArtifactsResult{err: fmt.Errorf("catalog: embedded data: %w", err)}
+	}
+	entries, err := buildArtifactsFrom(sub, buildArtifactsFile)
+	return buildArtifactsResult{entries: entries, err: err}
+})
+
 // BuildArtifacts returns the validated entries of the embedded
 // build_artifacts.json with defaults applied (marker_mode any,
 // confidence_cap high). The file is decoded strictly: unknown fields, a
-// tools-format file and invalid values are errors.
+// tools-format file and invalid values are errors. Decoding happens once per
+// process; every call returns its own deep copy, so callers may modify it.
 func BuildArtifacts() ([]BuildArtifactEntry, error) {
-	sub, err := fs.Sub(dataFS, "data")
-	if err != nil {
-		return nil, fmt.Errorf("catalog: embedded data: %w", err)
+	r := embeddedBuildArtifacts()
+	if r.err != nil {
+		return nil, r.err
 	}
-	return buildArtifactsFrom(sub, buildArtifactsFile)
+	out := slices.Clone(r.entries)
+	for i := range out {
+		out[i].Markers = slices.Clone(out[i].Markers)
+	}
+	return out, nil
 }
 
 // buildArtifactsFrom is BuildArtifacts with an injectable file system so that

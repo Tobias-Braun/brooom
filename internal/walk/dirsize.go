@@ -63,10 +63,31 @@ func DirSize(ctx context.Context, path string, opts Options) (DirSummary, error)
 		return DirSummary{}, err
 	}
 	if cfile != "" {
-		// Best effort by design: a failed write must never fail a scan.
-		_ = storeCache(cfile, abs, s.recs)
+		s.persist(cfile, abs)
 	}
 	return s.aggregate(), nil
+}
+
+// persist writes the cache only when it differs from what was loaded, since
+// rewriting an identical file only burns marshal time and disk writes. An
+// unchanged cache is "touched" instead, so that the age-based pruning of
+// PruneCache sees it as in use. All of it is best effort by design: a failed
+// cache operation must never fail a scan.
+func (s *sizer) persist(cfile, abs string) {
+	if s.dirty() {
+		_ = storeCache(cfile, abs, s.recs)
+		pruneOnce(filepath.Dir(cfile))
+		return
+	}
+	t := s.start
+	_ = os.Chtimes(cfile, t, t)
+}
+
+// dirty reports whether the records differ from the loaded cache: some
+// directory was (re)read, or records were dropped for vanished directories.
+// Without a loaded cache (missing, unusable or Fresh) everything is new.
+func (s *sizer) dirty() bool {
+	return s.old == nil || s.rescanned > 0 || len(s.recs) != len(s.old)
 }
 
 // sizer holds the state shared by the workers of one DirSize call.
@@ -76,8 +97,9 @@ type sizer struct {
 	start time.Time
 	old   map[string]*dirRecord // records loaded from the cache (read only)
 
-	mu   sync.Mutex
-	recs map[string]*dirRecord // records of every directory visited
+	mu        sync.Mutex
+	recs      map[string]*dirRecord // records of every directory visited
+	rescanned int                   // directories read instead of reused
 }
 
 // process handles one directory: it either reuses its cached record after a
@@ -97,11 +119,15 @@ func (s *sizer) process(rel string, submit func(string)) {
 	mtime := fi.ModTime().UnixNano()
 
 	rec := s.old[rel]
-	if rec == nil || rec.Racy || rec.MtimeUnixNano != mtime || rec.ID != id {
+	reread := rec == nil || rec.Racy || rec.MtimeUnixNano != mtime || rec.ID != id
+	if reread {
 		rec = s.scan(path, mtime, id)
 	}
 	s.mu.Lock()
 	s.recs[rel] = rec
+	if reread {
+		s.rescanned++
+	}
 	s.mu.Unlock()
 	for _, name := range rec.Subdirs {
 		submit(joinRel(rel, name))
