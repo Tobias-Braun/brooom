@@ -132,7 +132,7 @@ func (d *Detector) newScan(ctx context.Context, env *detect.Env, target scope.Ta
 	if err != nil {
 		return nil, fmt.Errorf("stale-branch: open %s: %w", target.Path, err)
 	}
-	main, err := repo.MainWorktree(ctx)
+	main, _, err := repo.Anchor(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stale-branch: main worktree of %s: %w", target.Path, err)
 	}

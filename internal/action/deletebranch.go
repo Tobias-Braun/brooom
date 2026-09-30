@@ -386,9 +386,9 @@ func openRepo(ctx context.Context, env *Env, f findings.Finding) (*gitx.Repo, er
 	// uncached one so it sees the repository as it is now.
 	var repo *gitx.Repo
 	if snap := planSnapshotFrom(ctx); snap != nil {
-		repo, err = snap.cache.Repo(ctx, path)
+		repo, err = snap.cache.AnchorRepo(ctx, path)
 	} else {
-		repo, err = gitx.Open(ctx, env.Git, path)
+		repo, err = gitx.OpenAnchor(ctx, env.Git, path)
 	}
 	if errors.Is(err, gitx.ErrUnsafeRepo) {
 		return nil, skipf("skipped: %v", err)
@@ -597,7 +597,7 @@ func (deleteBranch) Undo(ctx context.Context, env *Env, e session.Entry) error {
 	if err != nil {
 		return fmt.Errorf("undo delete-branch: repository %s: %w", e.Path, err)
 	}
-	repo, err := gitx.Open(ctx, env.Git, path)
+	repo, err := gitx.OpenAnchor(ctx, env.Git, path)
 	if err != nil {
 		return fmt.Errorf("undo delete-branch: %s is not a git repository: %w", path, err)
 	}

@@ -271,6 +271,15 @@ that are not named `.git` (bare repositories such as `proj/.bare`, the target of
 a `.git` link file, the common dir of a linked worktree) are refused by
 `refuseGitDir`, which examines every ancestor up to the allowed root; `--force`
 never lifts it, and neither does git reporting a path as "outside repository".
+Bare layout (`proj/.git` file with `gitdir: ./.bare` plus linked worktrees):
+discovery (`scope.isGitDir`) does not report such a folder as a repository, it
+descends and reports the linked worktrees instead; `gitx.Repo.Anchor` returns
+the first `git worktree list` entry even when bare, and the branch and
+worktree detectors use it in place of the main worktree, so their findings
+carry the bare directory as repository. `gitx.OpenAnchor` / `Cache.AnchorRepo`
+are the only openers that accept the bare directory (actions use them; `Open`
+still returns `ErrBareRepo`). Running inside the bare folder itself is a usage
+error, not "Nothing to sweep".
 The identity check fails closed: an entry that exists but whose identity cannot
 be read counts as an alias and refuses the removal; only a missing entry is
 "not the same". On Windows the identity comes from `CreateFile` plus
