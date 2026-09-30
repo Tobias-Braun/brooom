@@ -10,8 +10,8 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/findings"
 )
 
-// TestGroupLabelNamesResolvedStrategy pins that the confirmation prompt and
-// the plan header say what will really happen: the action type of a removal is
+// TestGroupLabelNamesResolvedStrategy pins that the plan header and the
+// confirmation question say what will really happen: the action type of a removal is
 // always "trash", so with --trash-strategy delete the user used to confirm
 // "trash" for an irreversible deletion.
 func TestGroupLabelNamesResolvedStrategy(t *testing.T) {
@@ -37,8 +37,9 @@ func TestGroupLabelNamesResolvedStrategy(t *testing.T) {
 
 			var prompt bytes.Buffer
 			newConfirmer(strings.NewReader("y\n"), &prompt).confirm(p)
-			if want := "build-artifacts / " + tt.want + ": apply 1 item"; !strings.HasPrefix(prompt.String(), want) {
-				t.Errorf("prompt %q, want prefix %q", prompt.String(), want)
+			permanent := strings.Contains(prompt.String(), "deleted permanently")
+			if permanent != (tt.strategy == config.StrategyDelete) {
+				t.Errorf("prompt %q names a permanent deletion: %v", prompt.String(), permanent)
 			}
 			if p.Groups[0].Action != findings.ActionTrash {
 				t.Errorf("group action %q, want the plain action type", p.Groups[0].Action)

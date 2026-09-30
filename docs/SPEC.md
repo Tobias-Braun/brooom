@@ -27,9 +27,12 @@ cleanup safe, fast and reviewable.
 
 ## Core principles (non-negotiable)
 
-1. **Safety first.** Dry-run is the default for every action. Executing
-   requires `--apply` plus per-item or per-group confirmation; `-y`/`--yes`
-   skips the confirmation for scripted use. Nothing is ever deleted silently.
+1. **Safety first.** Every action shows its plan and asks once
+   (`Proceed? [y/N]`) before it changes anything; only an explicit yes acts.
+   `--dry-run` stops after the plan, `-y`/`--yes` skips the question for
+   scripted use, and without a terminal an unanswered question is an error.
+   Nothing is ever deleted silently, and `sweep` never removes unmerged or
+   uncommitted work.
 2. **Scoped by default.** With no flags, Brooom operates only on the current
    git repo (detected by walking up to the nearest `.git`). `--workspaces`
    runs over all configured workspace roots, walking the tree recursively and
@@ -80,8 +83,8 @@ cleanup safe, fast and reviewable.
   root, detector toggles, custom patterns and locations, trash strategy,
   output defaults, agent settings.
 - Two layers of configurability, both first-class:
-  - No-brainer presets: `brooom sweep` (safe default set),
-    `--preset safe|standard|aggressive`.
+  - Intent presets: `brooom sweep [after-agents|tidy|everything]`
+    (default `everything`).
   - Fine-grained control: every detector and action has its own flags and
     config keys (branch age, merge detection mode, worktree handling, gc
     expiry, which artifact dirs, which tool locations).
@@ -93,7 +96,7 @@ cleanup safe, fast and reviewable.
 - `trash`: OS trash (default).
 - `quarantine`: move into `~/.brooom/quarantine/<session-id>/` with a
   manifest; after a configurable retention (`trash.quarantine_retention_days`,
-  default 14, 0 = never) `brooom purge --apply` deletes the session directories
+  default 14, 0 = never) `brooom purge` deletes the session directories
   permanently. Every other command prints one line on stderr when sessions are
   past the retention (`brooom: N quarantined sessions (X MB) are past the
   D-day retention, run 'brooom purge' to free the space`); it is suppressed
@@ -208,23 +211,20 @@ neither, and build-artifacts weighs project inactivity instead of age.
 trash (per trash strategy), delete-branch (`-d`, `--force` for `-D`),
 remove-worktree (+ prune), git-gc/prune/reflog-expire (each opt-in with
 expiry), restore/undo (from session manifest), purge (empty quarantine past
-retention). All actions: dry-run default, `--apply` to execute, `--yes` to
-skip confirmation, summary of reclaimed space at the end, manifest written
-per session.
+retention). All actions: plan first, one confirmation, `--dry-run` to stop
+after the plan, `--yes` to skip the question, summary of reclaimed space at
+the end, manifest written per session.
 
 ## CLI surface
 
 ```
-brooom                          # scan current repo, table output, dry-run
+brooom                          # scan current repo, table output, suggests a sweep
 brooom scan [--workspaces] [--detector X] [--format F]
-brooom sweep [--preset P] [--dry-run]      # the no-brainer command (applies right away)
-brooom branches [--stale] [--merged] [--apply]
-brooom worktrees [--apply]
-brooom git purge [--gc] [--reflog-expire D] [--prune D] [--apply]
-brooom logs / brooom artifacts / brooom ai
-brooom clean --from findings.json [--apply] [-y]
-brooom undo [session-id] [--apply] [-y]   # default: latest session, dry run
-brooom sessions / brooom purge [--apply] [-y]
+brooom sweep [PRESET] [--dry-run] [-y]     # plan, ask once, clean
+brooom git purge [--gc] [--reflog-expire D] [--prune D] [--dry-run] [-y]
+brooom clean --from findings.json [--dry-run] [-y]
+brooom undo [session-id] [--dry-run] [-y] # default: latest session
+brooom sessions / brooom purge [--dry-run] [-y]
 brooom roots add|remove|list
 brooom config init|show|edit|validate
 brooom version / brooom update-check
@@ -235,7 +235,7 @@ cannot (delete strategy, maintenance actions, failed or skipped entries, a
 missing stored copy, an unknown action, an entry outside the current scope),
 each with the reason and the manual recovery hint. Nothing is ever
 overwritten: an existing original path or branch is reported as a conflict.
-`--apply` asks `Restore N items? [y/N]` (unless `--yes`; without a terminal and
+It then asks `Restore N items? [y/N]` (unless `--yes` or `--dry-run`; without a terminal and
 without `--yes` it exits 2), saves the manifest after every entry and exits 1
 if a restorable entry conflicted or failed. Entries are only restored inside
 the current scope (the repository you are in, or `--workspaces`), because

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  APPLY_COMMAND,
-  DRY_RUN_COMMAND,
+  SWEEP_COMMAND,
   expandSteps,
   finalFrame,
   maxScreenLines,
+  questionLine,
   terminalScript,
   transcript,
   type Step,
@@ -15,48 +15,41 @@ const REAL_DETECTORS = ['merged-branch', 'build-artifacts'];
 const REAL_ACTIONS = ['delete-branch', 'trash'];
 
 describe('terminal script', () => {
-  it('types the real commands, dry run first', () => {
+  it('types the real command once', () => {
     const typed = terminalScript.filter((s) => s.kind === 'type').map((s) => (s as { text: string }).text);
-    expect(typed).toEqual([DRY_RUN_COMMAND, APPLY_COMMAND]);
+    expect(typed).toEqual([SWEEP_COMMAND]);
   });
 
-  it('ends on the finished sweep: undo hint, then the reclaimed size as the last line', () => {
+  it('shows the plan, then one question answered with y, then the summary', () => {
     const text = finalFrame().map((l) => l.text);
-    expect(text[0]).toBe(`$ ${APPLY_COMMAND}`);
+    expect(text[0]).toBe(`$ ${SWEEP_COMMAND}`);
+    const total = text.indexOf('total reclaimable: 610.0 MB');
+    const question = text.indexOf(questionLine.text);
+    expect(total).toBeGreaterThan(0);
+    expect(question).toBe(total + 1);
+    expect(text.filter((l) => l.includes('[y/N]'))).toHaveLength(1);
     expect(text.some((l) => l.startsWith('undo: brooom undo '))).toBe(true);
     expect(text[text.length - 1]).toMatch(/^\d+ .+\. 610\.0 MB reclaimed$/);
   });
 
-  it('shows the dry-run notice and only real detectors and actions', () => {
+  it('shows only real detectors and actions', () => {
     const all = transcript();
-    expect(all).toContain("dry run: nothing was changed; re-run 'brooom sweep' to execute");
-    expect(all).not.toContain('Dry run:');
+    expect(all).not.toContain('dry run');
     for (const d of REAL_DETECTORS) expect(all).toContain(d);
-    // Group headers of renderPlan: "detector / action: N items, SIZE". Only the
-    // dry run prints the plan; the applying sweep prints just the summary.
+    // Group headers of renderPlan: "detector / action: N items, SIZE".
     const headers = [...all.matchAll(/^(\S+) \/ (\S+): \d+ items?, /gm)];
     expect(headers).toHaveLength(2);
     for (const h of headers) {
       expect(REAL_DETECTORS).toContain(h[1]);
       expect(REAL_ACTIONS).toContain(h[2]);
     }
-    expect(all).toContain('total reclaimable: 610.0 MB');
-  });
-
-  it('only shows detectors of the default safe preset', () => {
-    expect(transcript()).not.toContain('ai-artifacts');
   });
 
   it('prints no invented per-action progress lines', () => {
     const lines = transcript().split('\n');
-    // Commands only ever appear as indented "$ ..." lines inside the dry-run plan.
+    // Commands only ever appear as indented "$ ..." lines inside the plan.
     expect(lines.filter((l) => /^(git |trash )/.test(l))).toEqual([]);
     expect(lines.filter((l) => l.startsWith('    $ ')).length).toBeGreaterThan(0);
-  });
-
-  it('shows no git instructions once sweep applies', () => {
-    const applied = finalFrame().map((l) => l.text).join('\n');
-    expect(applied).not.toMatch(/\bgit\b|\n\s+\$ /);
   });
 
   it('never touches anything outside the demo repository', () => {
@@ -69,11 +62,6 @@ describe('terminal script', () => {
 
   it('uses git branch -d, never a forced delete', () => {
     expect(transcript()).not.toMatch(/branch -D|--force/);
-  });
-
-  it('transcript includes the cleared dry run, the final frame does not', () => {
-    expect(transcript()).toContain('dry run: nothing was changed');
-    expect(finalFrame().map((l) => l.text).join('\n')).not.toContain('dry run: nothing was changed');
   });
 
   it('reserves at least the height of the tallest screen', () => {

@@ -21,55 +21,57 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/session"
 )
 
-// cleanupSelection is what distinguishes the shortcut commands: the fixed
-// detector selection of a command and the per-run switches that belong to it.
+// cleanupSelection is what a sweep runs: the preset's detectors and the
+// per-run switches that belong to it.
 type cleanupSelection struct {
 	// detectors are the detector names the command works on; the global
 	// --detector flag can narrow but never widen them.
 	detectors []string
-	// userLocations scans the user-level tool locations (`brooom ai --user`, `brooom logs --user`).
-	userLocations bool
-	// label names the command in messages, e.g. "branches".
+	// label names the selection in messages, e.g. "sweep after-agents".
 	label string
 	// configOverlay is applied to the loaded configuration before the
 	// per-root and per-repo layers (see scanOptions.configOverlay).
 	configOverlay func(*config.Config)
-	// minConfidence drops findings below it before planning.
-	minConfidence findings.Confidence
+	// keep drops findings it rejects before planning (a preset's confidence
+	// floors); nil keeps everything.
+	keep func(findings.Finding) bool
 	// compact makes an applying run print one summary line ("2 worktrees
-	// deleted, 5 stale branches removed. 4.2 GB reclaimed") instead of the
-	// per-item plan; --verbose brings the plan back.
+	// deleted, 5 merged branches removed. 4.2 GB reclaimed") instead of the
+	// multi-line summary; --verbose brings it back.
 	compact bool
 }
 
-// machineFormats print parseable output only. They show findings in a dry
-// run and cannot be combined with --apply, because the executor's plan and
-// confirmation text would corrupt the stream.
+// machineFormats print parseable output only. A run with one of them only
+// reports, like --dry-run, and cannot be combined with --yes, because the
+// executor's plan and summary text would corrupt the stream.
 var machineFormats = map[string]bool{"json": true, "ndjson": true, "plain": true}
 
-// runCleanup is the shared body of the cleanup shortcut commands: a scan with
-// a fixed detector selection followed by the executor. It only builds inputs
-// and maps errors to exit codes; detection and cleanup live in detect and
-// action. Nothing is modified unless af.apply is set.
+// runCleanup scans with a fixed detector selection and hands the findings to
+// the executor, which shows the plan, asks and acts. It only builds inputs and
+// maps errors to exit codes; detection and cleanup live in detect and action.
+// Nothing is modified with --dry-run or a machine format.
 func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags) error {
 	cfg, _, err := a.loadConfig()
 	if err != nil {
 		return err
 	}
 	resolve := resolveFormat
-	if af.apply {
+	if af.apply() {
 		resolve = resolveActingFormat
 	}
 	format, err := resolve(a.flags.format, cfg.Output.Format)
 	if err != nil {
 		return err
 	}
-	// The acting format decides, not the scan's own resolution: an applying
+	// The acting format decides, not the scan's own resolution: an acting
 	// run with a machine format in the config still prints human text.
 	a.useProgress(format)
 	machine := machineFormats[format]
-	if machine && af.apply {
-		return usageError{fmt.Errorf("--format %s cannot be combined with --apply", format)}
+	if machine && af.yes {
+		return usageError{fmt.Errorf("--format %s only reports and cannot be combined with --yes", format)}
+	}
+	if machine {
+		af.dryRun = true
 	}
 	strategy, err := parseTrashStrategy(af.trashStrategy)
 	if err != nil {
@@ -81,10 +83,9 @@ func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags
 	}
 	opts := scanOptions{
 		detectors:     names,
-		userLocations: sel.userLocations,
 		force:         af.force,
 		configOverlay: sel.configOverlay,
-		minConfidence: sel.minConfidence,
+		keep:          sel.keep,
 	}
 	switch {
 	case len(names) == 0:
@@ -115,8 +116,8 @@ func (a *app) nothingSelected(cfg *config.Config, format string) error {
 }
 
 // resolveSelection turns the command's detectors and the --detector flag into
-// the names to scan. The flag is intersected with the selection (a shortcut
-// cannot widen itself); an empty intersection is a usage error. Detectors
+// the names to scan. The flag is intersected with the selection (a preset
+// cannot be widened); an empty intersection is a usage error. Detectors
 // disabled in the config are dropped with a verbose note. Every detector is
 // linked into the binary (internal/detectors/all), so a name that is not
 // registered is a typo and a usage error.
@@ -152,11 +153,11 @@ func (a *app) enabledDetectors(cfg *config.Config, names []string) []string {
 }
 
 // planAndRun scans, then hands the findings to the executor: a dry run
-// renders the report in the requested format and appends the plan, --apply
-// confirms and executes. The plan and prompts are fixed human text, but an
-// explicit --format still selects how the report is shown before them: it was
-// accepted and silently ignored. Without --format an apply run stays terse and
-// prints no report.
+// renders the report in the requested format and appends the plan, otherwise
+// the plan is confirmed and executed. The plan and prompts are fixed human
+// text, but an explicit --format still selects how the report is shown before
+// them: it was accepted and silently ignored. Without --format an acting run
+// shows only the plan, not the report.
 func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, strategy config.TrashStrategy, format string, compact bool) error {
 	ctx := cmd.Context()
 	if ctx == nil {
@@ -166,7 +167,7 @@ func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, st
 	if res == nil {
 		return err
 	}
-	if !af.apply || a.flags.format != "" {
+	if !af.apply() || a.flags.format != "" {
 		if rerr := a.renderDryRunReport(res, format); rerr != nil {
 			return rerr
 		}
@@ -183,9 +184,9 @@ func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, st
 	result, err := a.runExecutor(ctx, cmd, execInput{
 		cfg: res.Config, git: res.Env.Git, guard: res.Guard, findings: res.Report.Findings,
 		// --verbose keeps the per-item plan, so it is the opt-out of the brief summary.
-		brief: compact && af.apply && !a.flags.verbose,
+		brief: compact && af.apply() && !a.flags.verbose,
 	}, af, strategy)
-	return mapExecutorError(result, err, af.apply)
+	return mapExecutorError(result, err, af.apply())
 }
 
 // renderDryRunReport prints the scan report of a dry run with the formatter of
@@ -203,7 +204,7 @@ func (a *app) renderDryRunReport(res *scanResult, format string) error {
 }
 
 // execInput is what the executor needs from whoever produced the findings: a
-// scan (shortcut commands) or a validated findings file (`clean --from`). The
+// scan (sweep) or a validated findings file (`clean --from`). The
 // guard is always the one the findings were validated against, so actions
 // cannot act outside that scope.
 type execInput struct {
@@ -216,8 +217,8 @@ type execInput struct {
 	brief bool
 }
 
-// runExecutor plans and, with --apply, executes the findings through the
-// shared executor: confirmation, session manifest and summary are identical
+// runExecutor plans and, unless it is a dry run, confirms and executes the
+// findings through the shared executor: confirmation, session manifest and summary are identical
 // for every command.
 func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput, af applyFlags, strategy config.TrashStrategy) (*action.Result, error) {
 	dirs, err := config.ResolveDirs()
@@ -227,7 +228,7 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 	id := session.NewID(time.Now())
 	resolver := newTrasherResolver(in.cfg, strategy, dirs, id, a.io.Err)
 	exec := action.NewExecutor(action.Options{
-		Apply:      af.apply,
+		Apply:      af.apply(),
 		Quiet:      a.flags.quiet,
 		Brief:      in.brief,
 		Yes:        af.yes,

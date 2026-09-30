@@ -36,7 +36,7 @@ maintenance kinds and `worktree-missing` are omitted, and findings whose path
 contains a line break are skipped with an error; use `--format json` for
 everything. Worktree paths are listed for inspection only: removing them with
 `rm` leaves git metadata behind (run `git worktree prune` or use
-`brooom worktrees --apply`).
+`brooom sweep after-agents`).
 
 ## Finding
 

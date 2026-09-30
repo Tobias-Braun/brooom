@@ -135,8 +135,8 @@ func TestGitPurgeWithoutFlagsOnlyReports(t *testing.T) {
 		t.Fatalf("json report: code %d, %q", code, out)
 	}
 
-	if code, _, errOut = brooom(t, "", "git", "purge", "--apply", "--yes"); code != ExitUsage || !strings.Contains(errOut, "--gc") {
-		t.Errorf("--apply without an operation: code %d, %q", code, errOut)
+	if code, _, errOut = brooom(t, "", "git", "purge", "--yes"); code != ExitUsage || !strings.Contains(errOut, "--gc") {
+		t.Errorf("--yes without an operation: code %d, %q", code, errOut)
 	}
 }
 
@@ -145,11 +145,11 @@ func TestGitPurgePruneDryRunThenApply(t *testing.T) {
 	id := f.dangling("gone")
 	snap := f.gitSnapshot()
 
-	code, out, errOut := brooom(t, "", "git", "purge", "--prune", "now")
+	code, out, errOut := brooom(t, "", "git", "purge", "--prune", "now", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	for _, want := range []string{"NOT restorable", "git prune in", "permanently", "1 unreachable object", "brooom git purge --prune now --apply"} {
+	for _, want := range []string{"NOT restorable", "git prune in", "permanently", "1 unreachable object", "re-run without --dry-run"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dry run lacks %q:\n%s", want, out)
 		}
@@ -158,7 +158,7 @@ func TestGitPurgePruneDryRunThenApply(t *testing.T) {
 		t.Fatal("the dry run changed something")
 	}
 
-	code, out, errOut = brooom(t, "", "git", "purge", "--prune", "now", "--apply", "--yes")
+	code, out, errOut = brooom(t, "", "git", "purge", "--prune", "now", "--yes")
 	if code != ExitOK {
 		t.Fatalf("apply: code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -192,7 +192,7 @@ func TestGitPurgeEachFlagRunsOnlyItsAction(t *testing.T) {
 			f := newPurgeFixture(t, cfg)
 			f.looseCommits(20)
 			f.dangling("x")
-			code, out, errOut := brooom(t, "", append([]string{"git", "purge", "--apply", "--yes"}, tt.args...)...)
+			code, out, errOut := brooom(t, "", append([]string{"git", "purge", "--yes"}, tt.args...)...)
 			if code != ExitOK {
 				t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 			}
@@ -205,7 +205,7 @@ func TestGitPurgeEachFlagRunsOnlyItsAction(t *testing.T) {
 
 func TestGitPurgeGCOnlyTouchesReposWithFindings(t *testing.T) {
 	f := newPurgeFixture(t, nil) // default thresholds: a fresh repo has no finding
-	code, out, errOut := brooom(t, "", "git", "purge", "--gc", "--apply", "--yes")
+	code, out, errOut := brooom(t, "", "git", "purge", "--gc", "--yes")
 	if code != ExitOK || !strings.Contains(out, "nothing to clean") {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -226,7 +226,7 @@ func TestGitPurgeExplanations(t *testing.T) {
 		}
 	}
 
-	code, out, errOut := brooom(t, "", "git", "purge", "--gc", "--reflog-expire", "90.days.ago", "--prune", "2.weeks.ago")
+	code, out, errOut := brooom(t, "", "git", "purge", "--gc", "--reflog-expire", "90.days.ago", "--prune", "2.weeks.ago", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -248,7 +248,7 @@ func TestGitPurgeInvalidDatesAreUsageErrorsBeforeAnyChange(t *testing.T) {
 		{"--prune", "garbage"}, {"--reflog-expire", "garbage"}, {"--prune=--all"}, {"--reflog-expire=--all"},
 		{"--prune", ""}, {"--reflog-expire", ""}, {"--prune", "!!!"},
 	} {
-		code, _, errOut := brooom(t, "", append([]string{"git", "purge", "--apply", "--yes"}, args...)...)
+		code, _, errOut := brooom(t, "", append([]string{"git", "purge", "--yes"}, args...)...)
 		if code != ExitUsage {
 			t.Errorf("%v: code %d, want %d (stderr %q)", args, code, ExitUsage, errOut)
 		}
@@ -270,7 +270,7 @@ func TestGitPurgeSkipsRepoMidRebase(t *testing.T) {
 	f := newPurgeFixture(t, nil)
 	f.dangling("x")
 	testutil.WriteFile(t, filepath.Join(f.repo.Dir, ".git"), "MERGE_HEAD", "abc\n")
-	code, out, errOut := brooom(t, "", "git", "purge", "--prune", "now", "--apply", "--yes")
+	code, out, errOut := brooom(t, "", "git", "purge", "--prune", "now", "--yes")
 	if code != ExitOK || !strings.Contains(out, "in progress") {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -287,7 +287,7 @@ func TestGitPurgeLinkedWorktreeIsOneOperationPerRepo(t *testing.T) {
 
 	// Run from inside the linked worktree: it resolves to the main worktree.
 	t.Chdir(wt)
-	code, out, errOut := brooom(t, "", "git", "purge", "--prune", "now")
+	code, out, errOut := brooom(t, "", "git", "purge", "--prune", "now", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -298,7 +298,7 @@ func TestGitPurgeLinkedWorktreeIsOneOperationPerRepo(t *testing.T) {
 	// The workspace scan sees the main and the linked worktree as targets.
 	t.Chdir(f.repo.Dir)
 	writeConfig(t, f.home, workspaceConfig(f.repo.Dir))
-	code, out, errOut = brooom(t, "", "git", "purge", "--workspaces", "--prune", "now")
+	code, out, errOut = brooom(t, "", "git", "purge", "--workspaces", "--prune", "now", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("workspaces: code %d, stderr %q\n%s", code, errOut, out)
 	}

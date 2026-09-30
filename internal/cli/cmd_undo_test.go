@@ -99,7 +99,7 @@ const sid1 = "20260930-100000-aaaa"
 
 func TestUndoNoSessions(t *testing.T) {
 	newUndoFixture(t)
-	code, out, _ := runApp(t, "", false, time.Time{}, "undo")
+	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--dry-run")
 	if code != ExitOK || strings.TrimSpace(out) != "nothing to undo" {
 		t.Fatalf("code=%d out=%q", code, out)
 	}
@@ -123,13 +123,13 @@ func TestUndoDryRunListsReverseOrderAndChangesNothing(t *testing.T) {
 	f := newUndoFixture(t)
 	first, second := f.write("first.txt", "1"), f.write("second.txt", "2")
 	f.session(sid1, time.Now(), first, second)
-	code, out, _ := runApp(t, "", false, time.Time{}, "undo")
+	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
 	if !strings.Contains(out, "restore "+second+" from "+f.quarantineDir()) ||
 		strings.Index(out, second) > strings.Index(out, first) ||
-		!strings.Contains(out, "dry run: nothing was restored; re-run 'brooom undo "+sid1+" --apply' to restore") {
+		!strings.Contains(out, "dry run: nothing was restored; re-run 'brooom undo "+sid1+"' without --dry-run to restore") {
 		t.Fatalf("output:\n%s", out)
 	}
 	if _, err := os.Lstat(first); err == nil {
@@ -147,7 +147,7 @@ func TestUndoApplyRestoresParentAfterChildInReverse(t *testing.T) {
 	parent := filepath.Join(f.repo.Dir, "dir")
 	// The child is quarantined first, the parent (without it) afterwards.
 	f.session(sid1, time.Now(), child, parent)
-	code, out, errOut := runApp(t, "", false, time.Time{}, "undo", "--apply", "--yes")
+	code, out, errOut := runApp(t, "", false, time.Time{}, "undo", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code=%d out=%s err=%s", code, out, errOut)
 	}
@@ -165,7 +165,7 @@ func TestUndoApplyRestoresParentAfterChildInReverse(t *testing.T) {
 		t.Fatalf("summary wrong (reclaimed %d):\n%s", m.ReclaimedBytes, out)
 	}
 	// Running it again is idempotent.
-	code, out, _ = runApp(t, "", false, time.Time{}, "undo", "--apply", "--yes", sid1[:12])
+	code, out, _ = runApp(t, "", false, time.Time{}, "undo", "--yes", sid1[:12])
 	if code != ExitOK || !strings.Contains(out, "already restored") || !strings.Contains(out, "2 already restored") {
 		t.Fatalf("second run code=%d:\n%s", code, out)
 	}
@@ -176,7 +176,7 @@ func TestUndoConflictKeepsExistingFileAndExitsOne(t *testing.T) {
 	a, b := f.write("a.txt", "old a"), f.write("b.txt", "old b")
 	f.session(sid1, time.Now(), a, b)
 	f.write("a.txt", "new a")
-	code, out, errOut := runApp(t, "", false, time.Time{}, "undo", "--apply", "--yes")
+	code, out, errOut := runApp(t, "", false, time.Time{}, "undo", "--yes")
 	if code != ExitError {
 		t.Fatalf("code=%d out=%s err=%s", code, out, errOut)
 	}
@@ -201,7 +201,7 @@ func TestUndoDryRunShowsConflictUpFront(t *testing.T) {
 	a := f.write("a.txt", "old")
 	f.session(sid1, time.Now(), a)
 	f.write("a.txt", "new")
-	code, out, _ := runApp(t, "", false, time.Time{}, "undo")
+	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--dry-run")
 	if code != ExitOK || !strings.Contains(out, "conflict "+a+": original path already exists") {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
@@ -224,7 +224,7 @@ func TestUndoListsNonRestorableEntriesWithHints(t *testing.T) {
 	if err := f.store.Save(m); err != nil {
 		t.Fatal(err)
 	}
-	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--apply", "--yes")
+	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--yes")
 	if code != ExitOK {
 		t.Fatalf("non-restorable entries must not fail the run: code=%d\n%s", code, out)
 	}
@@ -261,7 +261,7 @@ func TestUndoConfirmation(t *testing.T) {
 			f := newUndoFixture(t)
 			p := f.write("a.txt", "a")
 			f.session(sid1, time.Now(), p)
-			code, out, errOut := runApp(t, tt.stdin, tt.tty, time.Time{}, "undo", "--apply")
+			code, out, errOut := runApp(t, tt.stdin, tt.tty, time.Time{}, "undo")
 			if code != tt.wantCode || !strings.Contains(errOut, tt.errText) {
 				t.Fatalf("code=%d out=%s err=%s", code, out, errOut)
 			}
@@ -291,7 +291,7 @@ func TestUndoRefusesForgedOutOfScopePath(t *testing.T) {
 	if err := f.store.Save(m); err != nil {
 		t.Fatal(err)
 	}
-	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--apply", "--yes")
+	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
@@ -311,7 +311,7 @@ func TestUndoOutsideRepoIsUsageError(t *testing.T) {
 	p := f.write("a.txt", "a")
 	f.session(sid1, time.Now(), p)
 	t.Chdir(testutil.ResolvedTempDir(t))
-	code, _, errOut := runApp(t, "", false, time.Time{}, "undo", "--apply", "--yes")
+	code, _, errOut := runApp(t, "", false, time.Time{}, "undo", "--yes")
 	if code != ExitUsage || !strings.Contains(errOut, "not inside a git repository") {
 		t.Fatalf("code=%d err=%q", code, errOut)
 	}
@@ -326,7 +326,7 @@ func TestUndoWithWorkspacesRestoresFromAnywhere(t *testing.T) {
 	f.session(sid1, time.Now(), p)
 	writeConfig(t, f.home, rootsConfig(filepath.Dir(f.repo.Dir)))
 	t.Chdir(testutil.ResolvedTempDir(t))
-	code, out, errOut := runApp(t, "", false, time.Time{}, "undo", "--workspaces", "--apply", "--yes")
+	code, out, errOut := runApp(t, "", false, time.Time{}, "undo", "--workspaces", "--yes")
 	if code != ExitOK || fileContent(t, p) != "a" {
 		t.Fatalf("code=%d out=%s err=%s", code, out, errOut)
 	}
@@ -338,7 +338,7 @@ func TestUndoUsesRecordedStrategyNotConfig(t *testing.T) {
 	f.session(sid1, time.Now(), p)
 	// The config now selects another strategy; the entry says quarantine.
 	writeConfig(t, f.home, map[string]any{"trash": map[string]any{"strategy": "trash"}})
-	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--apply", "--yes", "--trash-strategy", "trash")
+	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--yes", "--trash-strategy", "trash")
 	if code != ExitOK || fileContent(t, p) != "a" {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
@@ -351,7 +351,7 @@ func TestUndoMissingStoredCopy(t *testing.T) {
 	if err := os.RemoveAll(filepath.Dir(m.Entries[0].Trash.StoredPath)); err != nil {
 		t.Fatal(err)
 	}
-	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--apply", "--yes")
+	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--yes")
 	if code != ExitOK || !strings.Contains(out, "is gone") || !strings.Contains(out, "1 not restorable") {
 		t.Fatalf("code=%d out=%s", code, out)
 	}

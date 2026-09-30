@@ -9,7 +9,7 @@ func newSessionsCmd(a *app) *cobra.Command {
 		Example: `  brooom sessions
   brooom sessions 20260929
   brooom sessions --format json`,
-		Long: `List the sessions recorded by --apply runs, or show one session in detail
+		Long: `List the sessions recorded by the runs that changed something, or show one session in detail
 (pass the full id or a unique prefix). Supports --format table (default),
 plain (session ids, or entry paths for one session), json and ndjson (one
 manifest, or one entry, per line). Read-only: nothing is modified.`,

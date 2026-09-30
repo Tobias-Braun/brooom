@@ -17,13 +17,13 @@ import (
 )
 
 func newPurgeCmd(a *app) *cobra.Command {
-	var apply, yes bool
+	var dryRun, yes bool
 	cmd := &cobra.Command{
 		Use:   "purge",
 		Short: "Permanently delete quarantined sessions past their retention and stale scan caches",
 		Long: `List the quarantined sessions (~/.brooom/quarantine/<session-id>) that are
-older than trash.quarantine_retention_days and, with --apply, delete them
-permanently. A retention of 0 means quarantined files never expire, so
+older than trash.quarantine_retention_days and, after one confirmation, delete
+them permanently (--dry-run only lists them, --yes skips the question). A retention of 0 means quarantined files never expire, so
 nothing is listed. Only session directories are touched, never anything else
 in the quarantine directory, the OS trash or the session manifests; the
 manifests of purged sessions are marked as not restorable.
@@ -33,19 +33,19 @@ The same run also lists and removes stale directory size caches
 folders that no longer exist and leftovers of interrupted writes. The caches
 are rebuilt by the next scan, so this frees disk space only.`,
 		Example: `  brooom purge
-  brooom purge --apply`,
+  brooom purge --dry-run`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runPurge(cmd, apply, yes)
+			return a.runPurge(cmd, !dryRun, yes)
 		},
 	}
-	cmd.Flags().BoolVar(&apply, "apply", false, "delete the listed sessions and cache files (default is a dry run)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "only list the sessions and cache files and delete nothing")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation (for scripts)")
 	return cmd
 }
 
-// runPurge lists expired quarantine sessions and, with apply, deletes them
-// after confirmation. A missing confirmation on a non-terminal stdin is a
+// runPurge lists expired quarantine sessions and, unless it is a dry run,
+// deletes them after confirmation. A missing confirmation on a non-terminal stdin is a
 // usage error before anything is deleted.
 func (a *app) runPurge(cmd *cobra.Command, apply, yes bool) error {
 	cfg, _, err := a.loadConfig()
@@ -77,7 +77,7 @@ func (a *app) runPurge(cmd *cobra.Command, apply, yes bool) error {
 			// Only caches are listed; do not talk about sessions.
 			what = "the stale scan cache files"
 		}
-		fmt.Fprintf(a.io.Out, "dry run: nothing was deleted; re-run '%s' to delete %s permanently\n", a.applyCommand(cmd), what)
+		fmt.Fprintf(a.io.Out, "dry run: nothing was deleted; re-run '%s' without --dry-run to delete %s permanently\n", cmd.CommandPath(), what)
 		return nil
 	}
 	if !yes {

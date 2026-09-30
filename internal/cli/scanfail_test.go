@@ -28,11 +28,11 @@ func TestScanFailureIsVisible(t *testing.T) {
 	}{
 		{"scan plain", []string{"scan", "-f", "plain"}},
 		{"root plain", []string{"-f", "plain"}},
-		{"artifacts plain", []string{"artifacts", "-f", "plain"}},
+		{"sweep plain", []string{"sweep", "-f", "plain"}},
 		{"scan table", []string{"scan"}},
 		{"scan summary", []string{"scan", "-f", "summary"}},
 		{"scan json", []string{"scan", "-f", "json"}},
-		{"artifacts dry run", []string{"artifacts"}},
+		{"sweep dry run", []string{"sweep", "--dry-run"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -124,7 +124,11 @@ func (c *Config) Validate() error {
 	validateOutput(&p, c.Output)
 	validateScan(&p, c.Scan)
 	validateAgent(&p, c.Agent)
-	p.oneOf("sweep.preset", c.Sweep.Preset, PresetNames())
+	// Legacy names still load (sweep says which preset runs instead); the
+	// error only advertises the current ones.
+	if !slices.Contains(LegacyPresetNames(), c.Sweep.Preset) {
+		p.oneOf("sweep.preset", c.Sweep.Preset, PresetNames())
+	}
 	if len(p) == 0 {
 		return nil
 	}

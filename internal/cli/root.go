@@ -68,13 +68,18 @@ type globalFlags struct {
 	configPath string
 }
 
-// applyFlags are shared by every command that can modify something.
+// applyFlags are shared by every command that can modify something. Such a
+// command shows its plan, asks once and then acts; --dry-run stops after the
+// plan and --yes skips the question.
 type applyFlags struct {
-	apply         bool
+	dryRun        bool
 	yes           bool
 	force         bool
 	trashStrategy string
 }
+
+// apply reports whether the run acts on its plan (after the confirmation).
+func (f applyFlags) apply() bool { return !f.dryRun }
 
 // app carries state shared by all commands of one invocation.
 type app struct {
@@ -220,15 +225,17 @@ func newRootCmd(a *app) *cobra.Command {
 		Use:   "brooom",
 		Short: "Sweep disk clutter from AI-assisted development",
 		Example: `  brooom
-  brooom --workspaces --format json
   brooom sweep
+  brooom sweep after-agents
   brooom undo`,
 		Long: `Brooom finds and safely cleans the clutter that heavy AI/agent-assisted
 development leaves behind: agent run logs and runtime files, stale and merged
 git branches, leftover worktrees, bloated git histories and build artifacts.
 
-Safety first: every command is a dry run unless you pass --apply, removed
-files go to the trash by default, and every applied session can be undone.
+Safety first: every command that changes something shows its plan and asks
+once before it acts (--dry-run only shows the plan, --yes skips the question),
+removed files go to the trash by default, and every session can be undone.
+Sweep never removes unmerged or uncommitted work.
 Brooom never removes a directory that contains version control metadata (.git,
 .hg, .jj, .svn) or a Windows junction, and the delete strategy is refused
 outside a git repository and whenever git cannot confirm that a path holds no
@@ -273,12 +280,7 @@ Without flags Brooom only looks at the git repository you are in. Use
 	root.AddCommand(
 		newScanCmd(a),
 		newSweepCmd(a),
-		newBranchesCmd(a),
-		newWorktreesCmd(a),
 		newGitCmd(a),
-		newLogsCmd(a),
-		newArtifactsCmd(a),
-		newAICmd(a),
 		newCleanCmd(a),
 		newUndoCmd(a),
 		newSessionsCmd(a),
@@ -348,9 +350,16 @@ func NewRootCommand() *cobra.Command {
 }
 
 // addApplyFlags registers the flags of commands that can modify things.
+// sweep leaves out --force (see addForceFlag): it never acts on dirty or
+// unmerged work.
 func addApplyFlags(cmd *cobra.Command, f *applyFlags) {
-	cmd.Flags().BoolVar(&f.apply, "apply", false, "execute the plan (default is a dry run)")
+	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "only show what would be done and change nothing")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "do not ask for confirmation (for scripts)")
-	cmd.Flags().BoolVar(&f.force, "force", false, "also act on findings with blocking risk flags (e.g. git branch -D)")
 	cmd.Flags().StringVar(&f.trashStrategy, "trash-strategy", "", "override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files)")
+}
+
+// addForceFlag registers --force for the commands that may act on findings
+// with overridable blocking risk flags.
+func addForceFlag(cmd *cobra.Command, f *applyFlags) {
+	cmd.Flags().BoolVar(&f.force, "force", false, "also act on findings with blocking risk flags (e.g. git branch -D)")
 }

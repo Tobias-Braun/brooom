@@ -64,8 +64,9 @@ func TestCompleteStaticFlagValues(t *testing.T) {
 	}{
 		{"format", []string{"--format", ""}, []string{"json", "table", "plain"}, nil, ""},
 		{"format prefix", []string{"--format", "nd"}, []string{"ndjson"}, []string{"json", "table"}, ""},
-		{"branches trash strategy", []string{"branches", "--trash-strategy", ""}, []string{"trash", "quarantine", "delete"}, nil, "permanently"},
-		{"preset", []string{"sweep", "--preset", ""}, []string{"safe", "standard", "aggressive"}, nil, ""},
+		{"sweep trash strategy", []string{"sweep", "--trash-strategy", ""}, []string{"trash", "quarantine", "delete"}, nil, "permanently"},
+		{"preset", []string{"sweep", ""}, []string{"after-agents", "tidy", "everything"}, nil, "agent run"},
+		{"preset prefix", []string{"sweep", "af"}, []string{"after-agents"}, []string{"tidy"}, ""},
 		{"detector", []string{"--detector", ""}, []string{"merged-branch", "worktrees", "build-artifacts"}, nil, ""},
 		{"detector short flag", []string{"-d", "wor"}, []string{"worktrees"}, []string{"merged-branch"}, ""},
 	}
@@ -122,7 +123,7 @@ func TestCompleteDetectorDescriptionsAndCommas(t *testing.T) {
 
 func TestCompleteTrashStrategyDeleteIsFlaggedPermanent(t *testing.T) {
 	emptyHome(t)
-	lines, _ := complete(t, "logs", "--trash-strategy", "d")
+	lines, _ := complete(t, "sweep", "--trash-strategy", "d")
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], "delete\t") || !strings.Contains(lines[0], "cannot be undone") {
 		t.Errorf("delete candidate = %q", lines)
 	}

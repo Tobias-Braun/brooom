@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 )
 
@@ -109,106 +110,105 @@ func hintCommands(text string) []string {
 	return out
 }
 
-func TestApplyCommandKeepsTheInvocation(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-		want string
-	}{
-		{"merged flag", []string{"branches", "--merged"}, "brooom branches --merged --apply"},
-		{"sweep with detector and strategy", []string{"sweep", "-d", "merged-branch", "--trash-strategy", "delete"},
-			"brooom sweep -d merged-branch --trash-strategy delete"},
-		{"clean from file", []string{"clean", "--from", "f.json"}, "brooom clean --from f.json --apply"},
-		{"existing apply is not doubled", []string{"branches", "--apply", "--merged"}, "brooom branches --merged --apply"},
-		{"apply=true is replaced", []string{"branches", "--apply=false"}, "brooom branches --apply"},
-		{"spaces are quoted", []string{"clean", "--from", "my findings.json"}, "brooom clean --from " + findings.Quote("my findings.json") + " --apply"},
-		{"global flags before the command", []string{"--config", "c.json", "-w", "logs"}, "brooom --config c.json -w logs --apply"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			a := &app{args: tt.args}
-			root := newRootCmd(a)
-			cmd, _, err := root.Find(tt.args)
-			if err != nil {
-				t.Fatal(err)
-			}
-			// Find skips leading global flags poorly, so resolve the leaf
-			// through a full parse for those.
-			if cmd == root {
-				if err := root.ParseFlags(tt.args); err != nil {
-					t.Fatal(err)
-				}
-				cmd, _, _ = root.Find(root.Flags().Args())
-			}
-			if got := a.applyCommand(cmd); got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-			requireParses(t, a.applyCommand(cmd))
-		})
+// hintFinding is an actionable finding of a detector at a confidence.
+func hintFinding(detector string, c findings.Confidence) findings.Finding {
+	return findings.Finding{
+		Detector: detector, Confidence: c,
+		SuggestedAction: findings.SuggestedAction{Type: findings.ActionTrash},
 	}
 }
 
-func TestScanApplyHints(t *testing.T) {
+func TestScanHint(t *testing.T) {
+	merged := hintFinding("merged-branch", findings.ConfidenceHigh)
+	stale := hintFinding("stale-branch", findings.ConfidenceHigh)
+	logs := hintFinding(config.DetectorLogs, findings.ConfidenceMedium)
+	activeBuild := hintFinding("build-artifacts", findings.ConfidenceMedium)
 	tests := []struct {
-		name string
-		args []string
-		want string
+		name   string
+		args   []string
+		preset string
+		fs     []findings.Finding
+		want   string
 	}{
-		{"plain", []string{"scan"}, "brooom sweep"},
-		{"scope flags", []string{"scan", "-w", "--root", "/r", "--config", "c.json"}, "brooom sweep --config c.json --workspaces --root /r"},
-		{"one shortcut", []string{"scan", "-d", "merged-branch"}, "brooom branches --detector merged-branch --apply"},
-		{"two detectors of one shortcut", []string{"scan", "-d", "stale-branch,merged-branch"}, "brooom branches --detector " + findings.Quote("stale-branch,merged-branch") + " --apply"},
-		{"detectors of no shortcut", []string{"scan", "-d", "git-bloat,logs"}, ""},
+		{"default preset", []string{"scan"}, "", []findings.Finding{merged, logs},
+			"nothing was changed; run `brooom sweep` to review and clean these"},
+		{"bare command", nil, "", []findings.Finding{merged},
+			"nothing was changed; run `brooom sweep` to review and clean these"},
+		{"scope flags", []string{"scan", "-w", "--root", "/r", "--config", "c.json"}, "", []findings.Finding{merged},
+			"nothing was changed; run `brooom sweep --config c.json --workspaces --root /r` to review and clean these"},
+		{"detector kept when the preset runs it", []string{"scan", "-d", "merged-branch,stale-branch"}, "", []findings.Finding{merged, stale},
+			"nothing was changed; run `brooom sweep --detector merged-branch` to review and clean these (1 of 2; the rest are in no sweep preset)"},
+		{"configured preset covers nothing", []string{"scan"}, "tidy", []findings.Finding{merged},
+			"nothing was changed; run `brooom sweep everything` to review and clean these"},
+		{"legacy preset in the config", []string{"scan"}, "safe", []findings.Finding{merged},
+			"nothing was changed; run `brooom sweep` to review and clean these"},
+		{"no preset acts", []string{"scan"}, "", []findings.Finding{stale, activeBuild},
+			"nothing was changed; no sweep preset acts on these findings (see `brooom help sweep`)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a := &app{args: tt.args}
+			a := &app{args: tt.args, goos: "linux"}
 			root := newRootCmd(a)
-			cmd, rest, _ := root.Find(tt.args)
+			if err := root.ParseFlags(tt.args); err != nil {
+				t.Fatal(err)
+			}
+			cmd, rest, _ := root.Find(root.Flags().Args())
 			if err := cmd.ParseFlags(rest); err != nil {
 				t.Fatal(err)
 			}
-			got := a.applyCommand(cmd)
-			if tt.want != "" && got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
+			cfg := config.Default()
+			if tt.preset != "" {
+				cfg.Sweep.Preset = tt.preset
 			}
-			if tt.want == "" && (!strings.Contains(got, "brooom scan --detector "+findings.Quote("git-bloat,logs")+" --format json > brooom-findings.json && brooom clean --from brooom-findings.json --apply")) {
-				t.Errorf("got %q", got)
+			res := &scanResult{Config: cfg, Report: &findings.Report{Findings: tt.fs}}
+			got := a.scanHint(cmd, res)
+			if got != tt.want {
+				t.Errorf("got  %q\nwant %q", got, tt.want)
 			}
-			for _, c := range hintCommands("`" + got + "`") {
+			for _, c := range hintCommands(got) {
 				requireParses(t, c)
 			}
 		})
 	}
 }
 
-// TestHintsRoundTripThroughTheRealCommands runs commands, reads the suggested
-// command out of the output and checks that it parses and does what the dry
-// run promised: the reported scope, and nothing more.
+// TestScanHintOnlyAfterScan: commands that render a scan report for other
+// reasons (git purge, a machine-format sweep) print their own guidance.
+func TestScanHintOnlyAfterScan(t *testing.T) {
+	a := &app{}
+	root := newRootCmd(a)
+	cmd, _, err := root.Find([]string{"git", "purge"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := &scanResult{Config: config.Default(), Report: &findings.Report{Findings: []findings.Finding{hintFinding("git-bloat", findings.ConfidenceMedium)}}}
+	if got := a.scanHint(cmd, res); got != "" {
+		t.Errorf("git purge got a scan hint: %q", got)
+	}
+}
+
+// TestHintsRoundTripThroughTheRealCommands runs a scan, reads the suggested
+// command out of the output and checks that it parses and does what the scan
+// reported: the merged branches, and nothing more.
 func TestHintsRoundTripThroughTheRealCommands(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	f.feature("feat/unmerged")
 
-	_, out, _ := brooom(t, "", "branches", "--merged", "--detector", "merged-branch")
+	_, out, _ := brooom(t, "", "scan", "--detector", "merged-branch")
 	cmds := hintCommands(out)
-	if len(cmds) == 0 {
-		t.Fatalf("no hint in:\n%s", out)
+	if len(cmds) != 1 || cmds[0] != "brooom sweep --detector merged-branch" {
+		t.Fatalf("hint commands %q in:\n%s", cmds, out)
 	}
-	for _, c := range cmds {
-		requireParses(t, c)
-	}
-	if !strings.Contains(out, "brooom branches --merged --detector merged-branch --apply") {
-		t.Errorf("hint lost the invocation:\n%s", out)
-	}
+	requireParses(t, cmds[0])
 
-	// Executing the suggested command deletes what the dry run reported.
-	args := shellSplit(t, "brooom branches --merged --detector merged-branch --apply --yes")[1:]
+	// Executing the suggested command deletes what the scan reported.
+	args := append(shellSplit(t, cmds[0])[1:], "--yes")
 	if code, _, errOut := brooom(t, "", args...); code != ExitOK {
 		t.Fatalf("code %d: %s", code, errOut)
 	}
 	if f.hasBranch("feat/merged") || !f.hasBranch("feat/unmerged") {
-		t.Errorf("branches after apply: %v", f.branches())
+		t.Errorf("branches after sweep: %v", f.branches())
 	}
 }
 
@@ -217,19 +217,16 @@ func TestCleanHintsReplayable(t *testing.T) {
 	f.mergedAndSquashed()
 	path := writeReportFile(t, scanReport(t).Findings...)
 
-	_, out, _ := clean(t, "", "--from", path)
-	if !strings.Contains(out, "re-run 'brooom clean --from "+findings.Quote(path)+" ") {
-		t.Fatalf("file hint lost --from:\n%s", out)
-	}
-	for _, c := range hintCommands(out) {
-		requireParses(t, c)
+	_, out, _ := clean(t, "", "--from", path, "--dry-run")
+	if !strings.Contains(out, "dry run: nothing was changed; re-run without --dry-run to execute") {
+		t.Fatalf("file hint:\n%s", out)
 	}
 
 	// stdin cannot be replayed: the hint says so instead of suggesting a
 	// command that fails with an empty input.
 	data := mustJSON(t, scanReport(t))
-	_, out, _ = clean(t, data, "--from", "-")
-	if !strings.Contains(out, "save the findings to a file") || strings.Contains(out, "re-run 'brooom clean") {
+	_, out, _ = clean(t, data, "--from", "-", "--dry-run")
+	if !strings.Contains(out, "save the findings to a file") || strings.Contains(out, "re-run without") {
 		t.Errorf("stdin hint:\n%s", out)
 	}
 }
@@ -270,18 +267,19 @@ func TestScanForceIsReadOnlyAndReachesDetectors(t *testing.T) {
 
 // TestDetectorFlagIsOneWordOnWindows guards the multi-detector hint: ',' is
 // PowerShell's array operator, so a bare `a,b` would reach the exe as two
-// arguments and the pasted hint would scan the wrong detectors.
+// arguments and the pasted hint would sweep the wrong detectors.
 func TestDetectorFlagIsOneWordOnWindows(t *testing.T) {
+	everything := mustPreset("everything")
 	a := &app{goos: "windows"}
-	a.flags.detectors = []string{"stale-branch", "merged-branch"}
-	got := a.detectorFlag()
-	want := []string{"--detector", `"stale-branch,merged-branch"`}
+	a.flags.detectors = []string{"build-artifacts", "merged-branch"}
+	got := a.presetDetectorFlag(everything)
+	want := []string{"--detector", `"build-artifacts,merged-branch"`}
 	if !slices.Equal(got, want) {
-		t.Errorf("detectorFlag() = %q, want %q", got, want)
+		t.Errorf("presetDetectorFlag() = %q, want %q", got, want)
 	}
 	u := &app{goos: "linux"}
 	u.flags.detectors = a.flags.detectors
-	if got := u.detectorFlag(); got[1] != "stale-branch,merged-branch" {
-		t.Errorf("unix detectorFlag() = %q, want a bare word", got)
+	if got := u.presetDetectorFlag(everything); got[1] != "build-artifacts,merged-branch" {
+		t.Errorf("unix presetDetectorFlag() = %q, want a bare word", got)
 	}
 }

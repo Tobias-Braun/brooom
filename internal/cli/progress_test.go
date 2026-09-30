@@ -107,7 +107,7 @@ var displayMarks = []string{"\x1b[?25l", "✓ done", "Scanning", "Discovering"}
 func TestScanShowsSummaryOnATerminal(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, out, errOut := runTTY(t, true, nil, "branches")
+	code, out, errOut := runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -134,11 +134,11 @@ func TestNoDisplayWhenAutoConditionsFail(t *testing.T) {
 		env  map[string]string
 		args []string
 	}{
-		{"stderr not a terminal", false, nil, []string{"branches"}},
-		{"CI", true, map[string]string{"CI": "true"}, []string{"branches"}},
-		{"TERM dumb", true, map[string]string{"TERM": "dumb"}, []string{"branches"}},
-		{"quiet", true, nil, []string{"branches", "--quiet"}},
-		{"never", true, nil, []string{"branches", "--progress=never"}},
+		{"stderr not a terminal", false, nil, []string{"sweep", "--dry-run"}},
+		{"CI", true, map[string]string{"CI": "true"}, []string{"sweep", "--dry-run"}},
+		{"TERM dumb", true, map[string]string{"TERM": "dumb"}, []string{"sweep", "--dry-run"}},
+		{"quiet", true, nil, []string{"sweep", "after-agents", "-d", "merged-branch", "--dry-run", "--quiet"}},
+		{"never", true, nil, []string{"sweep", "after-agents", "-d", "merged-branch", "--dry-run", "--progress=never"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -158,7 +158,7 @@ func TestNoDisplayWhenAutoConditionsFail(t *testing.T) {
 func TestNoColorKeepsTheDisplayButDropsColour(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, _, errOut := runTTY(t, true, map[string]string{"NO_COLOR": "1"}, "branches", "--progress=always")
+	code, _, errOut := runTTY(t, true, map[string]string{"NO_COLOR": "1"}, "sweep", "after-agents", "-d", "merged-branch", "--dry-run", "--progress=always")
 	if code != ExitOK || !strings.Contains(errOut, "✓ done") {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -178,7 +178,7 @@ func TestMachineFormatsAreUnchangedOnAFakedTerminal(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	for _, format := range []string{"json", "ndjson", "plain"} {
-		for _, cmd := range [][]string{{"scan"}, {"branches"}} {
+		for _, cmd := range [][]string{{"scan"}, {"sweep", "--dry-run"}} {
 			ref := append(append([]string{}, cmd...), "-f", format, "--progress=never")
 			refCode, refOut, refErr := runTTY(t, false, nil, ref...)
 			if refCode != ExitOK || refOut == "" {
@@ -220,7 +220,7 @@ func TestConfigMachineFormatAlsoDisablesTheDisplay(t *testing.T) {
 func TestApplyShowsProgressAndStillDeletes(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, out, errOut := runTTY(t, true, nil, "branches", "--apply", "--yes")
+	code, out, errOut := runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -230,7 +230,7 @@ func TestApplyShowsProgressAndStillDeletes(t *testing.T) {
 	if !strings.Contains(errOut, "✓ done · discover, scan, plan, apply") {
 		t.Errorf("stderr lacks the summary of all four phases: %q", errOut)
 	}
-	if !strings.Contains(out, "summary:") || strings.Contains(out, "\x1b") {
+	if !strings.Contains(out, "2 merged branches removed") || strings.Contains(out, "\x1b") {
 		t.Errorf("the executor summary must stay on plain stdout: %q", out)
 	}
 }
@@ -240,7 +240,7 @@ func TestApplyShowsProgressAndStillDeletes(t *testing.T) {
 func TestApplyWithConfigMachineFormatStillShowsProgress(t *testing.T) {
 	f := newCleanupFixture(t, map[string]any{"output": map[string]any{"format": "json"}})
 	f.mergedAndSquashed()
-	code, _, errOut := runTTY(t, true, nil, "branches", "--apply", "--yes")
+	code, _, errOut := runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--yes")
 	if code != ExitOK || !strings.Contains(errOut, "✓ done") {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -257,7 +257,7 @@ func TestConfirmationPromptsAreNotShadowedByTheDisplay(t *testing.T) {
 		stdinTTY:  func() bool { return true },
 		stderrTTY: func() bool { return true },
 	}
-	if code := execute(a, []string{"branches", "--apply"}); code != ExitOK {
+	if code := execute(a, []string{"sweep", "after-agents", "-d", "merged-branch"}); code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, e.String())
 	}
 	// The prompt and the plan are on stdout, and the answers were consumed:
@@ -277,7 +277,7 @@ func TestUndoShowsProgress(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	var o, e bytes.Buffer
 	a := &app{io: IO{In: strings.NewReader(""), Out: &o, Err: &e}, stderrTTY: func() bool { return true }}
-	if code := execute(a, []string{"undo", "--apply", "--yes"}); code != ExitOK {
+	if code := execute(a, []string{"undo", "--yes"}); code != ExitOK {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, o.String(), e.String())
 	}
 	if !strings.Contains(e.String(), "✓ done · undo") {
@@ -292,7 +292,7 @@ func TestUndoIgnoresAMachineFormatFromTheConfig(t *testing.T) {
 	f := newUndoFixture(t)
 	f.session(sid1, time.Now(), f.write("a.txt", "a"))
 	writeConfig(t, f.home, map[string]any{"output": map[string]any{"format": "json"}})
-	code, _, errOut := runTTY(t, true, nil, "undo", "--apply", "--yes")
+	code, _, errOut := runTTY(t, true, nil, "undo", "--yes")
 	if code != ExitOK || !strings.Contains(errOut, "✓ done · undo") {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
@@ -346,10 +346,10 @@ func TestCommandsLeaveNoGoroutinesBehind(t *testing.T) {
 	}
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	runTTY(t, true, nil, "branches", "--progress=always") // warm up shared, lazily started goroutines
+	runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--dry-run", "--progress=always") // warm up shared, lazily started goroutines
 	before := runtime.NumGoroutine()
 	for range 3 {
-		if code, _, errOut := runTTY(t, true, nil, "branches", "--progress=always"); code != ExitOK {
+		if code, _, errOut := runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--dry-run", "--progress=always"); code != ExitOK {
 			t.Fatalf("code %d, stderr %q", code, errOut)
 		}
 	}

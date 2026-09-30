@@ -31,8 +31,8 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/scope"
 )
 
-// Category groups detectors for CLI shortcuts (`brooom branches`,
-// `brooom artifacts`, ...) and presets.
+// Category groups detectors, e.g. to tell git detectors (which need the git
+// binary) from file detectors.
 type Category string
 
 const (
@@ -50,7 +50,7 @@ type Detector interface {
 	Name() string
 	// Description is a one-line human-readable summary for --help and docs.
 	Description() string
-	// Category groups the detector for CLI shortcuts and presets.
+	// Category groups the detector (see Category).
 	Category() Category
 	// Detect scans the target and calls emit for every finding. It must be
 	// safe to call concurrently for different targets, must honour ctx

@@ -33,108 +33,31 @@ func leafFor(t *testing.T, a *app, args []string) *cobra.Command {
 	return cmd
 }
 
-// TestApplyHintDropsYesAndFormat reproduces #182 item 1: a pasted hint kept
-// -y (so it skipped the confirmation) and an explicit --format (so a machine
-// format made --apply fail).
-func TestApplyHintDropsYesAndFormat(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-		want string
-	}{
-		{"short yes", []string{"branches", "-y"}, "brooom branches --apply"},
-		{"long yes", []string{"branches", "--yes", "--merged"}, "brooom branches --merged --apply"},
-		{"yes with value", []string{"branches", "--yes=true"}, "brooom branches --apply"},
-		{"short format", []string{"branches", "-f", "tree"}, "brooom branches --apply"},
-		{"long format", []string{"branches", "--format", "json"}, "brooom branches --apply"},
-		{"format equals", []string{"branches", "--format=json"}, "brooom branches --apply"},
-		{"attached short format", []string{"branches", "-fjson"}, "brooom branches --apply"},
-		{"format before command", []string{"-f", "plain", "branches"}, "brooom branches --apply"},
-		{"cluster with yes", []string{"branches", "-qy"}, "brooom branches -q --apply"},
-		{"cluster ending in format", []string{"branches", "-qf", "json"}, "brooom branches -q --apply"},
-		{"other flags stay", []string{"sweep", "-y", "-d", "merged-branch", "-f", "table", "--trash-strategy", "quarantine"},
-			"brooom sweep -d merged-branch --trash-strategy quarantine"},
-		{"clean from file", []string{"clean", "--from", "f.json", "--yes", "--format", "json"}, "brooom clean --from f.json --apply"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			a := &app{args: tt.args}
-			cmd := leafFor(t, a, tt.args)
-			if cmd.Name() == "brooom" {
-				cmd, _, _ = cmd.Find(cmd.Flags().Args())
-			}
-			if got := a.applyCommand(cmd); got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-			requireParses(t, a.applyCommand(cmd))
-		})
-	}
-}
-
-// TestScanHintKeepsForce reproduces #182 item 2: findings of a `scan --force`
-// are only reproduced by a command that forces as well.
-func TestScanHintKeepsForce(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-		want string
-	}{
-		{"sweep", []string{"scan", "--force"}, "brooom sweep --force"},
-		{"scope flags", []string{"scan", "--force", "-w", "--root", "/r"}, "brooom sweep --workspaces --root /r --force"},
-		{"shortcut", []string{"scan", "--force", "-d", "merged-branch"}, "brooom branches --detector merged-branch --force --apply"},
-		{"pipeline forces both ends", []string{"scan", "--force", "-d", "git-bloat,logs"},
-			"brooom scan --detector " + findings.Quote("git-bloat,logs") + " --force --format json > brooom-findings.json && brooom clean --from brooom-findings.json --force --apply"},
-		{"without force nothing is added", []string{"scan"}, "brooom sweep"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			a := &app{args: tt.args}
-			got := a.applyCommand(leafFor(t, a, tt.args))
-			if got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-			for _, c := range hintCommands("`" + got + "`") {
-				requireParses(t, c)
-			}
-		})
-	}
-}
-
-// TestHintQuotingIsOSAware reproduces #182 items 3 and 12 for the CLI: the
-// pipeline hint has to work in PowerShell and cmd.exe, where single quotes
-// are wrong (cmd.exe) or expand nothing useful, and on unix a `$` must not be
-// left to the shell inside double quotes.
+// TestHintQuotingIsOSAware reproduces #182 items 3 and 12 for the CLI: a
+// suggested command has to work in PowerShell and cmd.exe, where single
+// quotes are wrong (cmd.exe), and on unix a `$` must not be left to the shell
+// inside double quotes.
 func TestHintQuotingIsOSAware(t *testing.T) {
 	tests := []struct {
-		name string
-		goos string
-		want string
+		goos, cfg, want string
 	}{
-		{"windows path with a space", "windows",
-			`brooom scan --config "C:\my dir\c.json" --detector "git-bloat,logs" --format json > brooom-findings.json && brooom clean --config "C:\my dir\c.json" --from brooom-findings.json --apply`},
-		{"linux path with a space", "linux",
-			`brooom scan --config '/my dir/c.json' --detector git-bloat,logs --format json > brooom-findings.json && brooom clean --config '/my dir/c.json' --from brooom-findings.json --apply`},
+		{"windows", `C:\my dir\c.json`, "run `brooom sweep --config \"C:\\my dir\\c.json\"`"},
+		{"linux", `/my dir/c.json`, "run `brooom sweep --config '/my dir/c.json'`"},
+		{"linux", `$HOME/c.json`, "run `brooom sweep --config '$HOME/c.json'`"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := `/my dir/c.json`
-			if tt.goos == "windows" {
-				cfg = `C:\my dir\c.json`
-			}
-			args := []string{"scan", "--config", cfg, "-d", "git-bloat,logs"}
+		t.Run(tt.goos+" "+tt.cfg, func(t *testing.T) {
+			args := []string{"scan", "--config", tt.cfg}
 			a := &app{args: args, goos: tt.goos}
-			if got := a.applyCommand(leafFor(t, a, args)); got != tt.want {
+			a.flags.configPath = tt.cfg
+			res := &scanResult{Report: &findings.Report{Findings: []findings.Finding{{
+				Detector: "merged-branch", Confidence: findings.ConfidenceHigh,
+				SuggestedAction: findings.SuggestedAction{Type: findings.ActionDeleteBranch},
+			}}}}
+			if got := a.scanHint(leafFor(t, a, args), res); !strings.Contains(got, tt.want) {
 				t.Errorf("got  %s\nwant %s", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestHintQuotingKeepsDollarLiteral(t *testing.T) {
-	a := &app{args: []string{"clean", "--from", "$HOME/x y.json"}, goos: "linux"}
-	got := a.applyCommand(leafFor(t, a, a.args))
-	if want := `brooom clean --from '$HOME/x y.json' --apply`; got != want {
-		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
@@ -219,7 +142,7 @@ func normalizeVolatile(out, repoDir string) string {
 func TestQuietOutputIsExact(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, out, errOut := brooom(t, "", "branches", "-q")
+	code, out, errOut := brooom(t, "", sweepArgs("--dry-run", "-q")...)
 	if code != ExitOK || errOut != "" {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -229,7 +152,9 @@ func TestQuietOutputIsExact(t *testing.T) {
 		t.Errorf("quiet dry run:\n got %q\nwant %q", got, want)
 	}
 
-	code, out, errOut = brooom(t, "", "branches", "--apply", "--yes", "-q")
+	// The full quiet summary is clean's; a quiet sweep is silent on success.
+	report := writeRaw(t, func() string { _, o, _ := brooom(t, "", "scan", "-d", "merged-branch", "-f", "json"); return o }())
+	code, out, errOut = brooom(t, "", "clean", "--from", report, "--yes", "-q")
 	if code != ExitOK || errOut != "" {
 		t.Fatalf("apply: code %d, stderr %q", code, errOut)
 	}
@@ -280,15 +205,15 @@ func TestNothingSelectedPaths(t *testing.T) {
 		wantOut string
 		check   func(t *testing.T, out string)
 	}{
-		{"human", []string{"branches"}, "nothing to clean\n", nil},
-		{"quiet", []string{"branches", "-q"}, "", nil},
-		{"apply", []string{"branches", "--apply", "--yes"}, "nothing to clean\n", nil},
-		{"json is a valid empty report", []string{"branches", "-f", "json"}, "", func(t *testing.T, out string) {
+		{"human", sweepArgs("--dry-run"), "nothing to clean\n", nil},
+		{"quiet", sweepArgs("--dry-run", "-q"), "", nil},
+		{"acting", sweepArgs("--yes"), "nothing to clean\n", nil},
+		{"json is a valid empty report", sweepArgs("-f", "json"), "", func(t *testing.T, out string) {
 			if !strings.Contains(out, `"findings": []`) {
 				t.Errorf("no empty report:\n%s", out)
 			}
 		}},
-		{"plain is empty", []string{"branches", "-f", "plain"}, "", nil},
+		{"plain is empty", sweepArgs("-f", "plain"), "", nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -306,28 +231,28 @@ func TestNothingSelectedPaths(t *testing.T) {
 	}
 }
 
-// TestApplyHonoursExplicitFormat reproduces #182 item 5: with --apply an
-// explicit -f tree|table|summary was silently ignored.
-func TestApplyHonoursExplicitFormat(t *testing.T) {
+// TestActingRunHonoursExplicitFormat reproduces #182 item 5: an acting run
+// silently ignored an explicit -f tree|table|summary.
+func TestActingRunHonoursExplicitFormat(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, out, errOut := brooom(t, "", "branches", "--apply", "--yes", "-f", "summary")
+	code, out, errOut := brooom(t, "", sweepArgs("--yes", "-f", "summary")...)
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 	if !strings.Contains(out, "DETECTOR") {
-		t.Errorf("-f summary was ignored with --apply:\n%s", out)
+		t.Errorf("-f summary was ignored by an acting run:\n%s", out)
 	}
-	if !strings.Contains(out, "summary: 2 applied") {
+	if !strings.Contains(out, "2 merged branches removed") {
 		t.Errorf("apply did not run:\n%s", out)
 	}
 }
 
-func TestApplyRejectsBadFormatBeforeActing(t *testing.T) {
+func TestActingRunRejectsBadFormatBeforeActing(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	for _, format := range []string{"bogus", "json", "ndjson", "plain"} {
-		code, _, errOut := brooom(t, "", "branches", "--apply", "--yes", "-f", format)
+		code, _, errOut := brooom(t, "", sweepArgs("--yes", "-f", format)...)
 		if code != ExitUsage {
 			t.Errorf("-f %s: exit %d, want %d (stderr %q)", format, code, ExitUsage, errOut)
 		}
@@ -350,8 +275,8 @@ func TestUndoRejectsFormatAndDetector(t *testing.T) {
 		{"format short", []string{"undo", "-f", "json"}, ExitUsage, "--format has no effect on 'undo'"},
 		{"format long", []string{"undo", "--format", "plain"}, ExitUsage, "--format has no effect on 'undo'"},
 		{"detector", []string{"undo", "-d", "build-artifacts"}, ExitUsage, "--detector has no effect on 'undo'"},
-		{"workspaces stays valid", []string{"undo", "--workspaces"}, ExitOK, ""},
-		{"plain undo", []string{"undo"}, ExitOK, ""},
+		{"workspaces stays valid", []string{"undo", "--workspaces", "--dry-run"}, ExitOK, ""},
+		{"plain undo", []string{"undo", "--dry-run"}, ExitOK, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

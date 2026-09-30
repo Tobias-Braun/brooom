@@ -17,7 +17,7 @@ import (
 // ErrConfirmationRequired is returned by Run when it would have to ask for
 // confirmation but stdin is not a terminal and --yes was not given. It is
 // returned before anything is created or changed.
-var ErrConfirmationRequired = errors.New("refusing to apply without confirmation: stdin is not a terminal; pass --yes")
+var ErrConfirmationRequired = errors.New("refusing to act without confirmation: stdin is not a terminal; pass --yes to proceed or --dry-run to only preview")
 
 // ErrInterrupted is returned by Run when the context was cancelled (Ctrl-C)
 // between steps. The manifest and summary are complete for what did run.
@@ -35,16 +35,17 @@ type IO struct {
 type Options struct {
 	// Apply executes the plan; false prints a dry run and changes nothing.
 	Apply bool
-	// Yes skips the confirmation prompts.
+	// Yes skips the confirmation question.
 	Yes bool
 	// Force allows acting on findings with overridable blocking risk flags.
 	Force bool
 	// Quiet drops the plan detail, totals, hint and empty-state text of a
 	// dry run and shrinks the apply summary to what a script needs.
 	Quiet bool
-	// Brief replaces the per-item plan and the multi-line apply summary with
-	// one line of counts and the reclaimed size (see renderBriefSummary). It
-	// only affects applying runs; a dry run always shows the plan.
+	// Brief replaces the multi-line apply summary with one line of counts and
+	// the reclaimed size (see renderBriefSummary), and drops the per-item plan
+	// of a run that does not ask. It only affects applying runs; a dry run and
+	// a run that asks for confirmation always show the plan.
 	Brief bool
 	IO    IO
 	// Store receives the session manifest (required with Apply).
@@ -61,8 +62,8 @@ type Options struct {
 	// UndoFlags are the pre-quoted scope flags (--workspaces, --root, --config)
 	// appended to the printed undo command, so the hint works from anywhere.
 	UndoFlags []string
-	// RerunHint completes the dry-run hint, e.g. "brooom branches --apply".
-	// Default: "re-run with --apply".
+	// RerunHint completes the dry-run hint, e.g. "brooom sweep".
+	// Default: "re-run without --dry-run".
 	RerunHint string
 	// Lookup resolves action implementations (default Get). Tests inject
 	// fakes because the global registry panics on duplicate registration.
@@ -215,7 +216,7 @@ func NewExecutor(o Options) *Executor {
 		o.IO.Err = io.Discard
 	}
 	if o.RerunHint == "" {
-		o.RerunHint = "re-run with --apply"
+		o.RerunHint = "re-run without --dry-run"
 	}
 	if o.StdinIsTTY == nil {
 		in := o.IO.In
@@ -234,9 +235,6 @@ func NewExecutor(o Options) *Executor {
 // Run plans and, with Apply, confirms and executes. Without Apply it prints
 // the plan as a dry run and creates nothing.
 func (e *Executor) Run(ctx context.Context, fs []findings.Finding) (*Result, error) {
-	if e.opts.Apply && !e.opts.Yes && !e.opts.StdinIsTTY() {
-		return nil, ErrConfirmationRequired
-	}
 	if e.opts.Apply && e.opts.Store == nil {
 		return nil, errors.New("apply requires a session store")
 	}
@@ -246,6 +244,11 @@ func (e *Executor) Run(ctx context.Context, fs []findings.Finding) (*Result, err
 	// for confirmation.
 	if ctx.Err() != nil {
 		return res, ErrInterrupted
+	}
+	// Planning only reads, so the missing terminal is only an error when
+	// there is something to confirm: "nothing to clean" needs no answer.
+	if e.opts.Apply && !e.opts.Yes && !plan.Empty() && !e.opts.StdinIsTTY() {
+		return res, ErrConfirmationRequired
 	}
 	// The plan and the prompts are ordinary stdout text: the live display
 	// steps aside until the apply phase starts again.
@@ -262,7 +265,10 @@ func (e *Executor) Run(ctx context.Context, fs []findings.Finding) (*Result, err
 // skipped or failed, because "nothing to clean" would hide them.
 func (e *Executor) present(plan *Plan, res *Result) (done bool) {
 	out := e.opts.IO.Out
-	if !e.opts.Quiet && !e.brief() {
+	// The plan is what the confirmation question refers to, so a run that
+	// asks always shows it, quiet or brief.
+	asks := e.opts.Apply && !e.opts.Yes && !plan.Empty()
+	if asks || (!e.opts.Quiet && !e.brief()) {
 		renderPlan(out, plan)
 	}
 	if plan.Empty() {

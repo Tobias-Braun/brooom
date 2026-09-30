@@ -32,7 +32,7 @@ func jsonString(s string) string {
 func TestPurgeListsStaleScanCacheInDryRun(t *testing.T) {
 	f := newUndoFixture(t)
 	path := staleCacheFile(t, f)
-	code, out, _ := runApp(t, "", false, purgeClock, "purge")
+	code, out, _ := runApp(t, "", false, purgeClock, "purge", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
@@ -52,11 +52,11 @@ func TestPurgeListsStaleScanCacheInDryRun(t *testing.T) {
 func TestPurgeCacheOnlyDryRunDoesNotTalkAboutSessions(t *testing.T) {
 	f := newUndoFixture(t)
 	staleCacheFile(t, f)
-	_, out, _ := runApp(t, "", false, purgeClock, "purge")
+	_, out, _ := runApp(t, "", false, purgeClock, "purge", "--dry-run")
 	if strings.Contains(out, "nothing to purge") {
 		t.Errorf("header claims nothing to purge although a cache file is stale:\n%s", out)
 	}
-	want := "re-run 'brooom purge --apply' to delete the stale scan cache files permanently"
+	want := "re-run 'brooom purge' without --dry-run to delete the stale scan cache files permanently"
 	if !strings.Contains(out, want) {
 		t.Errorf("output lacks %q:\n%s", want, out)
 	}
@@ -74,7 +74,7 @@ func TestPurgeApplyRemovesStaleScanCacheOnly(t *testing.T) {
 	}
 	old := time.Now().Add(-90 * 24 * time.Hour)
 	_ = os.Chtimes(keep, old, old)
-	code, out, errOut := runApp(t, "", false, purgeClock, "purge", "--apply", "--yes")
+	code, out, errOut := runApp(t, "", false, purgeClock, "purge", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code=%d out=%s err=%s", code, out, errOut)
 	}
@@ -92,7 +92,7 @@ func TestPurgeApplyRemovesStaleScanCacheOnly(t *testing.T) {
 func TestPurgeConfirmationDeclinedKeepsCache(t *testing.T) {
 	f := newUndoFixture(t)
 	path := staleCacheFile(t, f)
-	code, out, _ := runApp(t, "n\n", true, purgeClock, "purge", "--apply")
+	code, out, _ := runApp(t, "n\n", true, purgeClock, "purge")
 	if code != ExitOK || !strings.Contains(out, "aborted") {
 		t.Fatalf("code=%d out=%s", code, out)
 	}

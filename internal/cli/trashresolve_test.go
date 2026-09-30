@@ -7,13 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/spf13/cobra"
 
 	"github.com/Tobias-Braun/brooom/internal/action"
 	"github.com/Tobias-Braun/brooom/internal/config"
-	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/testutil"
 )
 
@@ -212,25 +208,14 @@ func TestMapExecutorError(t *testing.T) {
 	}
 }
 
-func TestApplyHint(t *testing.T) {
-	root := &cobra.Command{Use: "brooom"}
-	branches := &cobra.Command{Use: "branches"}
-	branches.Flags().Bool("apply", false, "")
-	scan := &cobra.Command{Use: "scan"}
-	root.AddCommand(branches, scan)
+func TestRerunHint(t *testing.T) {
 	a := &app{}
-	res := &scanResult{
-		Config: config.Default(),
-		Report: findings.NewReport("test", time.Time{}, nil,
-			[]findings.Finding{hintFinding(config.DetectorLogs, findings.ConfidenceHigh, "l")}, nil),
-	}
-	if got, want := a.applyHint(branches, nil), "nothing was changed; run `brooom branches --apply` or `brooom sweep`"; got != want {
+	clean := leafFor(t, a, []string{"clean", "--from", "f.json"})
+	if got := a.rerunHint(clean); got != "re-run without --dry-run" {
 		t.Errorf("got %q", got)
 	}
-	if got := a.applyHint(scan, res); !strings.Contains(got, "nothing was changed") || !strings.Contains(got, "brooom sweep") {
-		t.Errorf("got %q", got)
-	}
-	if got := a.rerunHint(branches); got != "re-run 'brooom branches --apply'" {
+	stdin := leafFor(t, a, []string{"clean", "--from", "-"})
+	if got := a.rerunHint(stdin); !strings.Contains(got, "save the findings to a file") {
 		t.Errorf("got %q", got)
 	}
 }
@@ -263,7 +248,7 @@ func TestDeleteWarningIsShownOnApplyNotInDryRun(t *testing.T) {
 	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
 	del := []string{"clean", "--from", report, "--trash-strategy", "delete"}
 
-	code, out, errOut := brooom(t, "", del...)
+	code, out, errOut := brooom(t, "", append(del, "--dry-run")...)
 	if code != ExitOK || !strings.Contains(out, "dry run") {
 		t.Fatalf("dry run: code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -274,7 +259,7 @@ func TestDeleteWarningIsShownOnApplyNotInDryRun(t *testing.T) {
 		t.Fatal("dry run wrote the marker")
 	}
 
-	code, _, errOut = brooom(t, "", append(del, "--apply", "--yes")...)
+	code, _, errOut = brooom(t, "", append(del, "--yes")...)
 	if code != ExitOK {
 		t.Fatalf("apply: code %d, stderr %q", code, errOut)
 	}
@@ -291,7 +276,7 @@ func TestDeleteWarningIsShownOnApplyNotInDryRun(t *testing.T) {
 	// The marker suppresses the warning on later applies.
 	dir2, _ := junkDir(t, f.repo.Dir, "target2")
 	report = writeReportFile(t, trashFinding(f.repo.Dir, dir2))
-	_, _, errOut = brooom(t, "", "clean", "--from", report, "--trash-strategy", "delete", "--apply", "--yes")
+	_, _, errOut = brooom(t, "", "clean", "--from", report, "--trash-strategy", "delete", "--yes")
 	if strings.Contains(errOut, deleteWarning) {
 		t.Errorf("warned again: %q", errOut)
 	}

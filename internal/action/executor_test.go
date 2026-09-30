@@ -181,7 +181,7 @@ func TestDefaultRerunHint(t *testing.T) {
 	if _, err := fx.run(find("d", findings.ActionTrash, fx.path("a"), "", 1)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(fx.out.String(), "dry run: nothing was changed; re-run with --apply to execute\n") {
+	if !strings.HasSuffix(fx.out.String(), "dry run: nothing was changed; re-run without --dry-run to execute\n") {
 		t.Errorf("output: %q", fx.out.String())
 	}
 }
@@ -468,8 +468,8 @@ func TestApplyRefusesWithoutTTY(t *testing.T) {
 	fx := newFixture(t, func(o *Options) { o.Yes = false })
 	fx.fake(findings.ActionTrash)
 	res, err := fx.run(find("d", findings.ActionTrash, fx.path("a"), "", 1))
-	if !errors.Is(err, ErrConfirmationRequired) || res != nil {
-		t.Fatalf("got %v, %v", res, err)
+	if !errors.Is(err, ErrConfirmationRequired) || res == nil || res.SessionID != "" || len(fx.log) != 0 {
+		t.Fatalf("got %v, %v, applied %v", res, err, fx.log)
 	}
 	if !strings.Contains(err.Error(), "pass --yes") {
 		t.Errorf("message: %v", err)
@@ -486,7 +486,7 @@ func TestYesSkipsPromptsWithoutTTY(t *testing.T) {
 	if err != nil || res.Applied != 1 {
 		t.Fatalf("%v %+v", err, res)
 	}
-	if strings.Contains(fx.out.String(), "[y]es") {
+	if strings.Contains(fx.out.String(), "[y/N]") {
 		t.Errorf("prompted despite --yes: %s", fx.out.String())
 	}
 }
@@ -499,19 +499,14 @@ func TestConfirmationFlows(t *testing.T) {
 		want  []string
 		save  bool
 	}{
-		{"yes to all", "y\ny\n", []string{"delete-branch r:a", "delete-branch r:b", "trash t"}, true},
-		{"no then yes", "n\ny\n", []string{"trash t"}, true},
-		{"empty means no", "\n\n", nil, false},
-		{"uppercase and spaces and CRLF", "  Y \r\nYES\r\n", []string{"delete-branch r:a", "delete-branch r:b", "trash t"}, true},
-		{"individually mixed", "i\ny\nn\nn\n", []string{"delete-branch r:a"}, true},
-		{"individually then group yes", "i\nn\ny\ny\n", []string{"delete-branch r:b", "trash t"}, true},
-		{"quit at first group", "q\n", nil, false},
-		{"quit at second group discards first", "y\nq\n", nil, false},
-		{"quit inside individual discards everything", "y\ni\nq\n", nil, false},
-		{"eof at first prompt", "", nil, false},
-		{"eof after first answer", "y\n", nil, false},
-		{"eof without trailing newline still answers", "y\nn", []string{"delete-branch r:a", "delete-branch r:b"}, true},
-		{"invalid input re-asks", "maybe\nx\ny\nn\n", []string{"delete-branch r:a", "delete-branch r:b"}, true},
+		{"yes", "y\n", []string{"delete-branch r:a", "delete-branch r:b", "trash t"}, true},
+		{"no", "n\n", nil, false},
+		{"empty means no", "\n", nil, false},
+		{"uppercase and spaces and CRLF", "  YES \r\n", []string{"delete-branch r:a", "delete-branch r:b", "trash t"}, true},
+		{"quit is not an answer", "q\nn\n", nil, false},
+		{"eof", "", nil, false},
+		{"eof without trailing newline still answers", "y", []string{"delete-branch r:a", "delete-branch r:b", "trash t"}, true},
+		{"invalid input re-asks", "maybe\nx\ny\n", []string{"delete-branch r:a", "delete-branch r:b", "trash t"}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

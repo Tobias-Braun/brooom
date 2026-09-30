@@ -1,67 +1,50 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/findings"
+	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/presets"
 )
 
 func newSweepCmd(a *app) *cobra.Command {
 	var af applyFlags
-	var preset string
-	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "sweep",
-		Short: "The no-brainer: scan and clean with a preset",
+		Use:   "sweep [preset]",
+		Short: "Scan, show what to clean, ask once, then clean",
 		Example: `  brooom sweep
-  brooom sweep --dry-run
-  brooom sweep --preset standard
-  brooom sweep --workspaces --root ~/code --detector build-artifacts`,
+  brooom sweep after-agents
+  brooom sweep tidy --dry-run
+  brooom sweep everything --yes`,
 		Long: sweepLong(),
-		Args: cobra.NoArgs,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dryRun && af.apply {
-				return usageError{errors.New("--dry-run and --apply contradict each other; sweep applies unless --dry-run is given")}
+			name := ""
+			if len(args) == 1 {
+				name = args[0]
 			}
-			p, err := a.resolvePreset(cmd, preset)
+			p, err := a.resolvePreset(name)
 			if err != nil {
 				return err
 			}
 			if err := a.checkPresetDetectors(p); err != nil {
 				return err
 			}
-			// Sweep acts by default and never asks: --dry-run replaces the
-			// confirmation. A machine format cannot apply (its stream would be
-			// corrupted by the summary), so it keeps producing the read-only report
-			// unless --apply was passed explicitly, which runCleanup rejects.
-			af.apply = af.apply || (!dryRun && !machineFormats[a.flags.format])
-			af.yes = true
 			return a.runCleanup(cmd, cleanupSelection{
 				detectors:     p.Detectors,
-				label:         "sweep",
+				label:         "sweep " + p.Name,
 				configOverlay: func(c *config.Config) { *c = *presets.Apply(c, p) },
-				minConfidence: p.MinConfidence,
+				keep:          func(f findings.Finding) bool { return p.Keeps(f.Detector, f.Confidence) },
 				compact:       true,
 			}, af)
 		},
 	}
-	cmd.Flags().StringVarP(&preset, "preset", "p", "",
-		fmt.Sprintf("preset: %s (default: sweep.preset from the config, else %s)",
-			strings.Join(presets.Names(), ", "), config.DefaultPreset))
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be cleaned and change nothing")
-	cmd.Flags().BoolVar(&af.force, "force", false, "also act on findings with blocking risk flags (e.g. git branch -D)")
-	cmd.Flags().StringVar(&af.trashStrategy, "trash-strategy", "", "override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files)")
-	// Sweep used to be a dry run that needed these two; scripts that still pass
-	// them keep working, they just no longer change anything.
-	cmd.Flags().BoolVar(&af.apply, "apply", false, "deprecated: sweep applies by default")
-	cmd.Flags().BoolVarP(&af.yes, "yes", "y", false, "deprecated: sweep never asks for confirmation")
-	_ = cmd.Flags().MarkHidden("apply")
-	_ = cmd.Flags().MarkHidden("yes")
+	addApplyFlags(cmd, &af)
 	return cmd
 }
 
@@ -69,41 +52,38 @@ func newSweepCmd(a *app) *cobra.Command {
 // presets and their detectors cannot drift from what sweep does.
 func sweepLong() string {
 	var b strings.Builder
-	b.WriteString("Scan with a preset and clean up what it finds.\n\nPresets:\n")
+	b.WriteString(`Scan the repository, show what would be cleaned, ask once and then clean.
+Answer y to clean everything listed; anything else changes nothing. --yes
+skips the question (for scripts), --dry-run only shows the plan.
+
+Presets:
+`)
 	for _, name := range presets.Names() {
 		for _, line := range strings.Split(presets.Describe(name), "\n") {
 			b.WriteString("  " + line + "\n")
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString(`Without --preset the config key sweep.preset decides (default "safe").
+	fmt.Fprintf(&b, `Without a preset the config key sweep.preset decides (default %q).
 --detector narrows the preset's detectors; it cannot add ones the preset
-does not include. Findings below the preset's minimum confidence are dropped.
-Findings with blocking risk flags are shown as blocked and not planned; only
-an explicit --force lifts them, exactly as in every other command. Presets
-never change the trash strategy or protected branches.
+does not include. Findings below the preset's confidence floor are dropped.
 
-Unlike the other commands, sweep applies right away and does not ask: it
-prints how many items of each kind were removed and how much disk was
-reclaimed. --dry-run lists what it would do, with the commands, and changes
-nothing; --verbose lists every item before applying. Everything is recorded
-for 'brooom undo'.`)
+Sweep never removes unmerged or uncommitted work: worktrees with changes,
+branches that are not merged and other findings with blocking risk flags are
+listed as skipped. Stale branches and large untracked files are in no preset;
+use 'brooom scan -d stale-branch' or '-d large-untracked' to list them.
+
+Removed files go to the trash and everything is recorded for 'brooom undo'.`, config.DefaultPreset)
 	return b.String()
 }
 
-// resolvePreset picks the preset: the --preset flag, else sweep.preset from
-// the config, else the built-in default. An unknown name is a usage error that
-// lists the valid ones, and so is an explicitly empty --preset: falling back to
-// the default there would run a preset the user never named and ignore
-// sweep.preset. The config is only read when the flag is absent.
-func (a *app) resolvePreset(cmd *cobra.Command, flagValue string) (presets.Preset, error) {
-	name := flagValue
-	if cmd.Flags().Changed("preset") {
-		if strings.TrimSpace(name) == "" {
-			return presets.Preset{}, usageError{fmt.Errorf("--preset must not be empty (valid presets: %s)",
-				strings.Join(presets.Names(), ", "))}
-		}
-	} else {
+// resolvePreset picks the preset: the positional argument, else sweep.preset
+// from the config, else the built-in default. An unknown name is a usage error
+// that lists the valid ones. A legacy name (safe, standard, aggressive) runs
+// everything, with a note on stderr saying so.
+func (a *app) resolvePreset(arg string) (presets.Preset, error) {
+	name := arg
+	if name == "" {
 		cfg, _, err := a.loadConfig()
 		if err != nil {
 			return presets.Preset{}, err
@@ -113,9 +93,13 @@ func (a *app) resolvePreset(cmd *cobra.Command, flagValue string) (presets.Prese
 	if name == "" {
 		name = config.DefaultPreset
 	}
-	p, err := presets.Get(name)
+	p, legacy, err := presets.Resolve(name)
 	if err != nil {
 		return presets.Preset{}, usageError{err}
+	}
+	if legacy && !a.flags.quiet {
+		fmt.Fprintf(a.io.Err, "note: the preset %q was renamed; running %q (valid presets: %s)\n",
+			output.Sanitize(name), p.Name, strings.Join(presets.Names(), ", "))
 	}
 	return p, nil
 }
@@ -128,10 +112,13 @@ func (a *app) checkPresetDetectors(p presets.Preset) error {
 		return err
 	}
 	for _, n := range flagged {
-		if !p.Runs(n) {
-			return usageError{fmt.Errorf("--detector %s is not part of the %s preset; the %s preset includes it",
-				n, p.Name, presets.WithDetector(n))}
+		if p.Runs(n) {
+			continue
 		}
+		if other := presets.WithDetector(n); other != "" {
+			return usageError{fmt.Errorf("--detector %s is not part of the %s preset; the %s preset includes it", n, p.Name, other)}
+		}
+		return usageError{fmt.Errorf("--detector %s is in no sweep preset; list its findings with `brooom scan -d %s`", n, n)}
 	}
 	return nil
 }

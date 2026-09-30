@@ -22,17 +22,20 @@ func mustGet(t *testing.T, name string) Preset {
 }
 
 func TestNamesOrderAndConfigCrossCheck(t *testing.T) {
-	want := []string{"safe", "standard", "aggressive"}
+	want := []string{"after-agents", "tidy", "everything"}
 	if got := Names(); !slices.Equal(got, want) {
 		t.Errorf("Names() = %v, want %v", got, want)
 	}
-	// config validates sweep.preset against its own list to avoid an import
-	// cycle; the two must never drift.
+	// config validates sweep.preset against its own lists to avoid an import
+	// cycle; they must never drift.
 	if got := config.PresetNames(); !slices.Equal(got, Names()) {
 		t.Errorf("config.PresetNames() = %v, presets.Names() = %v", got, Names())
 	}
-	if !slices.Contains(Names(), config.DefaultPreset) {
-		t.Errorf("default preset %q is not a preset", config.DefaultPreset)
+	if got := config.LegacyPresetNames(); !slices.Equal(got, LegacyNames()) {
+		t.Errorf("config.LegacyPresetNames() = %v, presets.LegacyNames() = %v", got, LegacyNames())
+	}
+	if config.DefaultPreset != Everything {
+		t.Errorf("default preset %q, want %q", config.DefaultPreset, Everything)
 	}
 }
 
@@ -41,7 +44,7 @@ func TestGetUnknown(t *testing.T) {
 	if err == nil {
 		t.Fatal("want an error")
 	}
-	for _, want := range []string{`"reckless"`, "safe", "standard", "aggressive"} {
+	for _, want := range []string{`"reckless"`, "after-agents", "tidy", "everything"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q lacks %q", err, want)
 		}
@@ -51,11 +54,34 @@ func TestGetUnknown(t *testing.T) {
 	}
 }
 
+// TestResolveLegacyNames: the names of earlier releases keep working and all
+// run everything, because "safe" was the value `config init` wrote.
+func TestResolveLegacyNames(t *testing.T) {
+	for _, name := range []string{"safe", "standard", "aggressive"} {
+		p, legacy, err := Resolve(name)
+		if err != nil || !legacy || p.Name != Everything {
+			t.Errorf("Resolve(%q) = %s, %v, %v; want everything, legacy", name, p.Name, legacy, err)
+		}
+		if _, err := Get(name); err == nil {
+			t.Errorf("Get(%q) must not accept a legacy name", name)
+		}
+	}
+	p, legacy, err := Resolve(Tidy)
+	if err != nil || legacy || p.Name != Tidy {
+		t.Errorf("Resolve(tidy) = %s, %v, %v", p.Name, legacy, err)
+	}
+	if _, _, err := Resolve("reckless"); err == nil {
+		t.Error("Resolve of an unknown name must fail")
+	}
+}
+
 func TestGetReturnsIndependentCopies(t *testing.T) {
-	p := mustGet(t, Safe)
+	p := mustGet(t, Everything)
 	p.Detectors[0] = "tampered"
 	p.Includes[0] = "tampered"
-	if q := mustGet(t, Safe); q.Detectors[0] == "tampered" || q.Includes[0] == "tampered" {
+	p.Floors[config.DetectorBuildArtifacts] = findings.ConfidenceLow
+	q := mustGet(t, Everything)
+	if q.Detectors[0] == "tampered" || q.Includes[0] == "tampered" || q.Floors[config.DetectorBuildArtifacts] != findings.ConfidenceHigh {
 		t.Error("mutating a returned preset changed the shared definition")
 	}
 }
@@ -78,45 +104,50 @@ func requireNotRuns(t *testing.T, p Preset, detectors ...string) {
 	}
 }
 
-func TestDetectorSetInvariants(t *testing.T) {
-	safe, standard, aggressive := mustGet(t, Safe), mustGet(t, Standard), mustGet(t, Aggressive)
-	for _, tc := range []struct{ sub, sup Preset }{{safe, standard}, {standard, aggressive}} {
-		for _, d := range tc.sub.Detectors {
-			if !tc.sup.Runs(d) {
-				t.Errorf("%s misses %s from %s", tc.sup.Name, d, tc.sub.Name)
-			}
-		}
-		if len(tc.sup.Detectors) <= len(tc.sub.Detectors) {
-			t.Errorf("%s is not larger than %s", tc.sup.Name, tc.sub.Name)
-		}
+func TestDetectorSets(t *testing.T) {
+	afterAgents, tidy, everything := mustGet(t, AfterAgents), mustGet(t, Tidy), mustGet(t, Everything)
+	requireRuns(t, afterAgents, config.DetectorWorktrees, config.DetectorMergedBranch, config.DetectorAIArtifacts)
+	requireNotRuns(t, afterAgents, config.DetectorLogs, config.DetectorBuildArtifacts, config.DetectorGitBloat)
+	requireRuns(t, tidy, config.DetectorLogs)
+	requireNotRuns(t, tidy, config.DetectorWorktrees, config.DetectorMergedBranch, config.DetectorAIArtifacts)
+	// everything is the union of the other two plus build artifacts and git
+	// maintenance.
+	for _, p := range []Preset{afterAgents, tidy} {
+		requireRuns(t, everything, p.Detectors...)
 	}
-	requireRuns(t, aggressive, config.DetectorGitBloat, config.DetectorLargeUntracked)
-	requireNotRuns(t, safe, config.DetectorStaleBranch, config.DetectorAIArtifacts)
-	requireNotRuns(t, safe, config.DetectorGitBloat, config.DetectorLargeUntracked)
-	requireNotRuns(t, standard, config.DetectorGitBloat, config.DetectorLargeUntracked)
-	known := config.DetectorNames()
-	for _, p := range []Preset{safe, standard, aggressive} {
+	requireRuns(t, everything, config.DetectorBuildArtifacts, config.DetectorGitBloat)
+	// Unmerged work is never part of a preset.
+	for _, p := range []Preset{afterAgents, tidy, everything} {
+		requireNotRuns(t, p, config.DetectorStaleBranch, config.DetectorLargeUntracked)
 		for _, d := range p.Detectors {
-			if !slices.Contains(known, d) {
+			if !slices.Contains(config.DetectorNames(), d) {
 				t.Errorf("%s names unknown detector %q", p.Name, d)
 			}
 		}
 	}
 }
 
-func TestMinConfidence(t *testing.T) {
-	for name, want := range map[string]findings.Confidence{
-		Safe: findings.ConfidenceHigh, Standard: findings.ConfidenceMedium, Aggressive: findings.ConfidenceMedium,
-	} {
-		if got := mustGet(t, name).MinConfidence; got != want {
-			t.Errorf("%s: MinConfidence %q, want %q", name, got, want)
+func TestConfidenceFloors(t *testing.T) {
+	for _, name := range Names() {
+		if got := mustGet(t, name).MinConfidence; got != findings.ConfidenceMedium {
+			t.Errorf("%s: MinConfidence %q, want medium", name, got)
 		}
+	}
+	everything := mustGet(t, Everything)
+	if got := everything.Floor(config.DetectorBuildArtifacts); got != findings.ConfidenceHigh {
+		t.Errorf("everything: build-artifacts floor %q, want high", got)
+	}
+	if everything.Keeps(config.DetectorBuildArtifacts, findings.ConfidenceMedium) {
+		t.Error("everything must not plan build artifacts of active projects (medium)")
+	}
+	if !everything.Keeps(config.DetectorLogs, findings.ConfidenceMedium) || everything.Keeps(config.DetectorLogs, findings.ConfidenceLow) {
+		t.Error("everything: logs must follow MinConfidence")
 	}
 }
 
 // TestNoPresetLengthensExpiry pins the semantics: no preset changes the
-// defaults, and in particular the aggressive preset must not raise the
-// default 2.weeks.ago prune expiry to 90 days (which prunes less, not more).
+// defaults, and in particular everything must not raise the default
+// 2.weeks.ago prune expiry to 90 days (which prunes less, not more).
 func TestNoPresetLengthensExpiry(t *testing.T) {
 	def := config.Default().Detectors.GitBloat
 	for _, name := range Names() {
@@ -127,7 +158,7 @@ func TestNoPresetLengthensExpiry(t *testing.T) {
 	}
 }
 
-func TestAggressiveOnlyShortensConfiguredExpiry(t *testing.T) {
+func TestEverythingOnlyShortensConfiguredExpiry(t *testing.T) {
 	for _, tc := range []struct {
 		name, reflog, prune, wantReflog, wantPrune string
 	}{
@@ -142,7 +173,7 @@ func TestAggressiveOnlyShortensConfiguredExpiry(t *testing.T) {
 			in := config.Default()
 			in.Detectors.GitBloat.ReflogExpire = tc.reflog
 			in.Detectors.GitBloat.PruneExpire = tc.prune
-			got := Apply(in, mustGet(t, Aggressive)).Detectors.GitBloat
+			got := Apply(in, mustGet(t, Everything)).Detectors.GitBloat
 			if got.ReflogExpire != tc.wantReflog || got.PruneExpire != tc.wantPrune {
 				t.Errorf("expiry %q / %q, want %q / %q", got.ReflogExpire, got.PruneExpire, tc.wantReflog, tc.wantPrune)
 			}
@@ -151,7 +182,7 @@ func TestAggressiveOnlyShortensConfiguredExpiry(t *testing.T) {
 }
 
 func TestOtherPresetsLeaveConfiguredExpiryAlone(t *testing.T) {
-	for _, name := range []string{Safe, Standard} {
+	for _, name := range []string{AfterAgents, Tidy} {
 		in := config.Default()
 		in.Detectors.GitBloat.ReflogExpire = "365.days.ago"
 		in.Detectors.GitBloat.PruneExpire = "now"
@@ -206,7 +237,7 @@ func TestPresetsKeepWorktreeAgeAtZero(t *testing.T) {
 	if config.Default().Detectors.Worktrees.MinAgeDays != 0 {
 		t.Fatal("default detectors.worktrees.min_age_days must be 0")
 	}
-	for _, name := range []string{Safe, Standard, Aggressive} {
+	for _, name := range Names() {
 		got := Apply(config.Default(), mustGet(t, name))
 		if got.Detectors.Worktrees.MinAgeDays != 0 {
 			t.Errorf("%s: worktrees.min_age_days = %d, want 0", name, got.Detectors.Worktrees.MinAgeDays)
@@ -214,42 +245,15 @@ func TestPresetsKeepWorktreeAgeAtZero(t *testing.T) {
 	}
 }
 
-func TestAggressiveLowersAgesToTable(t *testing.T) {
-	got := Apply(config.Default(), mustGet(t, Aggressive))
-	if got.Detectors.StaleBranch.MinAgeDays != AggressiveAges.StaleBranchDays ||
-		got.Thresholds.MinAgeDays != AggressiveAges.MinAgeDays ||
-		got.Detectors.BuildArtifacts.InactiveDays != AggressiveAges.InactiveDays {
-		t.Errorf("thresholds do not match the table: %+v", got.Detectors)
-	}
-	if got.Detectors.StaleBranch.MinAgeDays != 30 || got.Detectors.Worktrees.MinAgeDays != 0 ||
-		got.Thresholds.MinAgeDays != 7 || got.Detectors.BuildArtifacts.InactiveDays != 30 {
-		t.Errorf("documented defaults changed: %+v %+v", got.Thresholds, got.Detectors)
-	}
-	if !got.Detectors.LargeUntracked.IncludeIgnored {
-		t.Error("aggressive must include ignored files")
-	}
-}
-
-// TestNeverRaisesAThreshold covers min(current, presetValue): values the user
-// already set lower must stay, values above are lowered.
-func TestNeverRaisesAThreshold(t *testing.T) {
-	cfg := config.Default()
-	cfg.Thresholds.MinAgeDays = 3
-	cfg.Detectors.StaleBranch.MinAgeDays = 10
-	cfg.Detectors.Worktrees.MinAgeDays = 1
-	cfg.Detectors.BuildArtifacts.InactiveDays = 5
-	got := Apply(cfg, mustGet(t, Aggressive))
-	if got.Thresholds.MinAgeDays != 3 || got.Detectors.StaleBranch.MinAgeDays != 10 ||
-		got.Detectors.Worktrees.MinAgeDays != 1 || got.Detectors.BuildArtifacts.InactiveDays != 5 {
-		t.Errorf("a lower user value was raised: %+v %+v", got.Thresholds, got.Detectors)
-	}
-
-	cfg = config.Default()
-	cfg.Thresholds.MinAgeDays = 60
-	cfg.Detectors.StaleBranch.MinAgeDays = 365
-	got = Apply(cfg, mustGet(t, Aggressive))
-	if got.Thresholds.MinAgeDays != 7 || got.Detectors.StaleBranch.MinAgeDays != 30 {
-		t.Errorf("higher user values were not lowered: %+v %+v", got.Thresholds, got.Detectors)
+// TestPresetsLeaveAgesAlone: intent presets select what to clean, they do not
+// retune how old something must be.
+func TestPresetsLeaveAgesAlone(t *testing.T) {
+	def := config.Default()
+	for _, name := range Names() {
+		got := Apply(config.Default(), mustGet(t, name))
+		if got.Thresholds != def.Thresholds || got.Detectors.BuildArtifacts.InactiveDays != def.Detectors.BuildArtifacts.InactiveDays {
+			t.Errorf("%s changed an age threshold: %+v", name, got.Thresholds)
+		}
 	}
 }
 
@@ -262,6 +266,7 @@ func TestNeverLoosensSafetySettings(t *testing.T) {
 		cfg.Trash.Strategy = config.StrategyQuarantine
 		cfg.Trash.AllowDelete = false
 		cfg.Detectors.AIArtifacts.UserLocations = true // a preset may only turn this off
+		cfg.Detectors.Worktrees.IncludeStale = true
 		got := Apply(cfg, mustGet(t, name))
 		switch {
 		case got.Thresholds.RecentDays != 9:
@@ -270,36 +275,11 @@ func TestNeverLoosensSafetySettings(t *testing.T) {
 			t.Errorf("%s changed the protected branches", name)
 		case got.Trash.Strategy != config.StrategyQuarantine || got.Trash.AllowDelete:
 			t.Errorf("%s changed the trash settings", name)
-		case got.Detectors.AIArtifacts.UserLocations:
+		case got.Detectors.AIArtifacts.UserLocations || got.Detectors.Logs.UserLocations:
 			t.Errorf("%s left user_locations on", name)
+		case got.Detectors.Worktrees.IncludeStale:
+			t.Errorf("%s reports unmerged worktrees whose upstream is gone", name)
 		}
-	}
-	// A preset never switches user-level locations on.
-	for _, name := range Names() {
-		if Apply(config.Default(), mustGet(t, name)).Detectors.AIArtifacts.UserLocations {
-			t.Errorf("%s enabled user_locations", name)
-		}
-	}
-}
-
-func TestSafeOverlay(t *testing.T) {
-	got := Apply(config.Default(), mustGet(t, Safe))
-	if got.Detectors.Worktrees.IncludeStale {
-		t.Error("safe must not report stale worktrees")
-	}
-	for _, cat := range []string{"cache", "crash", "ai", "build"} {
-		if enabled, ok := got.Detectors.Logs.Categories[cat]; !ok || enabled {
-			t.Errorf("safe must disable log category %q", cat)
-		}
-	}
-	for _, cat := range []string{"os-junk", "logs"} {
-		if enabled, ok := got.Detectors.Logs.Categories[cat]; ok && !enabled {
-			t.Errorf("safe must keep log category %q", cat)
-		}
-	}
-	std := Apply(config.Default(), mustGet(t, Standard))
-	if len(std.Detectors.Logs.Categories) != 0 {
-		t.Errorf("standard restricts log categories: %v", std.Detectors.Logs.Categories)
 	}
 }
 
@@ -313,7 +293,7 @@ func TestAppliedConfigsValidate(t *testing.T) {
 
 // TestRepoConfigStillTightensPresetValue applies the preset first and
 // ForTarget second, exactly like the sweep pipeline, and checks that a
-// .brooom.json can raise a preset-lowered threshold but not lower it again.
+// .brooom.json can still tighten on top of it.
 func TestRepoConfigStillTightensPresetValue(t *testing.T) {
 	dir := t.TempDir()
 	write := func(content string) {
@@ -322,29 +302,16 @@ func TestRepoConfigStillTightensPresetValue(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cfg := Apply(config.Default(), mustGet(t, Aggressive))
-	if cfg.Thresholds.MinAgeDays != 7 {
-		t.Fatalf("preset did not lower the threshold: %d", cfg.Thresholds.MinAgeDays)
-	}
-
+	cfg := Apply(config.Default(), mustGet(t, Everything))
 	write(`{"thresholds": {"min_age_days": 20}}`)
 	eff, err := cfg.ForTarget("", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if eff.Thresholds.MinAgeDays != 20 || eff.Detectors.StaleBranch.MinAgeDays != 30 {
-		t.Errorf("repo config did not tighten: %d, stale %d", eff.Thresholds.MinAgeDays, eff.Detectors.StaleBranch.MinAgeDays)
+	if eff.Thresholds.MinAgeDays != 20 {
+		t.Errorf("repo config did not tighten: %d", eff.Thresholds.MinAgeDays)
 	}
-
-	// 10 is above the preset value 7 but below the global default 14: the
-	// preset's lowered value is the baseline, so this is still a tightening.
-	write(`{"thresholds": {"min_age_days": 10}}`)
-	eff, err = cfg.ForTarget("", dir)
-	if err != nil || eff.Thresholds.MinAgeDays != 10 {
-		t.Errorf("repo config 10 over preset 7: %v, %+v", err, eff)
-	}
-
-	write(`{"thresholds": {"min_age_days": 5}}`)
+	write(`{"thresholds": {"min_age_days": 1}}`)
 	if _, err := cfg.ForTarget("", dir); err == nil {
 		t.Error("a repo config below the effective value must be rejected")
 	}
@@ -370,16 +337,23 @@ func TestDescribeMentionsEverything(t *testing.T) {
 		if !strings.Contains(text, string(p.MinConfidence)) {
 			t.Errorf("%s: description lacks the confidence", name)
 		}
+		for d, c := range p.Floors {
+			if !strings.Contains(text, d+": "+string(c)) {
+				t.Errorf("%s: description lacks the %s floor", name, d)
+			}
+		}
 	}
 }
 
 func TestWithDetector(t *testing.T) {
 	for det, want := range map[string]string{
-		config.DetectorMergedBranch:   Safe,
-		config.DetectorStaleBranch:    Standard,
-		config.DetectorAIArtifacts:    Standard,
-		config.DetectorGitBloat:       Aggressive,
-		config.DetectorLargeUntracked: Aggressive,
+		config.DetectorMergedBranch:   AfterAgents,
+		config.DetectorAIArtifacts:    AfterAgents,
+		config.DetectorLogs:           Tidy,
+		config.DetectorBuildArtifacts: Everything,
+		config.DetectorGitBloat:       Everything,
+		config.DetectorStaleBranch:    "",
+		config.DetectorLargeUntracked: "",
 		"nope":                        "",
 	} {
 		if got := WithDetector(det); got != want {

@@ -34,7 +34,7 @@ func TestEmptySelectorsAreUsageErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := append(append([]string{}, tt.args...), "--apply", "--yes")
+			args := append(append([]string{}, tt.args...), "--yes")
 			args = append(args, quarantine...)
 			code, out, errOut := brooom(t, "", args...)
 			if code != ExitUsage || !strings.Contains(errOut, tt.flag) {
@@ -55,9 +55,9 @@ func TestNonEmptySelectorsStillWork(t *testing.T) {
 	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
 	id := trashFinding(f.repo.Dir, dir).ID
 	for _, args := range [][]string{
-		{"clean", "--from", report, "--id", id},
-		{"clean", "--from", report, "--id", id + "," + id},
-		{"clean", "--from", report, "--id", id, "--id", id},
+		{"clean", "--from", report, "--id", id, "--dry-run"},
+		{"clean", "--from", report, "--id", id + "," + id, "--dry-run"},
+		{"clean", "--from", report, "--id", id, "--id", id, "--dry-run"},
 		{"scan", "-d", "build-artifacts,worktrees"},
 	} {
 		code, out, errOut := brooom(t, "", args...)

@@ -21,7 +21,7 @@ func workspaceSession(t *testing.T) (removed string, undoArgs []string, f *clean
 	writeConfig(t, f.home, cfg)
 	dir, file := junkDir(t, f.repo.Dir, "node_modules")
 	path := writeReportFile(t, trashFinding(f.repo.Dir, dir))
-	code, out, errOut := clean(t, "", "--from", path, "-w", "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", path, "-w", "--yes")
 	if code != ExitOK || exists(file) {
 		t.Fatalf("workspace apply: code %d, file kept %v\n%s\n%s", code, exists(file), out, errOut)
 	}
@@ -48,7 +48,7 @@ func TestUndoHintReproducesWorkspaceScope(t *testing.T) {
 		t.Fatalf("undo hint %v lacks the id or --workspaces", undoArgs)
 	}
 	t.Chdir(testutil.ResolvedTempDir(t))
-	code, out, errOut := brooom(t, "", append(undoArgs, "--apply", "--yes")...)
+	code, out, errOut := brooom(t, "", append(undoArgs, "--yes")...)
 	if code != ExitOK || !exists(removed) {
 		t.Fatalf("the printed undo command did not restore: code %d\n%s\n%s", code, out, errOut)
 	}
@@ -61,9 +61,9 @@ func TestUndoOfWorkspaceSessionNeedsNoFlag(t *testing.T) {
 	for _, withID := range []bool{false, true} {
 		removed, _, f := workspaceSession(t)
 		t.Chdir(testutil.ResolvedTempDir(t))
-		args := []string{"undo", "--apply", "--yes"}
+		args := []string{"undo", "--yes"}
 		if withID {
-			args = []string{"undo", f.sessions()[0].ID, "--apply", "--yes"}
+			args = []string{"undo", f.sessions()[0].ID, "--yes"}
 		}
 		code, out, errOut := brooom(t, "", args...)
 		if code != ExitOK || !exists(removed) || !strings.Contains(out, "1 restored") {
@@ -85,7 +85,7 @@ func TestUndoOfWorkspaceSessionStaysInsideConfiguredRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(testutil.ResolvedTempDir(t))
-	code, out, _ := brooom(t, "", "undo", "--apply", "--yes")
+	code, out, _ := brooom(t, "", "undo", "--yes")
 	if code != ExitOK || exists(forged) || !strings.Contains(out, "1 skipped (outside scope") {
 		t.Fatalf("code %d, forged path restored %v\n%s", code, exists(forged), out)
 	}
@@ -103,7 +103,7 @@ func TestUndoScopeRefusalIsNotCountedAsNotRestorable(t *testing.T) {
 	if err := f.store.Save(m); err != nil {
 		t.Fatal(err)
 	}
-	code, out, _ := runApp(t, "", false, testutil.BaseTime, "undo", "--apply", "--yes")
+	code, out, _ := runApp(t, "", false, testutil.BaseTime, "undo", "--yes")
 	want := "summary: 0 restored, 0 conflicts, 0 failed, 0 not restorable, 0 already restored, 1 skipped (outside scope; re-run with -w)"
 	if code != ExitOK || !strings.Contains(out, want) || strings.Contains(out, "cannot restore") {
 		t.Fatalf("code %d, want summary %q:\n%s", code, want, out)
@@ -129,7 +129,7 @@ func TestUndoHintKeepsRootAndConfigFlags(t *testing.T) {
 func TestUndoHintOmitsScopeForRepoSessions(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	dir, file := junkDir(t, f.repo.Dir, "node_modules")
-	code, out, _ := clean(t, "", "--from", writeReportFile(t, trashFinding(f.repo.Dir, dir)), "--apply", "--yes")
+	code, out, _ := clean(t, "", "--from", writeReportFile(t, trashFinding(f.repo.Dir, dir)), "--yes")
 	if code != ExitOK || exists(file) {
 		t.Fatalf("code %d\n%s", code, out)
 	}

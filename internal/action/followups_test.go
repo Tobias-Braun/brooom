@@ -60,7 +60,7 @@ func TestDeleteWarningPrecedesConfirmation(t *testing.T) {
 	}
 	out := log.String()
 	warn := strings.Index(out, "WARNING-DELETE")
-	prompt := strings.Index(out, "[y]es")
+	prompt := strings.Index(out, "[y/N]")
 	if warn < 0 || prompt < 0 || warn > prompt {
 		t.Fatalf("warning must come before the prompt (warn %d, prompt %d):\n%s", warn, prompt, out)
 	}

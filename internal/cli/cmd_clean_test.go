@@ -115,7 +115,7 @@ func TestCleanRoundTripFromScan(t *testing.T) {
 	path := writeReportFile(t, rep.Findings...)
 	requireDryRunChangesNothing(t, f, path)
 
-	code, out, errOut := clean(t, "", "--from", path, "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", path, "--yes")
 	if code != ExitOK {
 		t.Fatalf("apply: code %d, stderr %q, stdout %q", code, errOut, out)
 	}
@@ -130,11 +130,11 @@ func TestCleanRoundTripFromScan(t *testing.T) {
 
 func requireDryRunChangesNothing(t *testing.T, f *cleanupFixture, path string) {
 	t.Helper()
-	code, out, errOut := clean(t, "", "--from", path)
+	code, out, errOut := clean(t, "", "--from", path, "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("dry run: code %d, stderr %q", code, errOut)
 	}
-	if !strings.Contains(out, "dry run: nothing was changed") || !strings.Contains(out, "re-run 'brooom clean --from "+findings.Quote(path)+" --trash-strategy quarantine --apply'") {
+	if !strings.Contains(out, "dry run: nothing was changed; re-run without --dry-run to execute") {
 		t.Errorf("dry run output:\n%s", out)
 	}
 	if !f.hasBranch("feat/merged") || !f.hasBranch("feat/squash") || len(f.sessions()) != 0 {
@@ -146,7 +146,7 @@ func TestCleanFromStdin(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	data := mustJSON(t, scanReport(t))
-	code, out, errOut := clean(t, data, "--from", "-", "--apply", "--yes")
+	code, out, errOut := clean(t, data, "--from", "-", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q, stdout %q", code, errOut, out)
 	}
@@ -222,7 +222,7 @@ func TestCleanIDSelection(t *testing.T) {
 	}
 
 	t.Run("unknown ids fail and execute nothing", func(t *testing.T) {
-		code, out, errOut := clean(t, "", "--from", path, "--apply", "--yes", "--id", merged, "--id", "deadbeef,cafe")
+		code, out, errOut := clean(t, "", "--from", path, "--yes", "--id", merged, "--id", "deadbeef,cafe")
 		if code != ExitError {
 			t.Fatalf("code %d, want 1", code)
 		}
@@ -234,7 +234,7 @@ func TestCleanIDSelection(t *testing.T) {
 		}
 	})
 	t.Run("comma separated and repeated ids select", func(t *testing.T) {
-		code, out, errOut := clean(t, "", "--from", path, "--apply", "--yes", "--id", merged)
+		code, out, errOut := clean(t, "", "--from", path, "--yes", "--id", merged)
 		if code != ExitOK {
 			t.Fatalf("code %d, stderr %q, stdout %q", code, errOut, out)
 		}
@@ -249,7 +249,7 @@ func TestCleanDuplicateIDsRunOnce(t *testing.T) {
 	f.mergedAndSquashed()
 	rep := scanReport(t)
 	doubled := append(append([]findings.Finding{}, rep.Findings...), rep.Findings...)
-	code, out, errOut := clean(t, "", "--from", writeReportFile(t, doubled...), "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", writeReportFile(t, doubled...), "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q, stdout %q", code, errOut, out)
 	}
@@ -278,7 +278,7 @@ func TestCleanRefusesOutsideScope(t *testing.T) {
 		trashFinding(f.repo.Dir, "relative/path"),
 		branchFinding(otherRepo.Dir, "victim"),
 	}
-	code, out, errOut := clean(t, "", "--from", writeReportFile(t, fs...), "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", writeReportFile(t, fs...), "--yes")
 	if code != ExitError {
 		t.Fatalf("code %d, want 1; stdout %q stderr %q", code, out, errOut)
 	}
@@ -311,7 +311,7 @@ func TestCleanIDExcludesRefusedFindings(t *testing.T) {
 	outside, _ := junkDir(t, sibling, "outside")
 	inside, insideFile := junkDir(t, f.repo.Dir, "junk")
 	good, bad := trashFinding(f.repo.Dir, inside), trashFinding(f.repo.Dir, outside)
-	code, out, errOut := clean(t, "", "--from", writeReportFile(t, good, bad), "--apply", "--yes", "--id", good.ID)
+	code, out, errOut := clean(t, "", "--from", writeReportFile(t, good, bad), "--yes", "--id", good.ID)
 	if code != ExitOK {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -335,7 +335,7 @@ func TestCleanRefusesSymlinkSwappedAfterScan(t *testing.T) {
 	if err := os.Symlink(victim, dir); err != nil {
 		t.Skipf("cannot create symlinks here: %v", err)
 	}
-	code, out, errOut := clean(t, "", "--from", path, "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", path, "--yes")
 	if code != ExitError || !strings.Contains(out, "symbolic link") {
 		t.Fatalf("code %d, want refusal\nstdout %q\nstderr %q", code, out, errOut)
 	}
@@ -353,7 +353,7 @@ func TestCleanRefusesParentSymlinkToOutside(t *testing.T) {
 		t.Skipf("cannot create symlinks here: %v", err)
 	}
 	fd := trashFinding(f.repo.Dir, filepath.Join(link, "sub"))
-	code, _, _ := clean(t, "", "--from", writeReportFile(t, fd), "--apply", "--yes")
+	code, _, _ := clean(t, "", "--from", writeReportFile(t, fd), "--yes")
 	if code != ExitError || !exists(victimFile) {
 		t.Fatalf("code %d, target exists %v", code, exists(victimFile))
 	}
@@ -366,7 +366,7 @@ func TestCleanPathCase(t *testing.T) {
 	if !exists(upper) {
 		t.Skip("case-sensitive file system")
 	}
-	code, out, errOut := clean(t, "", "--from", writeReportFile(t, trashFinding(f.repo.Dir, upper)), "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", writeReportFile(t, trashFinding(f.repo.Dir, upper)), "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -387,7 +387,7 @@ func TestCleanRefusesUnsafeBranchNames(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			code, out, _ := clean(t, "", "--from", writeReportFile(t, branchFinding(f.repo.Dir, tt.ref)), "--apply", "--yes")
+			code, out, _ := clean(t, "", "--from", writeReportFile(t, branchFinding(f.repo.Dir, tt.ref)), "--yes")
 			if code != ExitError || !strings.Contains(out, "refused findings (1)") {
 				t.Fatalf("code %d\n%s", code, out)
 			}
@@ -425,7 +425,7 @@ func TestCleanTamperedRiskFlagsDoNotBypassPlan(t *testing.T) {
 	f.repo.Commit("late.txt", "late", "late work", f.at())
 	f.repo.Checkout("main")
 
-	code, out, errOut := clean(t, "", "--from", writeReportFile(t, rep.Findings...), "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", writeReportFile(t, rep.Findings...), "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -445,7 +445,7 @@ func TestCleanOpenFileIsNotBypassed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer h.Close()
-	code, out, errOut := clean(t, "", "--from", writeReportFile(t, trashFinding(f.repo.Dir, dir)), "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", writeReportFile(t, trashFinding(f.repo.Dir, dir)), "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -463,9 +463,9 @@ func TestCleanExitCodes(t *testing.T) {
 		args []string
 		want int
 	}{
-		{"dry run", []string{"--from", path}, ExitOK},
+		{"dry run", []string{"--from", path, "--dry-run"}, ExitOK},
 		{"missing --from", nil, ExitUsage},
-		{"apply needs confirmation", []string{"--from", path, "--apply"}, ExitUsage},
+		{"acting needs confirmation", []string{"--from", path}, ExitUsage},
 		{"bad trash strategy", []string{"--from", path, "--trash-strategy", "nope"}, ExitUsage},
 		{"root without workspaces", []string{"--from", path, "--root", f.repo.Dir}, ExitUsage},
 		{"unknown flag", []string{"--from", path, "--bogus"}, ExitUsage},
@@ -505,7 +505,7 @@ func TestCleanWorkspacesScopeComesFromRoots(t *testing.T) {
 	path := writeReportFile(t, trashFinding(repoA, dirA), trashFinding(repoB, dirB))
 
 	// --root narrows the scope: the finding below the other root is refused.
-	code, out, _ := clean(t, "", "--from", path, "--workspaces", "--root", rootA, "--apply", "--yes")
+	code, out, _ := clean(t, "", "--from", path, "--workspaces", "--root", rootA, "--yes")
 	if code != ExitError || !strings.Contains(out, "refused findings (1)") {
 		t.Fatalf("narrowed run: code %d\n%s", code, out)
 	}
@@ -541,7 +541,7 @@ func TestCleanUserScopeFindings(t *testing.T) {
 	lying.Scope = findings.Scope{Type: findings.ScopeUser, Path: base}
 
 	t.Run("refused without --user", func(t *testing.T) {
-		code, out, _ := clean(t, "", "--from", writeReportFile(t, userFinding), "--apply", "--yes")
+		code, out, _ := clean(t, "", "--from", writeReportFile(t, userFinding), "--yes")
 		if code != ExitError || !strings.Contains(out, "user location not enabled for this run (pass --user)") {
 			t.Fatalf("code %d\n%s", code, out)
 		}
@@ -550,7 +550,7 @@ func TestCleanUserScopeFindings(t *testing.T) {
 		}
 	})
 	t.Run("accepted with --user", func(t *testing.T) {
-		code, out, errOut := clean(t, "", "--from", writeReportFile(t, userFinding), "--user")
+		code, out, errOut := clean(t, "", "--from", writeReportFile(t, userFinding), "--user", "--dry-run")
 		if code != ExitOK || !strings.Contains(out, "cache") || !strings.Contains(out, "dry run") {
 			t.Fatalf("code %d\nstdout %q\nstderr %q", code, out, errOut)
 		}
@@ -559,7 +559,7 @@ func TestCleanUserScopeFindings(t *testing.T) {
 		}
 	})
 	t.Run("outside the user base is still refused", func(t *testing.T) {
-		code, out, _ := clean(t, "", "--from", writeReportFile(t, lying), "--user", "--apply", "--yes")
+		code, out, _ := clean(t, "", "--from", writeReportFile(t, lying), "--user", "--yes")
 		if code != ExitError || !strings.Contains(out, "refused findings (1)") || !exists(repoFile) {
 			t.Fatalf("code %d, file exists %v\n%s", code, exists(repoFile), out)
 		}
@@ -581,7 +581,7 @@ func TestCleanForceNeverUpgradesActionNone(t *testing.T) {
 	none := trashFinding(f.repo.Dir, blockedDir, findings.RiskWorktreeDirty)
 	none.SuggestedAction = findings.SuggestedAction{Type: findings.ActionNone, Reason: "uncommitted changes"}
 
-	code, out, errOut := clean(t, "", "--from", writeReportFile(t, none), "--force", "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", writeReportFile(t, none), "--force", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -598,11 +598,11 @@ func TestCleanForceLiftsOverridableFlags(t *testing.T) {
 	dir, file := junkDir(t, f.repo.Dir, "risky")
 	path := writeReportFile(t, trashFinding(f.repo.Dir, dir, findings.RiskWorktreeDirty))
 
-	code, out, errOut := clean(t, "", "--from", path, "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", path, "--yes")
 	if code != ExitOK || !exists(file) || !strings.Contains(out, "worktree_dirty") {
 		t.Fatalf("without --force: code %d, file exists %v\nstdout %q\nstderr %q", code, exists(file), out, errOut)
 	}
-	code, out, errOut = clean(t, "", "--from", path, "--force", "--apply", "--yes")
+	code, out, errOut = clean(t, "", "--from", path, "--force", "--yes")
 	if code != ExitOK || exists(file) {
 		t.Fatalf("with --force: code %d, file exists %v\nstdout %q\nstderr %q", code, exists(file), out, errOut)
 	}
@@ -627,7 +627,7 @@ func TestCleanUnknownActionRefused(t *testing.T) {
 	dir, file := junkDir(t, f.repo.Dir, "junk")
 	bogus := trashFinding(f.repo.Dir, dir)
 	bogus.SuggestedAction.Type = "rm-rf"
-	code, out, _ := clean(t, "", "--from", writeReportFile(t, bogus), "--apply", "--yes")
+	code, out, _ := clean(t, "", "--from", writeReportFile(t, bogus), "--yes")
 	if code != ExitError || !strings.Contains(out, `unknown action type "rm-rf"`) || !exists(file) {
 		t.Fatalf("bogus action: code %d\n%s", code, out)
 	}

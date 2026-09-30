@@ -7,134 +7,22 @@ import (
 	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
-	"github.com/Tobias-Braun/brooom/internal/findings"
 )
 
-// hintFinding is an actionable finding of the given detector and confidence.
-func hintFinding(detector string, c findings.Confidence, name string) findings.Finding {
-	return findings.Finding{
-		ID:              findings.NewID(detector, findings.KindDir, "/r/"+name, ""),
-		Detector:        detector,
-		Path:            "/r/" + name,
-		Kind:            findings.KindDir,
-		Confidence:      c,
-		SuggestedAction: findings.SuggestedAction{Type: findings.ActionTrash},
-	}
-}
-
-// hintFor renders the scan footer for args over the given findings.
-func hintFor(t *testing.T, cfg *config.Config, args []string, fs ...findings.Finding) string {
-	t.Helper()
-	a := &app{args: args, goos: "linux"}
-	res := &scanResult{Report: findings.NewReport("test", time.Time{}, nil, fs, nil), Config: cfg}
-	return a.applyHint(leafFor(t, a, args), res)
-}
-
-// TestScanPipelineHintIsFileBased reproduces #214: `scan | clean --from -`
-// leaves stdin as the pipe, so the confirmation is refused. The hint must
-// name the two-step file form, and that form must work interactively.
-func TestScanPipelineHintIsFileBased(t *testing.T) {
-	args := []string{"scan", "-d", "merged-branch," + config.DetectorLogs}
-	a := &app{args: args, goos: "linux"}
-	got := a.applyCommand(leafFor(t, a, args))
-	if strings.Contains(got, "| brooom clean") || strings.Contains(got, "--from -") {
-		t.Errorf("hint still pipes into clean: %q", got)
-	}
-	if !strings.Contains(got, "--format json > brooom-findings.json") || !strings.Contains(got, "clean --from brooom-findings.json --apply") {
-		t.Errorf("hint is not the file form: %q", got)
-	}
-}
-
-func TestFileHintWorksWithAConfirmationPrompt(t *testing.T) {
+// TestFileWorkflowWorksWithAConfirmationPrompt reproduces #214: `scan |
+// clean --from -` leaves stdin as the pipe, so a findings file is the way to
+// act on a reviewed selection, and it must work interactively.
+func TestFileWorkflowWorksWithAConfirmationPrompt(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	_, out, _ := brooom(t, "", "scan", "-d", "merged-branch,"+config.DetectorLogs, "--format", "json")
 	file := writeRaw(t, out)
-	code, _, errOut := runApp(t, "y\n", true, time.Time{}, "clean", "--from", file, "--apply", "--trash-strategy", "quarantine")
+	code, _, errOut := runApp(t, "y\n", true, time.Time{}, "clean", "--from", file, "--trash-strategy", "quarantine")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 	if f.hasBranch("feat/merged") {
 		t.Errorf("clean did not act: %v", f.branches())
-	}
-}
-
-func TestRerunHintFromStdinDoesNotSuggestPiping(t *testing.T) {
-	f := newCleanupFixture(t, nil)
-	f.mergedAndSquashed()
-	data := mustJSON(t, scanReport(t))
-	_, out, _ := clean(t, data, "--from", "-")
-	if strings.Contains(out, "pipe them in again") {
-		t.Errorf("stdin hint suggests the pipe again:\n%s", out)
-	}
-	if !strings.Contains(out, "--from <file> --apply") {
-		t.Errorf("stdin hint lost the file form:\n%s", out)
-	}
-}
-
-// TestApplyHintNamesOnlyWorkingShortcuts reproduces #215: the hint listed
-// `brooom branches --apply` without the scope flags and without any branch
-// finding, and suggested a sweep that does not cover the listed findings.
-func TestApplyHintNamesOnlyWorkingShortcuts(t *testing.T) {
-	cfg := config.Default()
-	high := findings.ConfidenceHigh
-	med := findings.ConfidenceMedium
-	tests := []struct {
-		name     string
-		args     []string
-		fs       []findings.Finding
-		contains []string
-		absent   []string
-	}{
-		{"scope flags on shortcut", []string{"scan", "-w", "--root", "/r"},
-			[]findings.Finding{hintFinding("merged-branch", high, "b")},
-			[]string{"`brooom sweep --workspaces --root /r`", "`brooom branches --workspaces --root /r --apply`"},
-			[]string{"brooom worktrees", "brooom logs"}},
-		{"no branch findings", []string{"scan"},
-			[]findings.Finding{hintFinding(config.DetectorLogs, high, "l")},
-			[]string{"`brooom sweep`", "`brooom logs --apply`"},
-			[]string{"brooom branches"}},
-		{"safe preset skips medium findings", []string{"scan"},
-			[]findings.Finding{hintFinding("build-artifacts", med, "dist")},
-			[]string{"safe preset", "brooom scan --format json > brooom-findings.json", "brooom clean --from brooom-findings.json --apply"},
-			[]string{"`brooom sweep --apply`"}},
-		{"partial coverage is stated", []string{"scan"},
-			[]findings.Finding{hintFinding(config.DetectorLogs, high, "l"), hintFinding("build-artifacts", med, "dist")},
-			[]string{"`brooom sweep`", "covers up to 1 of 2", "brooom clean --from brooom-findings.json --apply"},
-			nil},
-		{"detector outside the preset", []string{"scan"},
-			[]findings.Finding{hintFinding("git-bloat", high, "g")},
-			[]string{"safe preset", "brooom clean --from brooom-findings.json --apply"},
-			[]string{"`brooom sweep --apply`"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := hintFor(t, cfg, tt.args, tt.fs...)
-			for _, want := range tt.contains {
-				if !strings.Contains(got, want) {
-					t.Errorf("hint lacks %q:\n%s", want, got)
-				}
-			}
-			for _, bad := range tt.absent {
-				if strings.Contains(got, bad) {
-					t.Errorf("hint contains %q:\n%s", bad, got)
-				}
-			}
-			for _, c := range hintCommands(got) {
-				requireParses(t, c)
-			}
-		})
-	}
-}
-
-// TestSweepHintFollowsConfiguredPreset: sweep.preset decides what a bare
-// `sweep` covers, so the coverage claim has to use it.
-func TestSweepHintFollowsConfiguredPreset(t *testing.T) {
-	cfg := config.Default()
-	cfg.Sweep.Preset = "standard"
-	got := hintFor(t, cfg, []string{"scan"}, hintFinding("build-artifacts", findings.ConfidenceMedium, "dist"))
-	if !strings.Contains(got, "`brooom sweep`") {
-		t.Errorf("standard preset covers medium findings:\n%s", got)
 	}
 }
 
@@ -146,7 +34,7 @@ func TestCleanRejectsExplicitFormat(t *testing.T) {
 	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
 	for _, format := range []string{"json", "ndjson", "plain", "tree", "summary", "table"} {
 		t.Run(format, func(t *testing.T) {
-			code, _, errOut := clean(t, "", "--from", report, "-f", format, "--apply", "--yes")
+			code, _, errOut := clean(t, "", "--from", report, "-f", format, "--yes")
 			if code != ExitUsage || !strings.Contains(errOut, "--format") {
 				t.Errorf("code %d, stderr %q", code, errOut)
 			}
@@ -161,7 +49,7 @@ func TestCleanIgnoresConfigFormat(t *testing.T) {
 	f := newCleanupFixture(t, map[string]any{"output": map[string]any{"format": "ndjson"}})
 	dir, _ := junkDir(t, f.repo.Dir, "target")
 	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
-	if code, _, errOut := clean(t, "", "--from", report); code != ExitOK {
+	if code, _, errOut := clean(t, "", "--from", report, "--dry-run"); code != ExitOK {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
@@ -170,20 +58,20 @@ func TestGitPurgeRejectsNonTableFormatWithOperations(t *testing.T) {
 	newPurgeFixture(t, nil)
 	for _, format := range []string{"json", "ndjson", "plain", "summary", "tree"} {
 		t.Run(format, func(t *testing.T) {
-			code, _, errOut := brooom(t, "", "git", "purge", "--prune", "now", "--format", format)
+			code, _, errOut := brooom(t, "", "git", "purge", "--prune", "now", "--format", format, "--dry-run")
 			if code != ExitUsage || !strings.Contains(errOut, "--format "+format) {
 				t.Errorf("code %d, stderr %q", code, errOut)
 			}
 		})
 	}
-	if code, _, errOut := brooom(t, "", "git", "purge", "--prune", "now", "--format", "table"); code != ExitOK {
+	if code, _, errOut := brooom(t, "", "git", "purge", "--prune", "now", "--format", "table", "--dry-run"); code != ExitOK {
 		t.Errorf("explicit table: code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestGitPurgeIgnoresConfigTreeFormat(t *testing.T) {
 	newPurgeFixture(t, map[string]any{"output": map[string]any{"format": "tree"}})
-	if code, _, errOut := brooom(t, "", "git", "purge", "--prune", "now"); code != ExitOK {
+	if code, _, errOut := brooom(t, "", "git", "purge", "--prune", "now", "--dry-run"); code != ExitOK {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
@@ -235,12 +123,16 @@ func TestUpdateCheckFormatFollowsTheRenderedFormat(t *testing.T) {
 	if got, _ := a.renderedFormat(scan, "ndjson"); got != "ndjson" {
 		t.Errorf("scan renders %q, want ndjson", got)
 	}
-	acting := leafFor(t, a, []string{"branches", "--apply"})
+	acting := leafFor(t, a, []string{"sweep"})
 	if got, _ := a.renderedFormat(acting, "ndjson"); !isTableFormat(got) {
-		t.Errorf("an applying shortcut renders %q, want table", got)
+		t.Errorf("an acting sweep renders %q, want table", got)
+	}
+	dry := &app{}
+	if got, _ := dry.renderedFormat(leafFor(t, dry, []string{"sweep", "--dry-run"}), "ndjson"); got != "ndjson" {
+		t.Errorf("a dry-run sweep renders %q, want the configured ndjson", got)
 	}
 	explicit := &app{}
-	if got, _ := explicit.renderedFormat(leafFor(t, explicit, []string{"branches", "-f", "json"}), ""); got != "json" {
+	if got, _ := explicit.renderedFormat(leafFor(t, explicit, []string{"sweep", "-f", "json"}), ""); got != "json" {
 		t.Errorf("explicit format lost: %q", got)
 	}
 }

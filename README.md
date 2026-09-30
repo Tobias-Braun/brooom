@@ -16,7 +16,7 @@
 
 Brooom finds and cleans the disk clutter that agent tools, parallel branches
 and forgotten projects leave behind. It is a fast, safe, cross-platform CLI,
-and every command is a dry run until you say `--apply`. It sweeps:
+and nothing is changed before you have seen the plan and said yes. It sweeps:
 
 - **Agent artifacts** — run logs, JSONL transcripts, caches and scratch files
   from Claude Code, Cursor, Aider, Copilot and friends
@@ -31,12 +31,14 @@ and every command is a dry run until you say `--apply`. It sweeps:
 
 ## Safe by default
 
-- Every command is a **dry run** unless you pass `--apply`.
-- Applying asks for confirmation (skip with `--yes` in scripts).
+- Every command that changes something **shows its plan and asks** once
+  before it acts (`--dry-run` only shows the plan, `--yes` skips the question
+  in scripts). Without a terminal it refuses instead of guessing.
+- `sweep` never removes unmerged or uncommitted work.
 - Files go to your **OS trash** (or a quarantine folder); branches are
   deleted with `git branch -d`; worktrees are moved to the trash and then deregistered from git.
   Linked worktrees outside the scanned repository (such as `../repo-wt`) are
-  never touched; `br worktrees` lists them with a hint to run
+  never touched; `br scan` lists them with a hint to run
   `br roots add <parent>` or use `--workspaces` (not in `--format plain`,
   which stays a bare path list).
   On Windows the Recycle Bin cannot take paths longer than 259 characters
@@ -122,16 +124,15 @@ network access in the whole tool is the opt-in update check:
 ## Usage
 
 ```sh
-br                      # scan the current repo, dry run
-br sweep                # the no-brainer: safe preset, cleans up right away
-br sweep --dry-run      # ...or only show what it would do
-br branches --merged    # merged branches, incl. squash merges
-br worktrees --apply    # remove leftover worktrees
-br ai --user            # agent artifacts, incl. user-level caches
-br scan -w -f json      # all workspace roots, machine-readable
-br undo                 # show what restoring the last session would do
-br undo --apply         # restore it (from the same repo, or with -w)
-br purge --apply        # delete quarantined sessions past their retention
+br                      # scan the current repo and suggest what to sweep
+br sweep                # show everything worth cleaning, ask once, then clean
+br sweep after-agents   # merged worktrees and branches, agent leftovers
+br sweep tidy           # logs, OS junk, test caches, coverage output
+br sweep --dry-run      # only show what it would do
+br sweep --yes          # no question (scripts)
+br scan -d stale-branch # findings no preset acts on, for your review
+br undo                 # show what the last session removed, ask, restore
+br purge                # delete quarantined sessions past their retention
 ```
 
 Every command, flag and example is listed in the [CLI reference](docs/cli.md)
@@ -144,7 +145,7 @@ bash completion installs per user with
 
 ### Live progress
 
-While `scan`, `sweep`, the shortcut commands, `clean`, `git purge` and `undo`
+While `scan`, `sweep`, `clean`, `git purge` and `undo`
 run, stderr shows a live display: the phase (discover, scan, plan, apply), a
 spinner and progress bar, finding counts per detector and per target, and the
 bytes reclaimed so far. When the command ends it collapses to one summary line;
@@ -161,22 +162,29 @@ explicitly.
 
 ### Sweep presets
 
-`brooom sweep [--preset safe|standard|aggressive]` runs a fixed detector set
-with a minimum confidence and a few tuned thresholds. The preset is chosen by
-`--preset`, else by `sweep.preset` in the config, else `safe`. Unlike the other
-commands it applies right away and does not ask; it prints what it removed and
-how much disk that reclaimed (`2 worktrees deleted, 5 stale branches removed.
-4.2 GB reclaimed`), `--dry-run` shows the plan instead, `--verbose` lists every
-item, and `brooom undo` restores. Blocking risk flags still block, and
-`.brooom.json` can still tighten what a preset lowers. `--detector` narrows the
-set. The definitions live in `internal/presets`; `brooom sweep --help` prints
-them.
+`brooom sweep [preset]` scans with a fixed detector set, shows the plan, asks
+`Proceed? [y/N]` once and then cleans. Only an explicit yes acts; `--yes`
+skips the question and `--dry-run` stops after the plan. Afterwards it prints
+what it removed and how much disk that reclaimed (`2 worktrees deleted, 5
+merged branches removed. 4.2 GB reclaimed`), `--verbose` prints the full
+summary, and `brooom undo` restores. Without a preset, `sweep.preset` in the
+config decides, else `everything`.
+
+Sweep never removes unmerged or uncommitted work: dirty worktrees, branches
+that are not merged and other findings with blocking risk flags are listed as
+skipped, and sweep has no `--force`. Stale branches and large untracked files
+are in no preset; `brooom scan -d stale-branch` lists them. `.brooom.json` can
+still tighten what a preset selects, and `--detector` narrows it. The
+definitions live in `internal/presets`; `brooom sweep --help` prints them.
 
 | Preset | Detectors | Min. confidence | Notes |
 | --- | --- | --- | --- |
-| `safe` | merged-branch, worktrees, log-and-runtime-files, build-artifacts | high | prunable and merged clean worktrees only, OS junk and old logs, build artifacts of inactive projects |
-| `standard` | safe + stale-branch, ai-artifacts | medium | project-level AI artifacts only, log and cache categories as configured (safe limits them to OS junk and old logs) |
-| `aggressive` | standard + large-untracked, git-bloat | medium | lowers age thresholds (never above your own values), includes ignored files, gc/reflog expire/prune (a configured expiry is only ever shortened to `90.days.ago`, never lengthened, so the default `prune_expire` of `2.weeks.ago` stays) |
+| `after-agents` | worktrees, merged-branch, ai-artifacts | medium | clean up after an agent run: merged (also squash and rebase merged) clean worktrees and branches, AI tool artifacts in the repository |
+| `tidy` | log-and-runtime-files | medium | debug and rotated logs, OS junk, test caches, coverage output |
+| `everything` (default) | after-agents + tidy + build-artifacts, git-bloat | medium, build artifacts high | build artifacts of inactive projects only, gc/reflog expire/prune (a configured expiry is only ever shortened to `90.days.ago`, never lengthened) |
+
+The preset names of earlier releases (`safe`, `standard`, `aggressive`) still
+work and run `everything`, with a note saying so.
 
 Output formats: `table` (default), `tree`, `json`, `ndjson`, `plain`,
 `summary`.
