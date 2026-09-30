@@ -3,7 +3,6 @@ package action
 import (
 	"errors"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"syscall"
 
@@ -19,20 +18,16 @@ import (
 // fail closed: it reports "same" so the caller refuses. It is a variable so
 // tests can simulate aliases a Linux file system cannot create.
 var isSameEntry = func(a, b string) bool {
-	fa, err := lstat(a)
+	ia, err := identityOf(a, false)
 	if err != nil {
 		return !isAbsent(err)
 	}
-	fb, err := lstat(b)
+	ib, err := identityOf(b, false)
 	if err != nil {
 		return !isAbsent(err)
 	}
-	return os.SameFile(fa, fb)
+	return ia.sameAs(ib)
 }
-
-// lstat is os.Lstat, replaceable by tests that need a stat failure a
-// privileged Linux test run cannot provoke with permissions.
-var lstat = os.Lstat
 
 // isAbsent reports whether a stat error means the entry is not there (also
 // when a parent is a file), as opposed to an entry that exists but cannot be
@@ -70,11 +65,11 @@ func refuseVCSAlias(a string) error {
 	return nil
 }
 
-// inspectError returns the first stat failure other than "not there" for the
-// paths, or nil when all could be inspected or are absent.
+// inspectError returns the first failure other than "not there" reading the
+// identity of the paths, or nil when all could be read or are absent.
 func inspectError(paths ...string) error {
 	for _, p := range paths {
-		if _, err := lstat(p); err != nil && !isAbsent(err) {
+		if _, err := identityOf(p, false); err != nil && !isAbsent(err) {
 			return err
 		}
 	}

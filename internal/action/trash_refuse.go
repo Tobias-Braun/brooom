@@ -132,6 +132,18 @@ func refusePath(env *Env, path string, refuseRepoRoot bool) error {
 	case refuseRepoRoot && isRepoRoot(path):
 		return skipf("refusing to remove a repository root")
 	}
+	if err := refuseGitDir(env, path); err != nil {
+		return err
+	}
+	if err := refuseBrooomAndHome(path); err != nil {
+		return err
+	}
+	return RefuseByIdentity(path)
+}
+
+// refuseBrooomAndHome refuses the home directories and Brooom's own state,
+// including any directory that contains them.
+func refuseBrooomAndHome(path string) error {
 	for p, why := range protectedPaths() {
 		if covers(path, p) {
 			return skipf("refusing to remove %s or a directory containing it", why)
@@ -142,7 +154,7 @@ func refusePath(env *Env, path string, refuseRepoRoot bool) error {
 			return skipf("refusing to remove Brooom's own session or quarantine data")
 		}
 	}
-	return RefuseByIdentity(path)
+	return nil
 }
 
 // isRepoRoot reports whether path is itself the top of a git repository.
@@ -191,7 +203,7 @@ func restoreForbiddenDirs() []string {
 // quarantine data, since a forged manifest could otherwise plant hooks or
 // rewrite the undo information itself. It guards every undo that writes
 // (trash and remove-worktree). The check is lexical first and then
-// identity based (os.SameFile on every existing ancestor), because a name
+// identity based (identityOf on every existing ancestor), because a name
 // comparison alone misses aliases such as Windows 8.3 short names and
 // symlinks. Known limit: identity is compared per ancestor of dest, so a bind
 // mount or hard link of a VCS directory (or of a state directory) that is
@@ -216,23 +228,20 @@ func refuseInsideBrooom(dest string) error {
 	return fmt.Errorf("undo: refusing to restore to %s: inside Brooom's own data (home, sessions or quarantine)", dest)
 }
 
-// stat is os.Stat (which follows symlinks on purpose: an alias must resolve
-// to the object it names), replaceable by tests that need a stat failure a
-// privileged Linux test run cannot provoke with permissions.
-var stat = os.Stat
-
 // refuseRestoreByIdentity walks the existing ancestors of dest and compares
 // each with the Brooom state directories and with its sibling VCS entries by
-// file identity. Path elements that do not exist are skipped: they cannot
-// alias anything yet. Any other stat failure (access denied, I/O error) means
-// identity is unknown and refuses, like isSameEntry does for removals.
+// file identity (identityOf: volume and file index on Windows, device and
+// inode elsewhere). Path elements that do not exist are skipped: they cannot
+// alias anything yet. Any other failure (access denied, an I/O error, a
+// delete-pending entry on Windows) means identity is unknown and refuses,
+// like isSameEntry does for removals.
 func refuseRestoreByIdentity(dest string) error {
-	var state []os.FileInfo
+	var state []fileID
 	for _, p := range restoreForbiddenDirs() {
-		fi, err := stat(p)
+		id, err := identityOf(p, true)
 		switch {
 		case err == nil:
-			state = append(state, fi)
+			state = append(state, id)
 		case !isAbsent(err):
 			return refuseUninspectable(dest, p, err)
 		}
@@ -253,9 +262,10 @@ func refuseUninspectable(dest, probed string, err error) error {
 }
 
 // refuseAncestor checks one ancestor cur of dest against the state
-// directories and its sibling VCS entries.
-func refuseAncestor(dest, cur string, state []os.FileInfo) error {
-	fi, err := stat(cur)
+// directories and its sibling VCS entries. Symlinks are followed on purpose:
+// an alias must resolve to the object it names.
+func refuseAncestor(dest, cur string, state []fileID) error {
+	id, err := identityOf(cur, true)
 	if err != nil {
 		if isAbsent(err) {
 			return nil
@@ -263,15 +273,15 @@ func refuseAncestor(dest, cur string, state []os.FileInfo) error {
 		return refuseUninspectable(dest, cur, err)
 	}
 	for _, s := range state {
-		if os.SameFile(fi, s) {
+		if id.sameAs(s) {
 			return refuseInsideBrooom(dest)
 		}
 	}
 	for _, name := range walk.VCSNames() {
 		sibling := filepath.Join(filepath.Dir(cur), name)
-		g, err := stat(sibling)
+		g, err := identityOf(sibling, true)
 		switch {
-		case err == nil && os.SameFile(fi, g):
+		case err == nil && id.sameAs(g):
 			return fmt.Errorf("undo: refusing to restore to %s: inside %s (%s is an alias of it)", dest, name, filepath.Base(cur))
 		case err != nil && !isAbsent(err):
 			return refuseUninspectable(dest, sibling, err)

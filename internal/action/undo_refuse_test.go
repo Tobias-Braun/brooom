@@ -102,17 +102,18 @@ func TestRemoveWorktreeUndoRequiresMainWorktree(t *testing.T) {
 	}
 }
 
-// failStat replaces the stat seam so that path (and only it) fails with err.
-func failStat(t *testing.T, path string, err error) {
+// failIdentityAt replaces the identity seam so that path (and only it) fails
+// with err.
+func failIdentityAt(t *testing.T, path string, err error) {
 	t.Helper()
-	old := stat
-	stat = func(p string) (os.FileInfo, error) {
+	old := identityOf
+	identityOf = func(p string, follow bool) (fileID, error) {
 		if p == path {
 			return nil, err
 		}
-		return old(p)
+		return old(p, follow)
 	}
-	t.Cleanup(func() { stat = old })
+	t.Cleanup(func() { identityOf = old })
 }
 
 // TestRestoreTargetFailsClosedOnStatErrors: an ancestor or sibling that cannot
@@ -128,7 +129,7 @@ func TestRestoreTargetFailsClosedOnStatErrors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			failStat(t, tc.failing, denied)
+			failIdentityAt(t, tc.failing, denied)
 			err := refuseRestoreTarget(fx.path("proj/sub/file"))
 			if err == nil || !strings.Contains(err.Error(), "cannot inspect") || !errors.Is(err, fs.ErrPermission) {
 				t.Fatalf("err = %v, want a fail-closed refusal naming the cause", err)
@@ -193,14 +194,7 @@ func TestRefuseByIdentityCoversEveryVCSAlias(t *testing.T) {
 	t.Run("stat error is reported as such", func(t *testing.T) {
 		target := fx.path("proj/unreadable")
 		fx.mkdir("proj/unreadable")
-		old := lstat
-		lstat = func(p string) (os.FileInfo, error) {
-			if p == target {
-				return nil, &fs.PathError{Op: "lstat", Path: p, Err: fs.ErrPermission}
-			}
-			return old(p)
-		}
-		t.Cleanup(func() { lstat = old })
+		failIdentityAt(t, target, &fs.PathError{Op: "identity", Path: target, Err: fs.ErrPermission})
 		err := RefuseByIdentity(target)
 		if err == nil || strings.Contains(err.Error(), "alias of it") || !strings.Contains(err.Error(), "cannot tell") {
 			t.Fatalf("err = %v, want a cannot-tell refusal that does not claim an alias", err)

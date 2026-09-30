@@ -248,7 +248,7 @@ reason at the first failure:
 
 Windows specifics: `Guard.ResolveParent` canonicalises the final element with
 `GetLongPathName` (8.3 aliases such as `GIT~1` become `.git`), and step 2 ends
-with `RefuseByIdentity`, which compares file identity (`os.SameFile`) of the
+with `RefuseByIdentity`, which compares file identity (`identityOf`) of the
 path and its ancestors with `.git`, the Brooom home, the user's home and the
 sessions/quarantine dirs; `brooom clean --from` vetting runs it too. Step 3
 treats reparse-point directories that are not name surrogates (OneDrive,
@@ -256,9 +256,16 @@ ProjFS) as directories (`walk` decides by the reparse tag); a junction or other
 directory the walker cannot inspect is refused, so trashing a junction is never
 possible. Detectors classify entries with the same rule through
 `walk.IsDirNoFollow` / `walk.IsDirEntry` instead of `os.Lstat(...).IsDir()`.
-`walk.Walk` never descends into any VCS metadata directory. The identity check
-fails closed: an entry that exists but cannot be stat'ed counts as an alias
-and refuses the removal; only a missing entry is "not the same".
+`walk.Walk` never descends into any VCS metadata directory. Git directories
+that are not named `.git` (bare repositories such as `proj/.bare`, the target of
+a `.git` link file, the common dir of a linked worktree) are refused by
+`refuseGitDir`, which examines every ancestor up to the allowed root; `--force`
+never lifts it, and neither does git reporting a path as "outside repository".
+The identity check fails closed: an entry that exists but whose identity cannot
+be read counts as an alias and refuses the removal; only a missing entry is
+"not the same". On Windows the identity comes from `CreateFile` plus
+`GetFileInformationByHandle` (`fileid_windows.go`) rather than the lazy
+`os.SameFile`, which answers false on any error.
 
 The `delete` strategy is refused outside a git repository and whenever git
 cannot answer the untracked-files check (step 7 and `Apply`); it never falls

@@ -188,14 +188,10 @@ func checkTracked(ctx context.Context, env *Env, path string) (bool, error) {
 }
 
 // trackedVerdict applies the policy to a (batched or single) answer: errors
-// are unknown, tracked files are a skip without --force.
+// go through lsFilesFailed, tracked files are a skip without --force.
 func trackedVerdict(ctx context.Context, env *Env, ans trackedAnswer) (bool, error) {
 	if ans.err != nil {
-		if ctx.Err() != nil {
-			// Ctrl-C killed git: that is no reason to advise --force.
-			return false, fmt.Errorf("list tracked files: %w", ctx.Err())
-		}
-		return unknownTracked(env, fmt.Sprintf("cannot list tracked files: %v", ans.err))
+		return lsFilesFailed(ctx, env, ans.err)
 	}
 	if !ans.tracked {
 		return false, nil
@@ -204,6 +200,21 @@ func trackedVerdict(ctx context.Context, env *Env, ans trackedAnswer) (bool, err
 		return false, skipf("contains files tracked by git")
 	}
 	return true, nil
+}
+
+// lsFilesFailed maps a failed "git ls-files" to the checkTracked outcome.
+func lsFilesFailed(ctx context.Context, env *Env, err error) (bool, error) {
+	if ctx.Err() != nil {
+		// Ctrl-C killed git: that is no reason to advise --force.
+		return false, fmt.Errorf("list tracked files: %w", ctx.Err())
+	}
+	// A path git places outside the repository (a separate git dir, a
+	// bare layout) is not "unknown": it is metadata or foreign data, and
+	// --force must not lift the refusal.
+	if strings.Contains(err.Error(), "outside repository") {
+		return false, skipf("git reports the path is outside its repository (%v)", err)
+	}
+	return unknownTracked(env, fmt.Sprintf("cannot list tracked files: %v", err))
 }
 
 // unknownTracked is the outcome when tracked files cannot be ruled out.
