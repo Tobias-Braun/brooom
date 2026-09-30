@@ -290,6 +290,7 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 		Yes:        af.yes,
 		Force:      af.force,
 		IO:         action.IO{In: a.io.In, Out: a.io.Out, Err: a.io.Err},
+		StdinIsTTY: a.canPrompt, // as in undo, so a test can stand in for a terminal
 		Store:      &session.Store{Dir: dirs.Sessions},
 		Env:        buildActionEnv(in, af, resolver),
 		Command:    a.commandLine(),

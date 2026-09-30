@@ -46,7 +46,6 @@ func TestRetentionNoticeSuppressed(t *testing.T) {
 		{"json", []string{"sessions", "--format", "json"}, nil},
 		{"ndjson", []string{"sessions", "--format", "ndjson"}, nil},
 		{"plain", []string{"sessions", "--format", "plain"}, nil},
-		{"configured json format", []string{"sessions"}, map[string]any{"output": map[string]any{"format": "json"}}},
 		{"quiet", []string{"sessions", "--quiet"}, nil},
 		{"purge", []string{"purge"}, nil},
 		{"undo", []string{"undo"}, nil},

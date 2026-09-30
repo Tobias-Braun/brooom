@@ -165,12 +165,13 @@ func (a *app) purgeSetup(pf purgeFlags, af applyFlags) (config.TrashStrategy, er
 	if err != nil {
 		return "", err
 	}
-	format, err := resolveActingFormat(a.flags.format, cfg.Output.Format)
-	if err != nil {
+	if _, err := resolveActingFormat(a.flags.format, cfg.Output.Format); err != nil {
 		return "", err
 	}
-	if machineFormats[format] {
-		return "", usageError{fmt.Errorf("--format %s cannot be combined with --gc, --reflog-expire or --prune; drop the flags to list findings", format)}
+	// The plan is always a table, so any explicit format is ignored (summary
+	// and tree included). A format from the config only is not refused.
+	if !isTableFormat(a.flags.format) {
+		return "", usageError{fmt.Errorf("--format %s cannot be combined with --gc, --reflog-expire or --prune; drop the flags to list findings", a.flags.format)}
 	}
 	return parseTrashStrategy(af.trashStrategy)
 }

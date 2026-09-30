@@ -36,7 +36,7 @@ func (a *app) retentionNotice(cmd *cobra.Command, _ []string) {
 	if err != nil || cfg.Trash.QuarantineRetentionDays <= 0 {
 		return
 	}
-	if format, err := resolveFormat(a.flags.format, cfg.Output.Format); err != nil || machineFormats[format] {
+	if format, err := a.renderedFormat(cmd, cfg.Output.Format); err != nil || machineFormats[format] {
 		return
 	}
 	dirs, err := config.ResolveDirs()
@@ -48,6 +48,43 @@ func (a *app) retentionNotice(cmd *cobra.Command, _ []string) {
 		return
 	}
 	fmt.Fprintln(a.io.Err, retentionMessage(len(l.Expired), l.TotalBytes(), cfg.Trash.QuarantineRetentionDays))
+}
+
+// renderedFormat is the format cmd will actually print in, given the config's
+// output.format. Deciding it from the flag and the config for every command
+// is wrong both ways: `sessions` or `version` never read the config format
+// (their table was printed, yet the notice was suppressed), and an acting run
+// (--apply, git purge operations) prints its plan as text even when the config
+// asks for a machine format. Only the commands that render findings honour
+// the config, dry runs with resolveFormat and acting runs with
+// resolveActingFormat; `clean` never renders in a format. The result may be
+// empty, which means the default table.
+func (a *app) renderedFormat(cmd *cobra.Command, cfgFormat string) (string, error) {
+	path := cmd.CommandPath()
+	if !scopeCommands[path] || noFormatCommands[path] {
+		return a.flags.format, nil
+	}
+	if actsThisRun(cmd) {
+		return resolveActingFormat(a.flags.format, cfgFormat)
+	}
+	return resolveFormat(a.flags.format, cfgFormat)
+}
+
+// actsThisRun reports whether cmd executes changes or a purge operation, whose
+// plan is human text.
+func actsThisRun(cmd *cobra.Command) bool {
+	if f := cmd.Flags().Lookup("apply"); f != nil && f.Value.String() == "true" {
+		return true
+	}
+	if cmd.CommandPath() != "brooom git purge" {
+		return false
+	}
+	for _, name := range []string{"gc", "reflog-expire", "prune"} {
+		if f := cmd.Flags().Lookup(name); f != nil && f.Changed {
+			return true
+		}
+	}
+	return false
 }
 
 // retentionMessage is the one-line notice.

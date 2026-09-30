@@ -134,9 +134,11 @@ func (a *app) updateCheckAllowed(cmd *cobra.Command) bool {
 	if cfg == nil || !cfg.UpdateCheck {
 		return false
 	}
-	// Without --format the config's output.format decides, exactly as it does
-	// for the report: a JSON report must not be followed by a notice.
-	return a.flags.format != "" || isTableFormat(cfg.Output.Format)
+	// The format the command renders decides, exactly as for its report: a
+	// JSON report must not be followed by a notice, but a command that ignores
+	// the config's output.format (sessions) must not lose it to that setting.
+	format, err := a.renderedFormat(cmd, cfg.Output.Format)
+	return err == nil && isTableFormat(format)
 }
 
 // isTableFormat reports whether v names the default human output.

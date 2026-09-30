@@ -153,6 +153,9 @@ func TestScanFlagsStillAcceptedWhereUsed(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, f := range []string{"workspaces", "root", "detector", "format"} {
+			if f == "format" && path[0] == "clean" {
+				continue // clean renders no format; see TestCleanRejectsExplicitFormat
+			}
 			if msg := unsupportedScanFlag(cmd.CommandPath(), f); msg != "" {
 				t.Errorf("%s must accept --%s", cmd.CommandPath(), f)
 			}
@@ -160,6 +163,9 @@ func TestScanFlagsStillAcceptedWhereUsed(t *testing.T) {
 	}
 }
 
+// TestUpdateNoticeFollowsConfigFormat: `version` never reads output.format
+// and prints a table, so the configured json must not suppress the notice
+// there (#237); commands that render findings still honour it.
 func TestUpdateNoticeFollowsConfigFormat(t *testing.T) {
 	f := newReleaseFixture(t, 200, "v2.0.0", 0)
 	a, _, errOut := newTestApp(t, "1.0.0")
@@ -171,8 +177,35 @@ func TestUpdateNoticeFollowsConfigFormat(t *testing.T) {
 	if code := execute(a, []string{"version"}); code != ExitOK {
 		t.Fatal(errOut.String())
 	}
-	if strings.Contains(errOut.String(), "available") || f.hits.Load() != 0 {
-		t.Errorf("notice must be suppressed for output.format json: stderr %q hits %d", errOut, f.hits.Load())
+	if !strings.Contains(errOut.String(), "available") || f.hits.Load() == 0 {
+		t.Errorf("version renders a table, the notice must show: stderr %q hits %d", errOut, f.hits.Load())
+	}
+}
+
+func TestUpdateCheckAllowedHonoursConfigFormatOnlyForFindings(t *testing.T) {
+	tests := []struct {
+		args []string
+		want bool
+	}{
+		{[]string{"scan"}, false},
+		{[]string{"sweep"}, false},
+		{[]string{"branches", "--apply"}, true},
+		{[]string{"sessions"}, true},
+		{[]string{"sessions", "-f", "json"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			newReleaseFixture(t, 200, "v2.0.0", 0)
+			a, _, _ := newTestApp(t, "1.0.0")
+			a.update.stdoutTTY = func() bool { return true }
+			a.update.loadConfig = func(string) (*config.Config, error) {
+				return &config.Config{UpdateCheck: true, Output: config.Output{Format: "json"}}, nil
+			}
+			cmd := leafFor(t, a, tt.args)
+			if got := a.updateCheckAllowed(cmd); got != tt.want {
+				t.Errorf("updateCheckAllowed = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
