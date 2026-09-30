@@ -706,6 +706,7 @@ brooom logs --workspaces --format json
 | `--apply` | - | execute the plan (default is a dry run) |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
 | `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--user` | - | also scan user-level tool locations (pip, npm, Go caches and logs) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
