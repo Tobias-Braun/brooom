@@ -230,3 +230,43 @@ func TestDeleteBranchDerivesVerificationLive(t *testing.T) {
 		}
 	})
 }
+
+// TestTrashRefusesUserLevelProtectedPathsThroughSymlinks covers dotfile
+// managers and relocated homes: the guard resolves the finding's path, so the
+// user-level protect rules must match the resolved spelling as well as the
+// lexical one.
+func TestTrashRefusesUserLevelProtectedPathsThroughSymlinks(t *testing.T) {
+	link := func(t *testing.T, target, name string) {
+		t.Helper()
+		if err := os.Symlink(target, name); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+	}
+	t.Run("symlinked HOME", func(t *testing.T) {
+		fx := newTrashFixture(t)
+		fx.env.Force = true
+		fx.write("users/me/.claude/projects/p1/memory/notes.md", "memory")
+		fx.write("users/me/.claude/projects/p2/session.jsonl", "log")
+		homeLink := fx.path("homelink")
+		link(t, fx.userHome, homeLink)
+		t.Setenv("HOME", homeLink)
+		t.Setenv("USERPROFILE", homeLink)
+		_, err := trashAction{}.Plan(context.Background(), fx.env, trashFinding(filepath.Join(homeLink, ".claude", "projects", "p1")))
+		wantSkip(t, err, "protect")
+		if _, err := (trashAction{}).Plan(context.Background(), fx.env, trashFinding(filepath.Join(homeLink, ".claude", "projects", "p2"))); err != nil {
+			t.Errorf("unprotected sibling must still be removable: %v", err)
+		}
+	})
+	t.Run("symlinked .claude", func(t *testing.T) {
+		fx := newTrashFixture(t)
+		fx.env.Force = true
+		fx.write("users/me/dot/claude/projects/p1/memory/notes.md", "memory")
+		fx.write("users/me/dot/claude/projects/p2/session.jsonl", "log")
+		link(t, fx.path("users/me/dot/claude"), fx.path("users/me/.claude"))
+		_, err := trashAction{}.Plan(context.Background(), fx.env, trashFinding(fx.path("users/me/.claude/projects/p1")))
+		wantSkip(t, err, "protect")
+		if _, err := (trashAction{}).Plan(context.Background(), fx.env, trashFinding(fx.path("users/me/.claude/projects/p2"))); err != nil {
+			t.Errorf("unprotected sibling must still be removable: %v", err)
+		}
+	})
+}
