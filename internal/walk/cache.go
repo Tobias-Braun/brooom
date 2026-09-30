@@ -13,8 +13,8 @@ import (
 
 const (
 	// cacheVersion is bumped whenever the record layout changes; files of
-	// another version are ignored and rebuilt.
-	cacheVersion = 1
+	// another version are ignored and rebuilt. Version 2 added HasGit.
+	cacheVersion = 2
 	// maxCacheBytes caps the size of a cache file that is read. A larger
 	// file is treated as corrupt so a broken cache can never exhaust memory.
 	maxCacheBytes = 32 << 20
@@ -46,6 +46,9 @@ type dirRecord struct {
 	DirectFiles  int          `json:"direct_files"`
 	DirectNewest int64        `json:"direct_newest"`
 	Links        []linkRecord `json:"links,omitempty"`
+	// HasGit is true when the directory directly contains an entry named
+	// ".git" (a directory, or a file as in linked worktrees and submodules).
+	HasGit bool `json:"has_git,omitempty"`
 	// Subdirs are base names of the real subdirectories.
 	Subdirs []string `json:"subdirs"`
 }

@@ -10,6 +10,34 @@ import (
 	"time"
 )
 
+// TestDirSizeHasGit proves that the size pass reports a .git entry (directory
+// or file, at any depth) and that the answer survives the cache.
+func TestDirSizeHasGit(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, root string)
+		want  bool
+	}{
+		{"none", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, "a", "f"), 1) }, false},
+		{"git dir at root", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, ".git", "HEAD"), 1) }, true},
+		{"git file deep", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, "a", "b", ".git"), 1) }, true},
+		{"similar name", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, ".github", "x"), 1) }, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, cache := t.TempDir(), t.TempDir()
+			tc.setup(t, root)
+			ageTree(t, root)
+			for _, opts := range []Options{{}, {CacheDir: cache}, {CacheDir: cache}, {CacheDir: cache, Fresh: true}} {
+				sum := mustSize(t, root, opts)
+				if sum.HasGit != tc.want {
+					t.Fatalf("HasGit = %v, want %v (opts %+v)", sum.HasGit, tc.want, opts)
+				}
+			}
+		})
+	}
+}
+
 func mustSize(t *testing.T, path string, opts Options) DirSummary {
 	t.Helper()
 	s, err := DirSize(context.Background(), path, opts)
