@@ -771,7 +771,7 @@ brooom purge --apply
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--apply` | - | delete the listed sessions (default is a dry run) |
+| `--apply` | - | delete the listed sessions and cache files (default is a dry run) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 

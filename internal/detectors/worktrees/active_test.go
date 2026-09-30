@@ -16,9 +16,9 @@ import (
 
 // activeHarness scans at the real clock so that the real mtimes of freshly
 // created worktrees are "minutes old", like the checkout of a running agent.
-func activeHarness(t *testing.T, repo *testutil.Repo, wt string) *harness {
+func activeHarness(t *testing.T, repo *testutil.Repo, wts ...string) *harness {
 	t.Helper()
-	h := wtHarness(t, repo, wt)
+	h := wtHarness(t, repo, wts...)
 	h.env.Now = time.Now()
 	h.env.CacheDir = t.TempDir()
 	h.env.Config.Thresholds.RecentDays = 2
@@ -127,6 +127,40 @@ func TestInUseWorktreeIsBlocked(t *testing.T) {
 		if !slices.Contains(codes(f), "worktree_in_use") || f.SuggestedAction.Reason == "" {
 			t.Errorf("force=%v: evidence %v reason %q", force, codes(f), f.SuggestedAction.Reason)
 		}
+	}
+}
+
+// TestOpenCheckIsBatchedPerScan: three candidate worktrees are checked with
+// one open-file call, not one call each, and the answer still lands on the
+// right worktree. That the call then costs one lsof run on macOS is pinned in
+// internal/procs (TestLsofDirectoriesShareOneRun).
+func TestOpenCheckIsBatchedPerScan(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	wt1 := repo.AddWorktree("wt1", "feat1")
+	wt2 := repo.AddWorktree("wt2", "feat2")
+	wt3 := repo.AddWorktree("wt3", "feat3")
+	h := activeHarness(t, repo, wt1, wt2, wt3)
+	var calls, checked int
+	worktrees.SetOpenFiles(t, func(_ context.Context, paths []string) (map[string]bool, error) {
+		calls++
+		checked = len(paths)
+		return map[string]bool{paths[0]: true}, nil
+	})
+	got := h.detect()
+	if len(got) != 3 {
+		t.Fatalf("got %d findings, want 3", len(got))
+	}
+	if calls != 1 || checked != 3 {
+		t.Errorf("open-file check ran %d times over %d paths, want 1 over 3", calls, checked)
+	}
+	inUse := 0
+	for _, f := range got {
+		if f.HasRisk(findings.RiskFileOpen) {
+			inUse++
+		}
+	}
+	if inUse != 1 {
+		t.Errorf("%d worktrees flagged in use, want exactly 1", inUse)
 	}
 }
 

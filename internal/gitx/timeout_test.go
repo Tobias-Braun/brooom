@@ -98,21 +98,22 @@ func cacheRepos(t *testing.T, n int) []*gitx.Repo {
 }
 
 // TestGHBreakerStopsAfterFirstTimeout: 20 repositories with a hanging gh used
-// to cost 20 timeouts; now the first one trips the breaker.
+// to cost 20 timeouts; now the first one trips the breaker. The assertion is
+// on the number of gh calls, not on elapsed time: the wall-clock cap it
+// replaced included creating the repositories and failed at 2.1s against 2s on
+// a slow Windows runner (issue #180). gh hangs until its own timeout, so one
+// call is exactly one timeout.
 func TestGHBreakerStopsAfterFirstTimeout(t *testing.T) {
 	gh := &ghCounter{reply: hangUntilDone}
-	start := time.Now()
-	for _, r := range cacheRepos(t, 6) {
+	repos := cacheRepos(t, 6)
+	for _, r := range repos {
 		info := r.OpenPRBranches(context.Background(), r.Dir, gitx.PROptions{GH: gh.run, Timeout: 300 * time.Millisecond})
 		if info.Known || info.HasOpenPR("x") {
 			t.Fatalf("hanging gh must be unknown, got %+v", info)
 		}
 	}
 	if n := gh.n.Load(); n != 1 {
-		t.Errorf("gh was called %d times, want 1", n)
-	}
-	if d := time.Since(start); d > 2*time.Second {
-		t.Errorf("took %v, the breaker should cap the scan at one timeout", d)
+		t.Errorf("gh was called %d times for %d repositories, want 1 (one timeout)", n, len(repos))
 	}
 }
 

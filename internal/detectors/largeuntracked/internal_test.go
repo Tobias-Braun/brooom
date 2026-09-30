@@ -1,7 +1,9 @@
 package largeuntracked
 
 import (
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
@@ -61,6 +63,30 @@ func TestClaimsCovers(t *testing.T) {
 		if got := c.Covers(tc.rel, tc.isDir); got != tc.want {
 			t.Errorf("Covers(%q, %v) = %v, want %v", tc.rel, tc.isDir, got, tc.want)
 		}
+	}
+}
+
+// TestClaimsFoldCaseOnCaseInsensitiveSystems pins the decision for issue #180:
+// build directory names are matched case-insensitively exactly where the
+// filesystem is (macOS, Windows), through the build-artifacts matcher, so
+// Node_Modules is claimed there and never double-reported as an untracked
+// blob. On Linux the names differ and stay unclaimed.
+func TestClaimsFoldCaseOnCaseInsensitiveSystems(t *testing.T) {
+	dir := testutil.ResolvedTempDir(t)
+	testutil.WriteFile(t, dir, "package.json", "x")
+	c, err := newClaims(dir, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := runtime.GOOS == "windows" || runtime.GOOS == "darwin"
+	for _, rel := range []string{"Node_Modules", "NODE_MODULES", "pkg/Node_Modules/x/y.bin"} {
+		isDir := !strings.HasSuffix(rel, ".bin")
+		if got := c.Covers(rel, isDir); got != want {
+			t.Errorf("GOOS=%s: Covers(%q) = %v, want %v", runtime.GOOS, rel, got, want)
+		}
+	}
+	if !c.Covers("node_modules", true) {
+		t.Error("the exact name must always be claimed")
 	}
 }
 

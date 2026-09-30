@@ -15,10 +15,13 @@ import (
 
 const (
 	// cacheVersion is bumped whenever the record layout changes; files of
-	// another version are ignored and rebuilt. Version 2 added HasGit, version 3
-	// Incomplete, version 4 renamed HasGit to HasVCS and widened it (other VCS
-	// metadata, bare repository shape), version 5 counted the blocks of the
-	// directories themselves in DirectBytes; older records are rebuilt.
+	// another version are ignored and rebuilt. History:
+	//   1: initial layout (per-directory totals, hard link records)
+	//   2: added HasGit
+	//   3: added Incomplete
+	//   4: renamed HasGit to HasVCS and widened it (other VCS metadata, bare
+	//      repository shape)
+	//   5: DirectBytes counts the blocks of the directories themselves
 	cacheVersion = 5
 	// maxCacheDirs caps the number of directory records persisted per
 	// queried path; huge trees are recomputed instead of cached.
@@ -129,17 +132,17 @@ func storeCache(file, absPath string, dirs map[string]*dirRecord) error {
 	if len(dirs) > maxCacheDirs {
 		return nil
 	}
-	data, err := json.Marshal(cacheFile{Version: cacheVersion, Root: absPath, Dirs: dirs})
+	if encodedSizeLowerBound(dirs) > maxCacheBytes {
+		// The document is certainly too large: skip the marshal, which for
+		// a huge tree costs more than the scan of an unchanged one.
+		return dropOversizedCache(file)
+	}
+	data, err := marshalCache(cacheFile{Version: cacheVersion, Root: absPath, Dirs: dirs})
 	if err != nil {
 		return fmt.Errorf("walk: encode cache: %w", err)
 	}
 	if int64(len(data)) > maxCacheBytes {
-		// loadCache would refuse this file, so drop the stale one as well:
-		// its records describe a tree that no longer fits.
-		if err := os.Remove(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("walk: remove oversized cache %s: %w", file, err)
-		}
-		return nil
+		return dropOversizedCache(file)
 	}
 	dir := filepath.Dir(file)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -162,6 +165,54 @@ func storeCache(file, absPath string, dirs map[string]*dirRecord) error {
 	if err := os.Rename(tmp.Name(), file); err != nil {
 		_ = os.Remove(tmp.Name())
 		return fmt.Errorf("walk: replace cache %s: %w", file, err)
+	}
+	return nil
+}
+
+// marshalCache is a seam so tests can prove that an oversized tree is never
+// encoded.
+var marshalCache = func(cf cacheFile) ([]byte, error) { return json.Marshal(cf) }
+
+// minRecordJSON is the encoded size of the smallest possible record body; the
+// real ones only add to it.
+const minRecordJSON = len(`{"mtime_unix_nano":0,"id":"","racy":false,"direct_bytes":0,"direct_files":0,"direct_newest":0,"subdirs":null}`)
+
+// encodedSizeLowerBound returns a size the encoded document cannot fall
+// below: per entry the quoted key and colon plus either the fixed part of the
+// record or, for a nil record, its "null". A record with subdirectories
+// replaces the "null" of an empty list by a bracketed list of quoted names
+// separated by commas, which is the sum of the name lengths plus three bytes
+// per name (two quotes, one separator) minus the separator that is missing
+// after the last one and minus the four bytes of "null" that no longer
+// appear. The separators between entries, the escaping of special characters
+// and the document header are left out. It is cheap (no allocation) and lets
+// storeCache skip the marshal when the tree is far beyond maxCacheBytes.
+func encodedSizeLowerBound(dirs map[string]*dirRecord) int64 {
+	var n int64
+	for rel, rec := range dirs {
+		n += int64(len(rel)) + 3 // quoted key and colon
+		if rec == nil {
+			n += int64(len("null"))
+			continue
+		}
+		n += int64(minRecordJSON)
+		if len(rec.Subdirs) == 0 {
+			continue
+		}
+		for _, name := range rec.Subdirs {
+			n += int64(len(name)) + 3
+		}
+		n -= 1 + int64(len("null")) // last separator, the replaced "null"
+		n += 2                      // the brackets
+	}
+	return n
+}
+
+// dropOversizedCache removes the stale file: loadCache would refuse a file of
+// this size, and its records describe a tree that no longer fits.
+func dropOversizedCache(file string) error {
+	if err := os.Remove(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("walk: remove oversized cache %s: %w", file, err)
 	}
 	return nil
 }

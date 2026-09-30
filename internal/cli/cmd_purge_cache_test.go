@@ -46,6 +46,25 @@ func TestPurgeListsStaleScanCacheInDryRun(t *testing.T) {
 	}
 }
 
+// TestPurgeCacheOnlyDryRunDoesNotTalkAboutSessions: with no expired session
+// but a stale cache file, the header must not claim there is nothing to purge
+// and the hint must not offer to delete sessions.
+func TestPurgeCacheOnlyDryRunDoesNotTalkAboutSessions(t *testing.T) {
+	f := newUndoFixture(t)
+	staleCacheFile(t, f)
+	_, out, _ := runApp(t, "", false, purgeClock, "purge")
+	if strings.Contains(out, "nothing to purge") {
+		t.Errorf("header claims nothing to purge although a cache file is stale:\n%s", out)
+	}
+	want := "re-run 'brooom purge --apply' to delete the stale cache files permanently"
+	if !strings.Contains(out, want) {
+		t.Errorf("output lacks %q:\n%s", want, out)
+	}
+	if strings.Contains(out, "to delete them") {
+		t.Errorf("hint still talks about sessions:\n%s", out)
+	}
+}
+
 func TestPurgeApplyRemovesStaleScanCacheOnly(t *testing.T) {
 	f := newUndoFixture(t)
 	path := staleCacheFile(t, f)

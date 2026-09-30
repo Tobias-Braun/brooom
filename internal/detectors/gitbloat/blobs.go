@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/detect"
@@ -115,6 +116,15 @@ func (d *Detector) blobFindings(ctx context.Context, env *detect.Env, info *repo
 		return nil, err
 	}
 	if scan.failure != "" {
+		// The failure is memoized for the repository, so every linked
+		// worktree target sees it; only the first one reports it. Known
+		// limits: the memo error is discarded (the flag constructor cannot
+		// fail), and if the first target's run is canceled before it gets
+		// here, the report moves to a later target.
+		flag, _ := memoized(info.repo, key+"/reported", func() (*atomic.Bool, error) { return new(atomic.Bool), nil })
+		if !flag.CompareAndSwap(false, true) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("git-bloat: large blob scan of %s incomplete (%s); large blobs were not checked", info.repo.Dir, scan.failure)
 	}
 	out := make([]findings.Finding, 0, len(scan.blobs))

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 )
 
 const (
@@ -43,11 +42,12 @@ func parseLsof(out []byte) []string {
 }
 
 // lsofOpenFiles implements openFiles on top of a runner: file batches first,
-// then one +D invocation per directory with an equal slice of the remaining
-// budget. A timed out directory makes the result incomplete but does not stop
-// the remaining ones.
+// then, if there are directories, one listing of every open file that is
+// matched against all directory prefixes. The number of lsof runs is thus
+// bounded by the file batches plus one, however many directories are asked
+// about. A recursive +D per directory would walk each tree separately and
+// scale with the number of directories.
 func lsofOpenFiles(ctx context.Context, run lsofRunner, files, dirs []string, res map[string]bool) error {
-	incomplete := false
 	for _, batch := range batchPaths(files, lsofMaxPaths, lsofMaxArgBytes) {
 		args := append([]string{"-n", "-P", "-w", "-F0n", "--"}, batch...)
 		names, err := runNames(ctx, run, args)
@@ -55,28 +55,23 @@ func lsofOpenFiles(ctx context.Context, run lsofRunner, files, dirs []string, re
 		// applied before the error is handled.
 		markFileNames(names, batch, res)
 		if err != nil {
-			return finishLsof(ctx, err, incomplete)
+			return finishLsof(ctx, err, false)
 		}
 	}
-	for i, dir := range dirs {
-		sliceCtx, cancel := sliceBudget(ctx, len(dirs)-i)
-		names, err := runNames(sliceCtx, run, []string{"-n", "-P", "-w", "-F0n", "+D", dir})
-		cancel()
-		// A directory scan cut short may still have seen an open file.
+	if len(dirs) == 0 {
+		return finishLsof(ctx, nil, false)
+	}
+	// Without file arguments lsof lists all open files of every process it
+	// may inspect, including working directories, executables and memory
+	// maps, which is what a worktree in use looks like.
+	names, err := runNames(ctx, run, []string{"-n", "-P", "-w", "-F0n"})
+	// A listing cut short may still have seen an open file.
+	for _, dir := range dirs {
 		if anyBelow(names, dirPrefix(dir)) {
 			res[dir] = true
 		}
-		if err != nil {
-			if errors.Is(err, ErrUnavailable) {
-				return err
-			}
-			incomplete = true
-			if ctx.Err() != nil {
-				break
-			}
-		}
 	}
-	return finishLsof(ctx, nil, incomplete)
+	return finishLsof(ctx, err, false)
 }
 
 // finishLsof maps the final state to the package's error contract.
@@ -114,16 +109,6 @@ func runNames(ctx context.Context, run lsofRunner, args []string) ([]string, err
 	// lsof exits non-zero when some arguments matched nothing or some
 	// processes were unreadable, yet the output it did produce is valid.
 	return parseLsof(out), nil
-}
-
-// sliceBudget gives one of n remaining items an equal share of the time that
-// is left; without a deadline the context is used as is.
-func sliceBudget(ctx context.Context, n int) (context.Context, context.CancelFunc) {
-	dl, ok := ctx.Deadline()
-	if !ok || n < 1 {
-		return context.WithCancel(ctx)
-	}
-	return context.WithTimeout(ctx, time.Until(dl)/time.Duration(n))
 }
 
 // markFileNames flags each batch entry that lsof reported, first by exact

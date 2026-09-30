@@ -2,6 +2,7 @@ package walk
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,65 @@ func TestStoreCacheSkipsAndRemovesOversizedFile(t *testing.T) {
 	}
 }
 
+// TestEncodedSizeLowerBoundNeverExceedsTheDocument pins that the estimate is a
+// true lower bound, including for nil records and records with subdirectories,
+// because an overestimate would drop a cache that fits.
+func TestEncodedSizeLowerBoundNeverExceedsTheDocument(t *testing.T) {
+	tests := map[string]map[string]*dirRecord{
+		"empty":         {},
+		"no subdirs":    {"": {}},
+		"nil record":    {"a": nil},
+		"one subdir":    {"": {Subdirs: []string{"x"}}},
+		"many subdirs":  {"": {Subdirs: []string{"a", "bb", "ccc"}}, "a": {Subdirs: []string{"d"}}, "a/d": {}},
+		"mixed":         {"": {Subdirs: []string{"a"}}, "a": nil, "b": {}},
+		"escaped names": {"": {Subdirs: []string{"q\"uote"}}},
+	}
+	for name, dirs := range tests {
+		t.Run(name, func(t *testing.T) {
+			data, err := json.Marshal(cacheFile{Version: cacheVersion, Root: "/r", Dirs: dirs})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := encodedSizeLowerBound(dirs); got > int64(len(data)) {
+				t.Errorf("lower bound %d exceeds the encoded size %d: %s", got, len(data), data)
+			}
+		})
+	}
+}
+
+// TestDocumentJustUnderTheLimitIsCached pins the boundary: a document that
+// fits exactly is written, one byte less room drops it, so the cheap estimate
+// never rejects a document that would have fit.
+func TestDocumentJustUnderTheLimitIsCached(t *testing.T) {
+	dirs := map[string]*dirRecord{
+		"":  {Subdirs: []string{"a", "b"}},
+		"a": {Subdirs: []string{"c"}},
+		"b": {},
+	}
+	const root = "/r"
+	data, err := json.Marshal(cacheFile{Version: cacheVersion, Root: root, Dirs: dirs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "cache.json")
+
+	smallCacheLimit(t, int64(len(data)))
+	if err := storeCache(file, root, dirs); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(file); err != nil {
+		t.Errorf("a document of exactly the limit must be cached: %v", err)
+	}
+
+	smallCacheLimit(t, int64(len(data))-1)
+	if err := storeCache(file, root, dirs); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Errorf("a document over the limit must be dropped, stat err = %v", err)
+	}
+}
+
 func TestDirSizeWithOversizedCacheWritesNothing(t *testing.T) {
 	root, opts := cachedTree(t)
 	smallCacheLimit(t, 64)
@@ -49,6 +109,23 @@ func TestDirSizeWithOversizedCacheWritesNothing(t *testing.T) {
 	entries, _ := os.ReadDir(opts.CacheDir)
 	if len(entries) != 0 {
 		t.Errorf("cache dir holds %d entries, want none", len(entries))
+	}
+}
+
+// TestOversizedTreeIsNeverMarshalled pins that a tree known to exceed the cache
+// limit does not pay for encoding its document on every scan.
+func TestOversizedTreeIsNeverMarshalled(t *testing.T) {
+	root, opts := cachedTree(t)
+	smallCacheLimit(t, 64)
+	var calls int
+	orig := marshalCache
+	marshalCache = func(cf cacheFile) ([]byte, error) { calls++; return orig(cf) }
+	t.Cleanup(func() { marshalCache = orig })
+	for range 3 {
+		mustSize(t, root, opts)
+	}
+	if calls != 0 {
+		t.Errorf("marshalled %d times although the document cannot fit", calls)
 	}
 }
 

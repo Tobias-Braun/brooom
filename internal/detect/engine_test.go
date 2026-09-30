@@ -77,29 +77,61 @@ func TestRunApplies(t *testing.T) {
 	}
 }
 
+// settle is how long the barrier tests wait for a violation to show up once
+// the situation that would expose it exists. It only bounds the failing side:
+// a correct engine passes without depending on it for progress.
+const settle = 100 * time.Millisecond
+
+// TestRunSerialisesOnFinding holds the first OnFinding call open with a
+// barrier and waits until other workers have reached their emit. Only then is
+// it checked that none of them entered OnFinding in the meantime, so the
+// overlap is forced instead of hoped for with sleeps.
 func TestRunSerialisesOnFinding(t *testing.T) {
+	const n = 50
+	attempts := make(chan struct{}, n)
 	d := fakeDetector{"a", func(_ context.Context, tg scope.Target, emit func(findings.Finding)) error {
+		attempts <- struct{}{}
 		emit(finding(tg.Path))
 		return nil
 	}}
-	var active, overlap atomic.Int32
-	detect.Run(context.Background(), &detect.Env{}, targets(50), []detect.Detector{d}, detect.RunOptions{
-		Concurrency: 8,
-		OnFinding: func(findings.Finding) {
-			if active.Add(1) > 1 {
-				overlap.Add(1)
-			}
-			time.Sleep(time.Millisecond)
-			active.Add(-1)
-		},
-	})
-	if overlap.Load() != 0 {
-		t.Fatalf("OnFinding ran concurrently %d times", overlap.Load())
+	entered := make(chan struct{}, n)
+	release := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		detect.Run(context.Background(), &detect.Env{}, targets(n), []detect.Detector{d}, detect.RunOptions{
+			Concurrency: 8,
+			OnFinding: func(findings.Finding) {
+				entered <- struct{}{}
+				<-release
+			},
+		})
+	}()
+	<-entered
+	<-attempts
+	<-attempts // a second worker is at (or past) its emit while the first is held
+	select {
+	case <-entered:
+		t.Error("OnFinding ran concurrently")
+	case <-time.After(settle):
+	}
+	close(release)
+	<-done
+	if got := len(entered); got != n-1 {
+		t.Errorf("OnFinding ran %d more times, want %d", got, n-1)
 	}
 }
 
+// TestRunConcurrencyBound holds the first three calls open until either a
+// fourth call shows up (a violation) or the settle time passes, so reaching
+// the bound and never exceeding it are both forced without sleeping inside
+// the detector.
 func TestRunConcurrencyBound(t *testing.T) {
-	var cur, peak atomic.Int32
+	const bound = 3
+	var cur, peak, started atomic.Int32
+	hold := make(chan struct{})
+	reached := make(chan struct{})
+	var once sync.Once
 	d := fakeDetector{"a", func(_ context.Context, _ scope.Target, _ func(findings.Finding)) error {
 		c := cur.Add(1)
 		for {
@@ -108,13 +140,30 @@ func TestRunConcurrencyBound(t *testing.T) {
 				break
 			}
 		}
-		time.Sleep(2 * time.Millisecond)
+		if started.Add(1) <= bound {
+			if c == bound {
+				once.Do(func() { close(reached) })
+			}
+			<-hold
+		}
 		cur.Add(-1)
 		return nil
 	}}
-	detect.Run(context.Background(), &detect.Env{}, targets(60), []detect.Detector{d}, detect.RunOptions{Concurrency: 3})
-	if peak.Load() > 3 || peak.Load() < 1 {
-		t.Fatalf("peak concurrency %d, want 1..3", peak.Load())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		detect.Run(context.Background(), &detect.Env{}, targets(60), []detect.Detector{d}, detect.RunOptions{Concurrency: bound})
+	}()
+	select {
+	case <-reached:
+		time.Sleep(settle) // a worker beyond the bound would have started by now
+	case <-time.After(10 * time.Second):
+		t.Error("the engine never ran the allowed number of detectors at once")
+	}
+	close(hold)
+	<-done
+	if peak.Load() != bound {
+		t.Fatalf("peak concurrency %d, want exactly %d", peak.Load(), bound)
 	}
 }
 

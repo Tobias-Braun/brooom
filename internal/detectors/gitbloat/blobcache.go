@@ -30,9 +30,17 @@ type blobCacheDoc struct {
 }
 
 // blobCacheKey fingerprints everything the blob scan result depends on: the
-// tips of all refs and HEAD (rev-list --all walks exactly those), the set of
-// packs with their sizes (a repack or fetch changes it) and the threshold. Any
-// failure to read the state yields ok = false, which simply disables caching.
+// tips of all refs (refs/replace/* included, so a replacement changes the key)
+// and HEAD (rev-list --all walks exactly those), the set of packs with their
+// sizes (a repack or fetch changes it), the files that change which history is
+// visible (alternates, shallow, grafts; see historyFilesFingerprint) and the
+// threshold. Any failure to read the state yields ok = false, which simply
+// disables caching.
+//
+// Known limitation: objects that live in an alternate object store are not
+// fingerprinted, only the alternates file itself, so a repack of the borrowed
+// repository is not noticed. A scan of such a repository is at worst stale
+// until its own refs or packs change.
 func blobCacheKey(ctx context.Context, info *repoInfo, min int64) (key string, ok bool) {
 	refs, err := info.repo.Runner.Run(ctx, info.repo.Dir, "for-each-ref", "--format=%(objectname) %(refname)")
 	if err != nil {
@@ -45,9 +53,40 @@ func blobCacheKey(ctx context.Context, info *repoInfo, min int64) (key string, o
 	if err != nil {
 		return "", false
 	}
+	hist, err := historyFilesFingerprint(info.repo.Common)
+	if err != nil {
+		return "", false
+	}
 	h := sha256.New()
-	fmt.Fprintf(h, "v%d\nmin=%d\nhead=%s\n%s\n%s", blobCacheVersion, min, head, refs, packs)
+	fmt.Fprintf(h, "v%d\nmin=%d\nhead=%s\n%s\n%s\n%s", blobCacheVersion, min, head, refs, packs, hist)
 	return hex.EncodeToString(h.Sum(nil)), true
+}
+
+// historyFiles are the files below the common git dir whose content changes
+// what rev-list --objects --all reaches without touching any ref or pack.
+var historyFiles = []string{
+	filepath.Join("objects", "info", "alternates"),
+	"shallow",
+	filepath.Join("info", "grafts"),
+}
+
+// historyFilesFingerprint hashes the content of historyFiles; a missing file
+// contributes a fixed marker so adding or removing one changes the result.
+func historyFilesFingerprint(common string) (string, error) {
+	var lines []string
+	for _, rel := range historyFiles {
+		data, err := os.ReadFile(filepath.Join(common, rel))
+		switch {
+		case os.IsNotExist(err):
+			lines = append(lines, rel+" -")
+		case err != nil:
+			return "", err
+		default:
+			sum := sha256.Sum256(data)
+			lines = append(lines, rel+" "+hex.EncodeToString(sum[:]))
+		}
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 // packFingerprint lists the pack files of the object store with their sizes,

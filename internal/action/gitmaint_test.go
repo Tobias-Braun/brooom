@@ -268,24 +268,35 @@ func TestMaintenanceRejectsInvalidDatesWithoutChange(t *testing.T) {
 				f := fx.finding(typ, map[string]string{arg: d})
 				_, err := act(t, typ).Plan(context.Background(), fx.env, f)
 				wantMaintSkip(t, err, "invalid git date")
-				if got := fx.snapshot(); !equalSnapshots(snap, got) {
-					t.Error("a rejected date changed the repository")
+				if d := diffSnapshots(snap, fx.snapshot()); d != "" {
+					t.Errorf("a rejected date changed the repository: %s", d)
 				}
 			})
 		}
 	}
 }
 
-func equalSnapshots(a, b map[string]int64) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if w, ok := b[k]; !ok || w != v {
-			return false
+// diffSnapshots names every file whose presence or size differs between two
+// snapshots, or returns "" when they are equal. Naming the file is the point:
+// "the repository changed" alone made the CI failure of PR #157 impossible to
+// attribute.
+func diffSnapshots(before, after map[string]int64) string {
+	var diffs []string
+	for k, v := range before {
+		switch w, ok := after[k]; {
+		case !ok:
+			diffs = append(diffs, fmt.Sprintf("%s vanished", k))
+		case w != v:
+			diffs = append(diffs, fmt.Sprintf("%s %d -> %d bytes", k, v, w))
 		}
 	}
-	return true
+	for k := range after {
+		if _, ok := before[k]; !ok {
+			diffs = append(diffs, fmt.Sprintf("%s appeared", k))
+		}
+	}
+	slices.Sort(diffs)
+	return strings.Join(diffs, "; ")
 }
 
 func TestValidateDate(t *testing.T) {
@@ -433,8 +444,8 @@ func TestDryRunChangesNothing(t *testing.T) {
 	} {
 		mustPlan(t, fx, fx.finding(typ, args))
 	}
-	if got := fx.snapshot(); !equalSnapshots(snap, got) {
-		t.Error("planning changed the repository")
+	if d := diffSnapshots(snap, fx.snapshot()); d != "" {
+		t.Errorf("planning changed the repository: %s", d)
 	}
 }
 
