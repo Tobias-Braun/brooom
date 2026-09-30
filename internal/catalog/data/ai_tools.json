@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "tools": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "category": "ai",
+      "homepage": "https://www.anthropic.com/claude-code",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [".claude/*.log"],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Run logs written next to the project settings",
+          "source": "https://docs.claude.com/en/docs/claude-code/settings"
+        },
+        {
+          "scope": "user",
+          "patterns": ["~/.claude/todos"],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Per-session todo lists of finished sessions",
+          "source": "https://docs.claude.com/en/docs/claude-code/settings"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "project",
+          "patterns": [
+            "CLAUDE.md",
+            ".claude/settings.json",
+            ".claude/settings.local.json",
+            ".claude/commands",
+            ".claude/agents",
+            ".claude/skills",
+            ".claude/hooks"
+          ],
+          "reason": "Project instructions, settings, commands, agents, skills and hooks are configuration, not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.claude/CLAUDE.md",
+            "~/.claude/settings.json",
+            "~/.claude/settings.local.json",
+            "~/.claude/commands",
+            "~/.claude/agents",
+            "~/.claude/skills",
+            "~/.claude/hooks"
+          ],
+          "reason": "User level instructions, settings, commands, agents, skills and hooks are configuration, not clutter"
+        }
+      ]
+    }
+  ]
+}

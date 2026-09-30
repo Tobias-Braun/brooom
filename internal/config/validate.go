@@ -273,8 +273,8 @@ func validateCatalog(p *problemList, field string, tools []CatalogTool) {
 		if strings.TrimSpace(t.Name) == "" {
 			p.add(f+".name", "must not be empty")
 		}
-		if len(t.Project) == 0 && len(t.User) == 0 {
-			p.add(f, "needs at least one location in \"project\" or \"user\"")
+		if len(t.Project) == 0 && len(t.User) == 0 && len(t.Entries) == 0 {
+			p.add(f, "needs at least one location in \"project\", \"user\" or \"entries\"")
 		}
 		for j, loc := range t.Project {
 			if err := validProjectLocation(loc); err != nil {

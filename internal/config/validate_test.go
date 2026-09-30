@@ -151,6 +151,17 @@ func TestValidateCatalogExtra(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("valid catalog rejected: %v", err)
 	}
+
+	// The full format alone (no shorthand locations) is a valid extra; the
+	// details of entries are validated by the catalog package.
+	cfg = Default()
+	cfg.Detectors.Logs.Extra = []CatalogTool{{
+		ID: "entries-only", Name: "e",
+		Entries: []CatalogEntry{{Scope: "project", Patterns: []string{"*.log"}, Description: "d"}},
+	}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("entries-only extra rejected: %v", err)
+	}
 }
 
 func TestValidateAccepts(t *testing.T) {

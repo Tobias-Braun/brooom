@@ -265,7 +265,34 @@ func cloneCatalog(in []CatalogTool) []CatalogTool {
 	out := make([]CatalogTool, len(in))
 	for i, t := range in {
 		t.Project, t.User = slices.Clone(t.Project), slices.Clone(t.User)
+		t.Entries = cloneCatalogEntries(t.Entries)
+		t.Protect = cloneCatalogProtect(t.Protect)
 		out[i] = t
+	}
+	return out
+}
+
+func cloneCatalogEntries(in []CatalogEntry) []CatalogEntry {
+	if in == nil {
+		return nil
+	}
+	out := make([]CatalogEntry, len(in))
+	for i, e := range in {
+		e.Patterns, e.OS = slices.Clone(e.Patterns), slices.Clone(e.OS)
+		e.MinAgeDays = clonePtr(e.MinAgeDays)
+		out[i] = e
+	}
+	return out
+}
+
+func cloneCatalogProtect(in []CatalogProtect) []CatalogProtect {
+	if in == nil {
+		return nil
+	}
+	out := make([]CatalogProtect, len(in))
+	for i, p := range in {
+		p.Patterns, p.OS = slices.Clone(p.Patterns), slices.Clone(p.OS)
+		out[i] = p
 	}
 	return out
 }
