@@ -66,10 +66,22 @@ func remove(t *testing.T, tr *winTrash, path string) Record {
 	t.Helper()
 	rec, err := tr.Remove(context.Background(), path)
 	if err != nil {
+		logBinEntries(t, path)
 		t.Fatalf("Remove(%q): %v", path, err)
 	}
 	cleanupBin(t, rec)
 	return rec
+}
+
+// logBinEntries logs what the bin holds for the volume of path, so a failed
+// lookup on CI shows which spelling and time the shell recorded.
+func logBinEntries(t *testing.T, path string) {
+	t.Helper()
+	_, entries, err := listBin(path)
+	t.Logf("bin entries (err=%v), long path %q:", err, longPath(path))
+	for _, e := range entries {
+		t.Logf("  %s path=%q deleted=%v", e.Name, e.Info.Path, e.Info.DeletedAt)
+	}
 }
 
 func TestShellStructLayout(t *testing.T) {
@@ -277,6 +289,10 @@ func TestRemovePreflightRefuses(t *testing.T) {
 func TestRestoreRefusals(t *testing.T) {
 	tr := newTestTrasher(t)
 	orig := filepath.Join(t.TempDir(), "f.txt")
+	sid, err := currentSID()
+	if err != nil {
+		t.Fatal(err)
+	}
 	outside := filepath.Join(t.TempDir(), "$Rfake")
 	if err := os.WriteFile(outside, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
@@ -288,7 +304,7 @@ func TestRestoreRefusals(t *testing.T) {
 	}{
 		{"wrong strategy", Record{Strategy: config.StrategyQuarantine, OriginalPath: orig}, ErrNotRestorable},
 		{"missing stored", Record{Strategy: config.StrategyTrash, OriginalPath: orig,
-			StoredPath: filepath.VolumeName(orig) + `\$Recycle.Bin\S-1-5-21-0\$RNOPE.txt`}, ErrNotRestorable},
+			StoredPath: filepath.VolumeName(orig) + `\$Recycle.Bin\` + sid + `\$RNOPE.txt`}, ErrNotRestorable},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -366,16 +382,26 @@ func TestRealRegistrySettings(t *testing.T) {
 
 // TestNukeSituationKeepsItem puts the shell into a nuke situation on purpose:
 // the bin limit of the test volume is lowered below the item size and the
-// shell is called directly, bypassing the pre-flight. FOF_WANTNUKEWARNING is
-// meant to make the shell abort with the source intact instead of deleting
-// permanently. The observed outcome is logged; the test fails only when the
-// item is gone from both its place and the bin. It changes the current user's
-// registry, so it runs on CI only, and it restores the value afterwards.
+// shell is called directly, bypassing the pre-flight. Observed on Windows CI:
+// FOF_WANTNUKEWARNING makes the shell wait for a confirmation dialog that
+// FOF_SILENT does not suppress, so the call blocks (this is why the pre-flight
+// exists and why the call here is bounded). The test pins that behaviour: the
+// call either blocks with the item untouched, or, should a Windows version
+// behave differently, returns with the item intact or in the bin. It fails
+// when the item is gone from both its place and the bin. It changes the
+// current user's registry, so it runs on CI only, and it restores the value.
 func TestNukeSituationKeepsItem(t *testing.T) {
 	if os.Getenv("CI") == "" {
 		t.Skip("modifies the Recycle Bin registry settings, runs on CI only")
 	}
-	p := filepath.Join(t.TempDir(), "big.bin")
+	// Not t.TempDir: a call blocked in the shell may still hold the item, and
+	// a failing directory removal must not fail the test.
+	dir, err := os.MkdirTemp("", "brooom-nuke")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	p := filepath.Join(dir, "big.bin")
 	if err := os.WriteFile(p, make([]byte, 3<<20), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -390,49 +416,54 @@ func TestNukeSituationKeepsItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := time.Now()
-	code, aborted := shellDeleteWithTimeout(t, from, nukeCallTimeout)
+	code, aborted, blocked := shellDeleteWithTimeout(from, nukeCallTimeout)
+	if blocked {
+		t.Logf("observed: the shell blocks on the nuke dialog (no return within %v)", nukeCallTimeout)
+		if _, err := os.Lstat(p); err != nil {
+			t.Fatalf("the shell is blocked but the item is already gone: %v", err)
+		}
+		return
+	}
 	t.Logf("shell result: code=0x%X aborted=%v", code, aborted)
 
 	if _, statErr := os.Lstat(p); statErr == nil {
-		t.Logf("observed: the item was left intact")
+		t.Logf("observed: the call returned and the item was left intact")
 		return
 	}
-	dir, entries, err := listBin(p)
+	binDir, entries, err := listBin(p)
 	if err != nil {
 		t.Fatalf("item is gone and the bin cannot be read: %v", err)
 	}
-	m, ok := chooseRecycled(entries, p, at, matchTolerance)
+	m, ok := chooseRecycledAny(entries, []string{longPath(p), p}, at, matchTolerance)
 	if !ok {
 		t.Fatalf("FOF_WANTNUKEWARNING did not protect the item: it was deleted permanently (code=0x%X aborted=%v)", code, aborted)
 	}
-	cleanupBin(t, Record{StoredPath: filepath.Join(dir, storedName(m.Name)), InfoPath: filepath.Join(dir, m.Name)})
-	t.Logf("observed: the item was moved to the bin in spite of the lowered limit")
+	cleanupBin(t, Record{StoredPath: filepath.Join(binDir, storedName(m.Name)), InfoPath: filepath.Join(binDir, m.Name)})
+	t.Logf("observed: the call returned and the item was moved to the bin in spite of the lowered limit")
 }
 
 // nukeCallTimeout bounds the direct shell call of the nuke test. A shell that
 // waits for a dialog nobody can answer would otherwise hang the whole CI job.
-const nukeCallTimeout = 60 * time.Second
+const nukeCallTimeout = 20 * time.Second
 
-// shellDeleteWithTimeout runs shellDelete in a goroutine and fails the test if
-// it does not return in time. The stuck goroutine is abandoned on purpose: a
-// blocked shell call cannot be cancelled, and the test binary exits anyway.
-func shellDeleteWithTimeout(t *testing.T, from []uint16, d time.Duration) (int, bool) {
-	t.Helper()
+// shellDeleteWithTimeout runs shellDelete in a goroutine and reports blocked
+// if it does not return in time. The stuck goroutine is abandoned on purpose:
+// a blocked shell call cannot be cancelled, and the test binary exits anyway.
+func shellDeleteWithTimeout(from []uint16, d time.Duration) (code int, aborted, blocked bool) {
 	type result struct {
 		code    int
 		aborted bool
 	}
 	done := make(chan result, 1)
 	go func() {
-		code, aborted := shellDelete(from)
-		done <- result{code, aborted}
+		c, a := shellDelete(from)
+		done <- result{c, a}
 	}()
 	select {
 	case r := <-done:
-		return r.code, r.aborted
+		return r.code, r.aborted, false
 	case <-time.After(d):
-		t.Fatalf("SHFileOperationW did not return within %v: the shell most likely waits for a dialog (FOF_WANTNUKEWARNING?)", d)
-		return 0, false
+		return 0, false, true
 	}
 }
 

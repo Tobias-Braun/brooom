@@ -241,6 +241,16 @@ func TestChooseRecycled(t *testing.T) {
 	if got, ok := chooseRecycled(entries, `C:\d\f.txt`, at.Add(-time.Hour), 2*time.Second); !ok || got.Name != "$IOLD.txt" {
 		t.Errorf("got %q, %v; want $IOLD.txt", got.Name, ok)
 	}
+	// The bin records the long spelling; a caller may hold the 8.3 one. Any
+	// of the given spellings may match.
+	short := `C:\USERS\RUNNER~1\f.txt`
+	long := binEntry{Name: "$ILONG.txt", Info: infoRecord{Path: `C:\Users\runneradmin\f.txt`, DeletedAt: at}}
+	if got, ok := chooseRecycledAny([]binEntry{long}, []string{short, `C:\Users\runneradmin\f.txt`}, at, matchTolerance); !ok || got.Name != "$ILONG.txt" {
+		t.Errorf("got %q, %v; want $ILONG.txt via the second spelling", got.Name, ok)
+	}
+	if _, ok := chooseRecycledAny([]binEntry{long}, []string{short}, at, matchTolerance); ok {
+		t.Error("matched an unrelated spelling")
+	}
 }
 
 func TestStoredAndInfoNames(t *testing.T) {

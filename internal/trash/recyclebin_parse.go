@@ -348,6 +348,17 @@ func winParentName(p string) string {
 	return rest[len(rest)-2]
 }
 
+// chooseRecycledAny is chooseRecycled over several spellings of one path (for
+// example the long and the 8.3 form). The first spelling with a match wins.
+func chooseRecycledAny(entries []binEntry, origs []string, at time.Time, tol time.Duration) (binEntry, bool) {
+	for _, o := range origs {
+		if e, ok := chooseRecycled(entries, o, at, tol); ok {
+			return e, true
+		}
+	}
+	return binEntry{}, false
+}
+
 // checkBinOwnerSID is the pure part of checkBinOwner: it compares the SID
 // directory of p (case-insensitively) with sid.
 func checkBinOwnerSID(p, sid string) error {

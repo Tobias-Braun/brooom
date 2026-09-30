@@ -20,13 +20,16 @@ import (
 // Remove therefore refuses such items before the shell is called (see
 // decideBinAvailability) and treats every unknown as a refusal.
 //
-// Observed behaviour of FOF_WANTNUKEWARNING (a nuke situation must end in an
-// abort with the source intact, not in a deletion): this could not be
-// verified while writing the code, because no Windows machine was available.
-// TestNukeSituationKeepsItem exercises it on Windows CI (it shrinks the bin
-// limit of the test volume and calls the shell directly) and logs the observed
-// outcome; the pre-flight is the safeguard that does not depend on it, and the
-// loss detector after the call reports what would still slip through.
+// Observed behaviour of FOF_WANTNUKEWARNING (Windows CI, windows-latest,
+// TestNukeSituationKeepsItem, run of 2026-09-30): with the bin limit of the
+// volume below the item size the shell call does not return within a minute.
+// It waits for the nuke confirmation dialog, and FOF_SILENT and
+// FOF_NOERRORUI do not suppress it. The item stays where it is while the
+// dialog is pending, so nothing is deleted silently, but a caller would hang.
+// The pre-flight is therefore the safeguard that matters: it refuses every
+// item that would not fit before the shell is called, so the dialog can only
+// appear if the bin settings change between the check and the call. The loss
+// detector after the call reports what would still slip through.
 type winTrash struct {
 	now        func() time.Time
 	settings   binSettingsReader
@@ -66,6 +69,10 @@ func (w *winTrash) Remove(ctx context.Context, path string) (Record, error) {
 	if err := w.preflight(path, size); err != nil {
 		return Record{}, err
 	}
+	// The bin records the long spelling of the path (C:\Users\runneradmin),
+	// while callers may pass the 8.3 form (C:\Users\RUNNER~1). It must be
+	// resolved now: once the item is gone GetLongPathName cannot do it.
+	long := longPath(path)
 	at := w.now()
 	if err := w.shellRemove(path, size); err != nil {
 		return Record{}, err
@@ -77,7 +84,7 @@ func (w *winTrash) Remove(ctx context.Context, path string) (Record, error) {
 		IsDir:        fi.IsDir() && !link,
 		RemovedAt:    at.UTC(),
 	}
-	return w.recordRemoval(rec, at)
+	return w.recordRemoval(rec, long, at)
 }
 
 // preflight refuses the removal when the bin of the item's volume cannot
@@ -140,7 +147,7 @@ func withIntegrityNote(err error, path string, before int64) error {
 // an error. If the bin itself cannot be read, the removal counts as done but
 // is flagged non-restorable; the item is still in the bin for Explorer. A bin
 // directory that does not exist at all is a permanent deletion.
-func (w *winTrash) recordRemoval(rec Record, at time.Time) (Record, error) {
+func (w *winTrash) recordRemoval(rec Record, long string, at time.Time) (Record, error) {
 	if _, err := os.Lstat(rec.OriginalPath); err == nil {
 		return Record{}, fmt.Errorf("the Recycle Bin reported success for %s but it still exists", rec.OriginalPath)
 	}
@@ -153,7 +160,7 @@ func (w *winTrash) recordRemoval(rec Record, at time.Time) (Record, error) {
 	if err != nil {
 		return rec, nil //nolint:nilerr // an unreadable bin only means non-restorable, the removal itself succeeded
 	}
-	m, ok := chooseRecycled(entries, rec.OriginalPath, at, matchTolerance)
+	m, ok := chooseRecycledAny(entries, []string{long, rec.OriginalPath}, at, matchTolerance)
 	if !ok {
 		return Record{}, fmt.Errorf("%s was deleted permanently: it is gone but no matching item was found in the Recycle Bin", rec.OriginalPath)
 	}
@@ -243,7 +250,7 @@ func (w *winTrash) search(r Record) (stored, info string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("cannot look up %q in the Recycle Bin: %w: %w", r.OriginalPath, err, ErrNotRestorable)
 	}
-	m, ok := chooseRecycled(entries, r.OriginalPath, r.RemovedAt, restoreTolerance)
+	m, ok := chooseRecycledAny(entries, []string{longPath(r.OriginalPath), r.OriginalPath}, r.RemovedAt, restoreTolerance)
 	if !ok {
 		return "", "", fmt.Errorf("%q is not in the Recycle Bin: %w", r.OriginalPath, ErrNotRestorable)
 	}

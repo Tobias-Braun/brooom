@@ -157,6 +157,41 @@ func isReparsePoint(path string) (bool, error) {
 	return attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0, nil
 }
 
+// longPath expands 8.3 short components ("RUNNER~1") of path to their long
+// names, which is how the Recycle Bin records original paths. Components that
+// do not exist (any more) are kept as given, so the result is still usable for
+// an item that was already removed; on any failure the input is returned.
+func longPath(path string) string {
+	if l, ok := getLongPathName(path); ok {
+		return l
+	}
+	dir := filepath.Dir(path)
+	if dir == path || dir == "." {
+		return path
+	}
+	return filepath.Join(longPath(dir), filepath.Base(path))
+}
+
+// getLongPathName wraps GetLongPathNameW and reports whether it succeeded.
+func getLongPathName(path string) (string, bool) {
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return "", false
+	}
+	buf := make([]uint16, 512)
+	n, err := windows.GetLongPathName(p, &buf[0], uint32(len(buf)))
+	if err != nil {
+		return "", false
+	}
+	if int(n) > len(buf) {
+		buf = make([]uint16, n)
+		if n, err = windows.GetLongPathName(p, &buf[0], uint32(len(buf))); err != nil || int(n) > len(buf) {
+			return "", false
+		}
+	}
+	return windows.UTF16ToString(buf[:n]), true
+}
+
 // currentSID returns the string SID of the process user, the name of the
 // per-user directory below $Recycle.Bin.
 func currentSID() (string, error) {
