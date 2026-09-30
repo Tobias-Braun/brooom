@@ -1,0 +1,96 @@
+package gitx
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"time"
+)
+
+// defaultGHTimeout bounds the gh call so an offline machine never stalls a scan.
+const defaultGHTimeout = 5 * time.Second
+
+// PRInfo is the set of branches with an open pull request.
+type PRInfo struct {
+	// Known is false whenever the information could not be obtained (gh
+	// missing, unauthenticated, offline, timeout, bad output). Callers must
+	// then treat every branch as possibly having a PR only where that is the
+	// safe direction, and never abort the scan.
+	Known bool
+	// Branches holds head branch names of open PRs.
+	Branches map[string]bool
+}
+
+// HasOpenPR reports whether name is the head of an open PR. It is only
+// meaningful when Known is true.
+func (p PRInfo) HasOpenPR(name string) bool { return p.Known && p.Branches[name] }
+
+// GHRunner runs `gh args...` in dir with the given extra environment
+// entries and returns stdout. It is injectable so tests need no real gh.
+type GHRunner func(ctx context.Context, dir string, env []string, args ...string) ([]byte, error)
+
+// PROptions configures OpenPRBranches.
+type PROptions struct {
+	// GH runs gh; nil uses the gh binary on PATH.
+	GH GHRunner
+	// Timeout bounds the call; zero means 5 seconds.
+	Timeout time.Duration
+}
+
+// ghEnv keeps gh non-interactive and free of colour and pager output.
+var ghEnv = []string{"GH_PROMPT_DISABLED=1", "NO_COLOR=1", "GH_PAGER=cat"}
+
+// OpenPRBranches lists the head branch names of open pull requests through
+// `gh pr list`. This is the only network use in detection; callers gate it on
+// the UseGH configuration, not this function. Any failure yields
+// PRInfo{Known:false} and no error, so a missing or offline gh never aborts a
+// scan. The branch-name-only check ignores forks: a fork PR with the same
+// head name is a false positive, which errs on the safe side.
+func (r *Repo) OpenPRBranches(ctx context.Context, dir string, opts PROptions) PRInfo {
+	info, _ := cached(r, &r.prs, struct{}{}, func() (PRInfo, error) {
+		return fetchOpenPRs(ctx, dir, opts), nil
+	})
+	return info
+}
+
+func fetchOpenPRs(ctx context.Context, dir string, opts PROptions) PRInfo {
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = defaultGHTimeout
+	}
+	gh := opts.GH
+	if gh == nil {
+		gh = execGH
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	out, err := gh(ctx, dir, ghEnv, "pr", "list", "--state", "open", "--json", "headRefName", "--limit", "500")
+	if err != nil || ctx.Err() != nil {
+		return PRInfo{}
+	}
+	var prs []struct {
+		HeadRefName string `json:"headRefName"`
+	}
+	if err := json.Unmarshal(out, &prs); err != nil {
+		return PRInfo{}
+	}
+	info := PRInfo{Known: true, Branches: make(map[string]bool, len(prs))}
+	for _, p := range prs {
+		info.Branches[p.HeadRefName] = true
+	}
+	return info
+}
+
+// execGH runs the gh binary from PATH.
+func execGH(ctx context.Context, dir string, env []string, args ...string) ([]byte, error) {
+	path, err := exec.LookPath("gh")
+	if err != nil {
+		return nil, errors.New("gh not found in PATH")
+	}
+	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), env...)
+	return cmd.Output()
+}

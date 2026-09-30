@@ -67,6 +67,9 @@ type Env struct {
 	Config *config.Config
 	// Git runs read-only git commands.
 	Git gitx.Runner
+	// Repos optionally shares one memoizing gitx.Repo per repository between
+	// all detectors of a scan. When nil, Repo falls back to uncached handles.
+	Repos *gitx.Cache
 	// Guard validates that paths lie inside an allowed scope. Detectors must
 	// resolve every path they emit through Guard.Resolve.
 	Guard *scope.Guard
@@ -95,6 +98,15 @@ func (e *Env) AgeDays(t time.Time) int {
 		return 0
 	}
 	return int(e.Now.Sub(t).Hours() / 24)
+}
+
+// Repo returns the git repository handle for dir: the shared memoizing one
+// when Repos is set, otherwise a fresh uncached handle.
+func (e *Env) Repo(ctx context.Context, dir string) (*gitx.Repo, error) {
+	if e.Repos != nil {
+		return e.Repos.Repo(ctx, dir)
+	}
+	return gitx.Open(ctx, e.Git, dir)
 }
 
 var (

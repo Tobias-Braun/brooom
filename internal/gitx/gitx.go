@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -63,9 +64,20 @@ func NewExecRunner() (*ExecRunner, error) {
 
 // Run implements Runner.
 func (r *ExecRunner) Run(ctx context.Context, dir string, args ...string) (string, error) {
+	return r.run(ctx, dir, nil, args)
+}
+
+// run is the single code path behind Run and RunInput so both use the same
+// environment, error type and output trimming.
+func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args []string) (string, error) {
 	full := append([]string{"-C", dir}, args...)
 	cmd := exec.CommandContext(ctx, r.Path, full...)
 	cmd.Env = Env(os.Environ())
+	// Only set Stdin when input was given: an unset Stdin reads the null
+	// device, so git can never block waiting on the terminal.
+	if stdin != nil {
+		cmd.Stdin = stdin
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
