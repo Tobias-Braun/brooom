@@ -59,7 +59,7 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `detectors.large-untracked` | enabled, `min_size_bytes` 100 MiB, `include_ignored` | Large untracked files. |
 | `detectors.ai-artifacts` | enabled, `user_locations` false | Optional `tools`, `extra[]` catalog entries, `min_age_days`. |
 | `detectors.log-and-runtime-files` | enabled | Optional `categories`, `extra[]`, `min_age_days`. |
-| `detectors.build-artifacts` | enabled, `inactive_days` 30 | Optional `dirs`, `extra_dirs`. |
+| `detectors.build-artifacts` | enabled, `inactive_days` 30 | Optional `dirs`, `extra_dirs`, both lists of `name` or `name:marker1,marker2` (see below). |
 | `trash.strategy` | `trash` | `trash`, `quarantine` or `delete`. |
 | `trash.per_detector` | | Strategy per detector name. |
 | `trash.quarantine_retention_days` | `14` | Quarantined sessions older than this are purged. **`0` means never purge**; negative is invalid. |
@@ -84,6 +84,26 @@ non-empty `name` and at least one location in `project`, `user` or `entries`.
 optional `category`, `homepage`, `entries` and `protect` fields use the catalog
 format; the catalog validates them when it loads the extras. See
 [catalog.md](catalog.md).
+
+### Build artifact `dirs` and `extra_dirs`
+
+Both lists of `detectors.build-artifacts` take entries of the form:
+
+- `name`: every directory called `name` (a name or a glob on the base name such
+  as `*.egg-info`, or `parent/name` such as `.angular/cache`) is reported, with
+  no marker required. Writing the bare name is the explicit opt-in to
+  "no marker".
+- `name:marker1,marker2`: the directory is only reported when at least one of
+  the markers (file names or globs) exists next to it, in its parent directory.
+
+`dirs` replaces the default list. A bare name that the embedded catalog knows
+keeps the catalog's marker rules and confidence cap (`"dirs": ["dist"]` scans
+only marker-gated `dist`); an unknown bare name is marker-less. `extra_dirs`
+adds to whatever list is in effect, and a bare name there is always
+marker-less, even if the catalog gates it. Entries from the config get the
+ecosystem `custom` and are capped at `high`. Empty names, `..`, backslashes,
+more than two segments and invalid globs are rejected by validation. See
+[build-artifacts.md](build-artifacts.md).
 
 ## Paths: `~` and environment variables
 

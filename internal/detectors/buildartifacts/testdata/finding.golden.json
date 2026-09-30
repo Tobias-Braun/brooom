@@ -1,0 +1,43 @@
+{
+  "id": "\u003cid\u003e",
+  "detector": "build-artifacts",
+  "scope": {
+    "type": "repo",
+    "path": "<root>"
+  },
+  "path": "<root>/node_modules",
+  "kind": "dir",
+  "tool": "node",
+  "size_bytes": 4096,
+  "last_modified": "2026-04-11T12:00:00Z",
+  "age_days": 100,
+  "confidence": "high",
+  "evidence": [
+    {
+      "code": "matches_catalog",
+      "message": "matches build artifact rule node-modules: Installed npm, Yarn or pnpm dependencies; restored by the next install",
+      "value": "node-modules"
+    },
+    {
+      "code": "ecosystem",
+      "message": "belongs to the node ecosystem",
+      "value": "node"
+    },
+    {
+      "code": "marker",
+      "message": "project marker package.json found next to it",
+      "value": "package.json"
+    },
+    {
+      "code": "project_inactive_days",
+      "message": "project untouched for 100 days",
+      "value": 100
+    }
+  ],
+  "suggested_action": {
+    "type": "trash",
+    "command": "trash <root>/node_modules",
+    "reason": "Installed npm, Yarn or pnpm dependencies; restored by the next install"
+  },
+  "risk_flags": []
+}

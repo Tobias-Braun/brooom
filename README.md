@@ -102,6 +102,7 @@ Output formats: `table` (default), `tree`, `json`, `ndjson`, `plain`,
 - [Findings schema](docs/findings.md)
 - [Releasing](docs/releasing.md)
 - [Tool catalog](docs/catalog.md)
+- [Build artifacts](docs/build-artifacts.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License
