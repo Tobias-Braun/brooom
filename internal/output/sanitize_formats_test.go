@@ -1,6 +1,7 @@
 package output
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -62,9 +63,11 @@ func TestColoredOutputHasOnlyOwnEscapes(t *testing.T) {
 	}
 }
 
+// The table prints the path relative to the scope with the platform's
+// separator, so the expected file name joins its parts with filepath.Separator.
 func TestTableShowsEscapedBranchAndFile(t *testing.T) {
 	out := render(t, "table", hostileReport(), Options{})
-	for _, want := range []string{`feat/\x1b[2Jevil\nFORGED LINE`, `dir\x1b]0;pwn\x07/na\nme.log`, `why\x1b[31m\nfake`} {
+	for _, want := range []string{`feat/\x1b[2Jevil\nFORGED LINE`, `dir\x1b]0;pwn\x07` + string(filepath.Separator) + `na\nme.log`, `why\x1b[31m\nfake`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("table lacks %q:\n%s", want, out)
 		}
