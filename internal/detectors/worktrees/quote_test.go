@@ -2,10 +2,33 @@ package worktrees
 
 import (
 	"testing"
+	"time"
+
+	"github.com/Tobias-Braun/brooom/internal/walk"
 
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
 )
+
+// TestMtimeSourceMeta: the finding says where LastModified came from, so the
+// remove action can skip the drift check for a commit-time baseline.
+func TestMtimeSourceMeta(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry *entry
+		want  string
+	}{
+		{"walked mtime", &entry{sized: true, sum: walk.DirSummary{NewestModTime: time.Unix(1000, 0)}}, "walk"},
+		{"sized but zero mtime", &entry{sized: true}, "commit"},
+		{"not sized", &entry{}, "commit"},
+	}
+	s := &scan{}
+	for _, tt := range tests {
+		if got := s.meta(tt.entry)["mtime_source"]; got != tt.want {
+			t.Errorf("%s: mtime_source = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
 
 // TestCommandQuotesPaths: a worktree path with spaces or shell
 // metacharacters must stay one word in the suggested command.

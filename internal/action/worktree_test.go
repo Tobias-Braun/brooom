@@ -572,11 +572,16 @@ func TestRemoveWorktreeDirty(t *testing.T) {
 	t.Run("registration removal failure keeps the trash record", func(t *testing.T) {
 		fx, path := setup(t)
 		fx.env.Force = true
-		fx.env.Git = failingRunner{Runner: fx.git, fail: "remove"}
 		step, err := fx.plan(removeWorktree{}, fx.removeFinding(path))
 		if err != nil {
 			t.Fatal(err)
 		}
+		// A lock taken meanwhile also stops the targeted fallback.
+		admin, ok := gitx.WorktreeAdminDir(filepath.Join(fx.repo.Dir, ".git"), path)
+		if !ok {
+			t.Fatal("no admin dir")
+		}
+		fx.env.Git = lockingRunner{Runner: fx.git, admin: admin}
 		en, err := removeWorktree{}.Apply(context.Background(), fx.env, step)
 		if err == nil || en.Status != session.StatusFailed || en.Trash == nil || !en.Restorable {
 			t.Fatalf("entry = %+v, err = %v", en, err)
@@ -588,6 +593,9 @@ func TestRemoveWorktreeDirty(t *testing.T) {
 		// The stale registration is still listed, so undo has to reuse it
 		// instead of falling back to a detached checkout that git refuses.
 		fx.env.Git = fx.git
+		if err := os.Remove(filepath.Join(admin, "locked")); err != nil { // the user unlocks it
+			t.Fatal(err)
+		}
 		if err := (removeWorktree{}).Undo(context.Background(), fx.env, en); err != nil {
 			t.Fatalf("Undo after prune failure: %v", err)
 		}

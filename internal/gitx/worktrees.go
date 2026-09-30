@@ -118,6 +118,31 @@ func (r *Repo) IsDirty(ctx context.Context, dir string) (bool, error) {
 	return out != "", nil
 }
 
+// UncommittedEntries counts what IsDirty detects: the status entries of the
+// worktree at dir. In the NUL-separated porcelain format a rename or copy
+// (status letter R or C in the index column) is followed by a second token
+// with the original path, which belongs to the same entry. The runner trims
+// the output, which can strip the leading space of the first token, but never
+// the index letter that decides this.
+func (r *Repo) UncommittedEntries(ctx context.Context, dir string) (int, error) {
+	out, err := r.Runner.Run(ctx, dir, "--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=normal")
+	if err != nil {
+		return 0, err
+	}
+	n, skipNext := 0, false
+	for _, tok := range strings.Split(out, "\x00") {
+		switch {
+		case skipNext:
+			skipNext = false
+		case tok == "":
+		default:
+			n++
+			skipNext = tok[0] == 'R' || tok[0] == 'C'
+		}
+	}
+	return n, nil
+}
+
 // IgnoredEntries lists what git ignores below the worktree at dir, as
 // slash-separated paths with fully ignored directories collapsed to one entry
 // (trailing slash). Status never reports these, but they can hold the only

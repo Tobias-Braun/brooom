@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -23,8 +24,12 @@ import (
 // directory is gone after the removal and git has to run in the main
 // worktree.
 const (
-	metaRepo   = "repo"
-	metaHead   = "head"
+	metaRepo = "repo"
+	metaHead = "head"
+
+	metaMtimeSource   = "mtime_source"
+	mtimeSourceCommit = "commit"
+
 	undoRepo   = "repo"
 	undoWT     = "worktree"
 	undoBranch = "branch"
@@ -113,6 +118,8 @@ type removeEval struct {
 	wt    gitx.Worktree
 	path  string
 	dirty bool
+	// uncommitted counts the entries git status reports (dirty is > 0).
+	uncommitted int
 	// ignored lists what git ignores in the worktree (see gitx.IgnoredEntries).
 	ignored []string
 	// trasher moves the directory; nil only for a worktree that holds nothing
@@ -171,9 +178,14 @@ func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeE
 // during it) is visible only through mtimes, read here with a Fresh walk. A
 // finding without LastModified has no baseline and is not checked; a walk that
 // fails is refused, because unknown must never read as unchanged. Not
-// overridable by --force: a rescan is the way forward.
+// overridable by --force: a rescan is the way forward. A baseline the
+// detector took from the HEAD commit time (Meta "mtime_source" = "commit",
+// used when no file mtime was available) is no mtime baseline at all: the
+// files are always newer than the commit, so comparing would refuse every
+// such worktree. Findings without the key (older versions, report files) are
+// compared, which fails safe.
 func checkUnmodified(ctx context.Context, path string, f findings.Finding) error {
-	if f.LastModified == nil {
+	if f.LastModified == nil || f.Meta[metaMtimeSource] == mtimeSourceCommit {
 		return nil
 	}
 	sum, err := walk.DirSize(ctx, path, walk.Options{Fresh: true})
@@ -264,9 +276,10 @@ func (ev *removeEval) inspect(ctx context.Context, env *Env) error {
 	case m.nestedVCS != "":
 		return skipf("%s", m.nestedWhy)
 	}
-	if ev.dirty, err = ev.repo.IsDirty(ctx, ev.path); err != nil {
+	if ev.uncommitted, err = ev.repo.UncommittedEntries(ctx, ev.path); err != nil {
 		return fmt.Errorf("worktree: check %s for uncommitted changes: %w", ev.path, err)
 	}
+	ev.dirty = ev.uncommitted > 0
 	if ev.ignored, err = ev.repo.IgnoredEntries(ctx, ev.path); err != nil {
 		return fmt.Errorf("worktree: list ignored files of %s: %w", ev.path, err)
 	}
@@ -297,13 +310,14 @@ func (ev *removeEval) checkDirty(env *Env, f findings.Finding) error {
 	return nil
 }
 
-// ignoredSummary names the first few ignored entries for messages.
+// ignoredSummary names the first few ignored entries for messages and states
+// the total, so the user sees how much goes to the trash.
 func ignoredSummary(entries []string) string {
 	const show = 3
 	if len(entries) <= show {
 		return strings.Join(entries, ", ")
 	}
-	return fmt.Sprintf("%s and %d more", strings.Join(entries[:show], ", "), len(entries)-show)
+	return fmt.Sprintf("%s and %d more (%d in total)", strings.Join(entries[:show], ", "), len(entries)-show, len(entries))
 }
 
 // Plan implements Action.
@@ -333,7 +347,7 @@ func (removeWorktree) Plan(ctx context.Context, env *Env, f findings.Finding) (S
 func (ev *removeEval) notes() []string {
 	notes := []string{"worktree"}
 	if ev.dirty {
-		notes = append(notes, "uncommitted changes")
+		notes = append(notes, fmt.Sprintf("%d uncommitted entries", ev.uncommitted))
 	}
 	if len(ev.ignored) > 0 {
 		notes = append(notes, "ignored files: "+ignoredSummary(ev.ignored))
@@ -406,11 +420,48 @@ func (ev *removeEval) applyTrashed(ctx context.Context, env *Env, en session.Ent
 	if !rec.Restorable {
 		en.RecoveryHint = "not recoverable: the " + string(rec.Strategy) + " trash strategy keeps no restorable copy of the worktree"
 	}
-	if _, err := env.Git.Run(ctx, ev.repo.Dir, "worktree", "remove", "--", ev.path); err != nil {
-		return failedTrash(en, fmt.Errorf("worktree moved to %s but git worktree remove of the registration failed: %w", rec.StoredPath, err))
+	if err := ev.deregister(ctx, env); err != nil {
+		return failedTrash(en, fmt.Errorf("worktree moved to %s but dropping its registration failed: %w", rec.StoredPath, err))
 	}
 	en.Status = session.StatusApplied
 	return en, nil
+}
+
+// deregister drops the registration of the (now missing) worktree directory.
+// `git worktree remove` on a missing path is what Brooom relies on, but git
+// only learned to accept it in later releases than MinGitVersion, so a git
+// failure is not final: the fallback deletes the one administrative directory
+// <common>/worktrees/<id> whose gitdir file names this worktree. It refuses
+// when the entry is locked (a lock taken meanwhile), cannot be found or is
+// still listed afterwards, and never touches other registrations.
+func (ev *removeEval) deregister(ctx context.Context, env *Env) error {
+	_, gitErr := env.Git.Run(ctx, ev.repo.Dir, "worktree", "remove", "--", ev.path)
+	if gitErr == nil {
+		return nil
+	}
+	admin, ok := gitx.WorktreeAdminDir(ev.repo.Common, ev.path)
+	if !ok {
+		return fmt.Errorf("git worktree remove %s: %w (no administrative directory found for a fallback)", ev.path, gitErr)
+	}
+	if _, err := os.Lstat(filepath.Join(admin, "locked")); err == nil {
+		return fmt.Errorf("git worktree remove %s: %w (and the registration is locked)", ev.path, gitErr)
+	}
+	if err := os.RemoveAll(admin); err != nil {
+		return fmt.Errorf("git worktree remove %s: %w (fallback failed: %w)", ev.path, gitErr, err)
+	}
+	// A fresh handle: the one in ev caches its worktree list.
+	repo, err := gitx.Open(ctx, env.Git, ev.repo.Dir)
+	if err != nil {
+		return fmt.Errorf("worktree: reopen %s after the fallback: %w", ev.repo.Dir, err)
+	}
+	list, err := repo.ListWorktrees(ctx)
+	if err != nil {
+		return fmt.Errorf("worktree: list worktrees of %s after the fallback: %w", ev.repo.Dir, err)
+	}
+	if _, still := findWorktree(list, ev.path); still {
+		return fmt.Errorf("worktree: %s is still registered after the fallback", ev.path)
+	}
+	return nil
 }
 
 // readdHint is the manual git command that recreates the worktree.
