@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Tobias-Braun/brooom/internal/action"
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/testutil"
 )
 
@@ -217,10 +219,15 @@ func TestApplyHint(t *testing.T) {
 	scan := &cobra.Command{Use: "scan"}
 	root.AddCommand(branches, scan)
 	a := &app{}
-	if got, want := a.applyHint(branches), "nothing was changed; run `brooom branches --apply` or `brooom sweep`"; got != want {
+	res := &scanResult{
+		Config: config.Default(),
+		Report: findings.NewReport("test", time.Time{}, nil,
+			[]findings.Finding{hintFinding(config.DetectorLogs, findings.ConfidenceHigh, "l")}, nil),
+	}
+	if got, want := a.applyHint(branches, nil), "nothing was changed; run `brooom branches --apply` or `brooom sweep`"; got != want {
 		t.Errorf("got %q", got)
 	}
-	if got := a.applyHint(scan); !strings.Contains(got, "nothing was changed") || !strings.Contains(got, "brooom sweep --apply") {
+	if got := a.applyHint(scan, res); !strings.Contains(got, "nothing was changed") || !strings.Contains(got, "brooom sweep --apply") {
 		t.Errorf("got %q", got)
 	}
 	if got := a.rerunHint(branches); got != "re-run 'brooom branches --apply'" {

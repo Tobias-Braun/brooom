@@ -17,6 +17,9 @@ const MaxReportBytes = 256 << 20
 // machine or tampered with, so the loader only checks the envelope. Callers
 // must still validate every finding before acting on it.
 //
+// A UTF-8 BOM or a UTF-16 LE/BE file (what Windows PowerShell 5.1 writes for
+// `> file`) is decoded transparently (see decodeText).
+//
 // Unknown JSON fields are tolerated so later, backwards-compatible additions
 // to the schema do not break older binaries. A missing or zero schema_version
 // means the input is not a findings file at all, a newer one means this
@@ -24,7 +27,7 @@ const MaxReportBytes = 256 << 20
 // accepted (there is only version 1 today).
 func ReadReport(r io.Reader) (*Report, error) {
 	lr := &io.LimitedReader{R: r, N: MaxReportBytes + 1}
-	dec := json.NewDecoder(lr)
+	dec := json.NewDecoder(decodeText(lr))
 	var rep Report
 	err := dec.Decode(&rep)
 	switch {

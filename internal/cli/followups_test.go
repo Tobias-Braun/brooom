@@ -83,7 +83,7 @@ func TestScanHintKeepsForce(t *testing.T) {
 		{"scope flags", []string{"scan", "--force", "-w", "--root", "/r"}, "brooom sweep --workspaces --root /r --force --apply"},
 		{"shortcut", []string{"scan", "--force", "-d", "merged-branch"}, "brooom branches --detector merged-branch --force --apply"},
 		{"pipeline forces both ends", []string{"scan", "--force", "-d", "git-bloat,logs"},
-			"brooom scan --detector " + findings.Quote("git-bloat,logs") + " --force --format json | brooom clean --from - --force --apply"},
+			"brooom scan --detector " + findings.Quote("git-bloat,logs") + " --force --format json > brooom-findings.json && brooom clean --from brooom-findings.json --force --apply"},
 		{"without force nothing is added", []string{"scan"}, "brooom sweep --apply"},
 	}
 	for _, tt := range tests {
@@ -111,9 +111,9 @@ func TestHintQuotingIsOSAware(t *testing.T) {
 		want string
 	}{
 		{"windows path with a space", "windows",
-			`brooom scan --config "C:\my dir\c.json" --detector "git-bloat,logs" --format json | brooom clean --config "C:\my dir\c.json" --from - --apply`},
+			`brooom scan --config "C:\my dir\c.json" --detector "git-bloat,logs" --format json > brooom-findings.json && brooom clean --config "C:\my dir\c.json" --from brooom-findings.json --apply`},
 		{"linux path with a space", "linux",
-			`brooom scan --config '/my dir/c.json' --detector git-bloat,logs --format json | brooom clean --config '/my dir/c.json' --from - --apply`},
+			`brooom scan --config '/my dir/c.json' --detector git-bloat,logs --format json > brooom-findings.json && brooom clean --config '/my dir/c.json' --from brooom-findings.json --apply`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

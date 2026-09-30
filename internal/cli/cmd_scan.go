@@ -128,7 +128,7 @@ func (a *app) runScan(cmd *cobra.Command, opts scanOptions) error {
 		return werr
 	}
 	if !machineFormats[req.format] && !a.flags.quiet && res.Report.Totals.Actionable > 0 {
-		fmt.Fprintln(a.io.Out, a.applyHint(cmd))
+		fmt.Fprintln(a.io.Out, a.applyHint(cmd, res))
 	}
 	if err == nil {
 		err = scanFailure(res.Report)

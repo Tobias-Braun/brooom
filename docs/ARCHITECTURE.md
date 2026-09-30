@@ -220,8 +220,15 @@ reason at the first failure:
    `ErrUnavailable`, `ErrIncomplete` (for `false` entries) and other errors
    mean unknown and are allowed, but noted in the step description.
 5. Blocking risk flags via `findings.Actionable`.
-6. Tracked files: `git ls-files -z -- <path>` in the repository root; tracked
-   files, or a failing check, skip unless `--force`.
+6. Tracked files: `git ls-files -z` with literal pathspecs in the repository
+   root; tracked files, or a failing check, skip unless `--force`. The
+   question is asked once per repository for all trash targets of a run
+   (`gitx.TrackedUnder`, chunked pathspecs matched back in Go), not once per
+   finding: one call at plan time and one live call at the start of `Apply`
+   (after the confirmation), so a run costs two calls per repository instead
+   of a multiple of the finding count. A git failure marks every target
+   unknown. A single target keeps the plain per-path call. The `logs` and
+   `ai-artifacts` detectors use the same helper for their `tracked_files` risk.
 7. Delete-strategy guard: with the `delete` strategy a finding whose
    `Meta["user_data_risk"]` is `untracked` is refused, and so is any path for
    which git cannot show right now (`ls-files --others --exclude-standard`)

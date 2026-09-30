@@ -33,3 +33,6 @@ var ParseBehind = parseBehind
 
 // PathWithinOS exposes pathWithinOS for the same reason.
 var PathWithinOS = pathWithinOS
+
+// TrackedChunks exposes the pathspec chunking of TrackedUnder.
+var TrackedChunks = trackedChunks

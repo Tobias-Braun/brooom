@@ -19,6 +19,13 @@ var scopeCommands = map[string]bool{
 	"brooom clean": true, "brooom git purge": true,
 }
 
+// noFormatCommands are scopeCommands that never render in a chosen format:
+// `clean` prints its verdict and plan as text whatever --format says, so an
+// explicit --format (a script asking for JSON) would be silently ignored.
+// Only the flag is refused; output.format from the config is not, because it
+// is a default for the commands that do read it.
+var noFormatCommands = map[string]bool{"brooom clean": true}
+
 // scopeOnlyCommands build a scope (-w, --root) but neither select detectors nor
 // render findings: `undo` restores what a manifest names, so -d and -f would
 // be accepted and ignored.
@@ -43,14 +50,24 @@ var scanOnlyFlags = map[string]bool{
 // and silently ignoring a flag misleads: `config validate -d nope` used to
 // report success although no detector was ever consulted.
 func unsupportedScanFlag(path, flag string) string {
-	scopeOnly, ok := scanOnlyFlags[flag]
-	if !ok || scopeCommands[path] || (!scopeOnly && formatCommands[path]) {
-		return ""
-	}
-	if scopeOnlyCommands[path] && (flag == "workspaces" || flag == "root") {
+	if !ignoresScanFlag(path, flag) {
 		return ""
 	}
 	return fmt.Sprintf("--%s has no effect on '%s' and is not supported there", flag, strings.TrimPrefix(path, "brooom "))
+}
+
+// ignoresScanFlag reports whether the command at path never reads flag.
+func ignoresScanFlag(path, flag string) bool {
+	scopeOnly, ok := scanOnlyFlags[flag]
+	switch {
+	case !ok:
+		return false
+	case flag == "format" && noFormatCommands[path]:
+		return true
+	case scopeCommands[path], !scopeOnly && formatCommands[path]:
+		return false
+	}
+	return !scopeOnlyCommands[path] || (flag != "workspaces" && flag != "root")
 }
 
 // rejectIgnoredScanFlags runs before every command. Completion and help are

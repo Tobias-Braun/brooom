@@ -113,11 +113,8 @@ func (r *run) markGit(ctx context.Context, items []*item) error {
 		}
 		rels[i] = filepath.ToSlash(rel)
 	}
-	for i, it := range items {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		r.markTracked(ctx, it, rels[i])
+	if err := r.markTrackedAll(ctx, items, rels); err != nil {
+		return err
 	}
 	ignored, err := r.ignoredSet(ctx, items, rels)
 	if err != nil {
@@ -131,27 +128,43 @@ func (r *run) markGit(ctx context.Context, items []*item) error {
 	return nil
 }
 
-// markTracked asks git whether anything at or below rel is tracked. The
-// pathspec is literal so glob characters in a name are not interpreted. A
-// failing check (or a path that cannot be made relative) flags the item as
-// tracked: the trash action refuses when it cannot tell either, and a report
-// that hides the doubt would be worse than a blocked finding.
-func (r *run) markTracked(ctx context.Context, it *item, rel string) {
-	fail := func(msg string) {
-		it.flags = append(it.flags, findings.RiskTrackedFiles)
-		it.evidence = append(it.evidence, findings.Evidence{Code: evTrackedFailed, Message: msg})
+// markTrackedAll asks git once (in a few chunked calls, see
+// gitx.TrackedUnder) whether anything at or below each candidate is tracked,
+// instead of running one `git ls-files` per candidate. A failing check (or a
+// path that cannot be made relative) flags the item as tracked: the trash
+// action refuses when it cannot tell either, and a report that hides the
+// doubt would be worse than a blocked finding.
+func (r *run) markTrackedAll(ctx context.Context, items []*item, rels []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	if !insideRepo(rel) {
-		fail("path is not inside the repository, tracked files could not be ruled out")
-		return
+	var asked []string
+	for _, rel := range rels {
+		if insideRepo(rel) {
+			asked = append(asked, rel)
+		}
 	}
-	out, err := r.env.Git.Run(ctx, r.target.Path, "ls-files", "-z", "--", ":(literal)"+rel)
-	switch {
-	case err != nil:
-		fail("git ls-files failed, tracked files could not be ruled out")
-	case out != "":
-		it.flags = append(it.flags, findings.RiskTrackedFiles)
+	tracked, err := gitx.TrackedUnder(ctx, r.env.Git, r.target.Path, asked)
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
 	}
+	for i, it := range items {
+		switch {
+		case !insideRepo(rels[i]):
+			markTrackedUnknown(it, "path is not inside the repository, tracked files could not be ruled out")
+		case err != nil:
+			markTrackedUnknown(it, "git ls-files failed, tracked files could not be ruled out")
+		case tracked[rels[i]]:
+			it.flags = append(it.flags, findings.RiskTrackedFiles)
+		}
+	}
+	return nil
+}
+
+// markTrackedUnknown blocks an item whose tracked state could not be decided.
+func markTrackedUnknown(it *item, msg string) {
+	it.flags = append(it.flags, findings.RiskTrackedFiles)
+	it.evidence = append(it.evidence, findings.Evidence{Code: evTrackedFailed, Message: msg})
 }
 
 // ignoreArg is the path form handed to check-ignore. Directories get a
