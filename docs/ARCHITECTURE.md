@@ -248,6 +248,26 @@ plus `[]Problem` for unreadable, corrupt or unsupported-version files, so one
 damaged file never hides the history. `brooom sessions [id] [--format json]`
 is the read-only view.
 
+#### macOS Trash and undo
+
+On macOS items are trashed by calling `NSFileManager trashItemAtURL` directly
+from Go without cgo (`github.com/ebitengine/purego` and its `objc` package, so
+`CGO_ENABLED=0` cross builds keep working). Finder's "Put Back" works and
+other volumes use their `.Trashes`; the resulting Trash path becomes
+`Record.StoredPath`. The URL is built from the path string alone, so a symlink
+is trashed as the link. If the native call fails for an item, the item is
+moved into `~/.Trash` under a Finder-style unique name (`file 2.txt`); those
+items have no Put Back metadata, and if `~/.Trash` is not writable the error
+suggests `--trash-strategy quarantine` (never a silent permanent delete).
+
+Since macOS 10.15 `~/.Trash` is protected by TCC: without Full Disk Access
+the terminal gets `Operation not permitted` when it inspects or moves items
+inside the Trash. Trashing works, but `brooom undo` may not be able to restore
+them: it then reports "macOS denies access to the Trash; restore with Finder
+'Put Back' or grant Full Disk Access to your terminal" and leaves the item
+where it is. The trasher also implements the optional `trash.BatchTrasher`
+(`RemoveMany`, currently a loop over the per-item native call).
+
 ### Open files (`internal/procs`)
 
 `procs.OpenFiles(ctx, paths)` reports which paths (or directories with an

@@ -13,6 +13,19 @@
 // `brooom undo` can restore what is restorable. Implementations must never
 // follow symlinks when removing: a symlink is removed as a link, its target
 // is left alone.
+//
+// # macOS and Full Disk Access
+//
+// The macOS trasher hands items to NSFileManager (called directly through purego), which
+// works without special permissions and returns the resulting path in the
+// Trash. Since macOS 10.15, however, ~/.Trash is protected by TCC: a CLI
+// without Full Disk Access gets "Operation not permitted" when it stats,
+// lists or moves items inside the Trash. Trashing therefore succeeds while
+// Restore (and any inspection of Record.StoredPath) may fail. Restore then
+// returns an error wrapping ErrNotRestorable that says so; restore such items
+// with Finder's "Put Back" or grant Full Disk Access to the terminal. Items
+// moved by the ~/.Trash fallback (used when the native call is unavailable or fails
+// for an item) have no Put Back metadata; only brooom's own undo restores them.
 package trash
 
 import (
@@ -66,6 +79,20 @@ type Trasher interface {
 	// ErrRestoreConflict if something exists there, and ErrNotRestorable if
 	// the stored copy is gone or the strategy was delete.
 	Restore(ctx context.Context, r Record) error
+}
+
+// BatchTrasher is an optional extension of Trasher for strategies where one
+// call can dispose of many items much faster than one call per item (the
+// macOS Trash spawns a process per call). Callers use it when a Trasher
+// implements it and fall back to per-item Remove otherwise; Remove stays fully
+// functional on every implementation.
+type BatchTrasher interface {
+	Trasher
+	// RemoveMany removes every path like Remove would. Both returned slices
+	// have len(paths) entries: recs[i] and errs[i] belong to paths[i]. One
+	// failing item does not stop the others. A record may accompany a
+	// non-nil error when the item was moved but cleanup of the source failed.
+	RemoveMany(ctx context.Context, paths []string) ([]Record, []error)
 }
 
 // Options configures trasher construction.
