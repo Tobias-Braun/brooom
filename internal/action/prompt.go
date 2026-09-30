@@ -220,8 +220,16 @@ func renderSummary(w io.Writer, r *Result, applyPhaseSkips []Skip, quiet bool) {
 	}
 	renderHints(w, r)
 	if r.Restorable() {
-		fmt.Fprintf(w, "undo: brooom undo %s\n", output.Sanitize(r.SessionID))
+		fmt.Fprintf(w, "undo: brooom undo %s\n", undoCommandTail(r))
 	}
+}
+
+// undoCommandTail is the session id plus the scope flags of the original run,
+// so pasting the printed command restores from any directory. The flags are
+// quoted by the caller, the id is sanitized here.
+func undoCommandTail(r *Result) string {
+	parts := append([]string{output.Sanitize(r.SessionID)}, r.UndoFlags...)
+	return strings.Join(parts, " ")
 }
 
 func renderHints(w io.Writer, r *Result) {

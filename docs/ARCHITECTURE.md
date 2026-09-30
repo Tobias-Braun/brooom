@@ -622,7 +622,17 @@ is the read-only view.
 `action.PlanUndo` / `action.RunUndo` (`internal/action/undo.go`,
 `undo_run.go`) hold the undo logic and `internal/cli/cmd_undo.go` only wires
 it. Entries are planned and undone in reverse order; each is classified
-`restore`, `conflict`, `cannot-restore` or `already-restored`. Guard checks use
+`restore`, `conflict`, `cannot-restore`, `outside-scope` or `already-restored`.
+A scope refusal is its own kind and summary bucket ("N skipped (outside scope;
+re-run with -w)"), never "not restorable", because the data is intact.
+
+Undo scope (#192): `session.Manifest.Workspaces` records that the run used
+`--workspaces`. `brooom undo` of such a session resolves the workspace scope
+without the flag (`adoptSessionScope`); only that fact is taken from the
+manifest, the guard is still built from the configured roots and every entry
+path is still checked against it. The undo hint printed after an apply
+(`Result.UndoFlags`, from `app.scopeFlags`) repeats `--workspaces`, `--root`
+and `--config` of the original invocation. Guard checks use
 the entry's original paths (never trusted); the CLI builds the guard like
 `scan` does (usage error outside a repository) and adds the user locations of
 `detect.TargetSource` detectors only when an entry falls outside it. Conflicts

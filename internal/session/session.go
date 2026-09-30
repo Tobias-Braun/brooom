@@ -37,8 +37,12 @@ type Manifest struct {
 	// FinishedAt is zero while the session is running or if it crashed.
 	FinishedAt time.Time `json:"finished_at,omitzero"`
 	// Command is the command line that created the session (for display).
-	Command string  `json:"command"`
-	Entries []Entry `json:"entries"`
+	Command string `json:"command"`
+	// Workspaces records that the run used --workspaces. `brooom undo` then
+	// resolves its scope from the configured roots without being told again;
+	// the guard still only allows those roots, never paths the manifest names.
+	Workspaces bool    `json:"workspaces,omitempty"`
+	Entries    []Entry `json:"entries"`
 	// ReclaimedBytes sums SizeBytes of applied entries.
 	ReclaimedBytes int64 `json:"reclaimed_bytes"`
 }

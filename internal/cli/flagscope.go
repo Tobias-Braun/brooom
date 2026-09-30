@@ -2,9 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // scopeCommands are the commands that build a scan scope and select
@@ -57,12 +59,43 @@ func rejectIgnoredScanFlags(cmd *cobra.Command) error {
 	if skipsUpdateCheck(cmd) && !formatCommands[cmd.CommandPath()] {
 		return nil
 	}
+	if err := rejectEmptySelectors(cmd); err != nil {
+		return err
+	}
 	for name := range scanOnlyFlags {
 		if f := cmd.Flags().Lookup(name); f == nil || !f.Changed {
 			continue
 		}
 		if msg := unsupportedScanFlag(cmd.CommandPath(), name); msg != "" {
 			return usageError{fmt.Errorf("%s", msg)}
+		}
+	}
+	return nil
+}
+
+// listSelectorFlags are the list flags that narrow what a command acts on.
+// Empty input must never fall back to "everything": a script with
+// `--id "$SELECTED" --apply --yes` and an unset variable would otherwise act
+// on all findings.
+var listSelectorFlags = []string{"id", "root", "detector"}
+
+// rejectEmptySelectors returns a usage error when a selector flag was given
+// but names nothing (`--id ""`, `--root ","`) or contains an empty element
+// (`a,,b`). pflag splits values at commas, so `--id ""` arrives as an empty
+// slice that is only distinguishable from an omitted flag by Changed.
+func rejectEmptySelectors(cmd *cobra.Command) error {
+	for _, name := range listSelectorFlags {
+		f := cmd.Flags().Lookup(name)
+		if f == nil || !f.Changed {
+			continue
+		}
+		sv, ok := f.Value.(pflag.SliceValue)
+		if !ok {
+			continue
+		}
+		values := sv.GetSlice()
+		if len(values) == 0 || slices.ContainsFunc(values, func(v string) bool { return strings.TrimSpace(v) == "" }) {
+			return usageError{fmt.Errorf("--%s needs at least one non-empty value and no empty list elements; an empty selector would widen the selection to everything", name)}
 		}
 	}
 	return nil

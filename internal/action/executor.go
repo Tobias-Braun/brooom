@@ -51,6 +51,11 @@ type Options struct {
 	// SessionID is optional; callers that build a quarantine trasher need the
 	// id before the run. Generated with session.NewID when empty.
 	SessionID string
+	// Workspaces is stored in the manifest (see session.Manifest.Workspaces).
+	Workspaces bool
+	// UndoFlags are the pre-quoted scope flags (--workspaces, --root, --config)
+	// appended to the printed undo command, so the hint works from anywhere.
+	UndoFlags []string
 	// RerunHint completes the dry-run hint, e.g. "brooom branches --apply".
 	// Default: "re-run with --apply".
 	RerunHint string
@@ -140,6 +145,8 @@ type Result struct {
 	Failures []session.Entry
 	// Plan is the plan that was shown (and confirmed).
 	Plan *Plan
+	// UndoFlags are the scope flags the printed undo command repeats.
+	UndoFlags []string
 }
 
 // Restorable reports whether any applied entry can be undone.
@@ -298,11 +305,12 @@ func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planS
 	if id == "" {
 		id = session.NewID(now)
 	}
-	m := &session.Manifest{Version: session.ManifestVersion, ID: id, StartedAt: now.UTC(), Command: e.opts.Command, Entries: []session.Entry{}}
+	m := &session.Manifest{Version: session.ManifestVersion, ID: id, StartedAt: now.UTC(), Command: e.opts.Command, Workspaces: e.opts.Workspaces, Entries: []session.Entry{}}
 	if err := e.opts.Store.Save(m); err != nil {
 		return res, fmt.Errorf("create session manifest (nothing was changed): %w", err)
 	}
 	res.SessionID = id
+	res.UndoFlags = e.opts.UndoFlags
 	rs := &runState{e: e, m: m, res: res}
 	runErr := rs.loop(ctx, items)
 	// An interruption still finishes the manifest; only a failed save skips it.
