@@ -14,14 +14,33 @@ import (
 // segments use path.Match ("a/*/b", "**/scratch"). A trailing or leading
 // slash is ignored. Invalid patterns never match; validating them is the
 // job of config loading. The root itself (empty rel) is never excluded.
+//
+// Names compare case-insensitively where the filesystem does (Windows and
+// macOS, see foldNames), like every other name matcher: otherwise a path the
+// user excluded as "Scratch" would reach the plan when it is spelled
+// "scratch" on disk.
 func Excluded(patterns []string, rel string) bool {
+	return excluded(patterns, rel, foldNames())
+}
+
+// excluded is Excluded with the case folding decided by the caller, so both
+// behaviours are testable on every OS. Folding lower-cases pattern and path
+// alike before matching.
+func excluded(patterns []string, rel string, fold bool) bool {
 	rel = strings.Trim(rel, "/")
+	if fold {
+		rel = strings.ToLower(rel)
+	}
 	if rel == "" {
 		return false
 	}
 	segs := strings.Split(rel, "/")
 	for _, p := range patterns {
-		if matchPattern(strings.Trim(p, "/"), segs) {
+		p = strings.Trim(p, "/")
+		if fold {
+			p = strings.ToLower(p)
+		}
+		if matchPattern(p, segs) {
 			return true
 		}
 	}

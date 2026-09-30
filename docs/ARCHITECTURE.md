@@ -457,6 +457,26 @@ refusals, bin decision) is in `recyclebin_parse.go` and tested on every OS.
 After the call the new `$I`/`$R` pair is recorded; a vanished item without a
 matching pair is reported as a permanent deletion.
 
+Descendants are re-rooted below `<volume>\$Recycle.Bin\<sid>\$R<random><ext>`
+(about 70 characters), so `Remove` also measures the longest descendant path
+during the size walk (`measureTree`) and `checkTreeDepth` refuses a tree whose
+deepest item would exceed 259 characters, either already or once re-rooted
+(the shell would stall on its permanent-deletion dialog). The shell call runs
+in a goroutine bounded by the context and a timeout (`callBounded`); an
+abandoned call cannot be cancelled, so the error reports the item as possibly
+pending after one `Lstat` and nothing is retried. Restore validates
+`StoredPath`/`InfoPath` against the bin directory derived from the original
+path (`userBinDir`), which also covers volumes mounted into a folder. Parsed
+`$I` files are cached per trasher, so a batch reads each once.
+
+Cross-device moves (quarantine on another volume) check before copying:
+`checkCopyable` refuses trees with entries `copyTree` cannot reproduce
+(mount-point junctions on Windows, fifos and devices on unix) and, on Windows,
+`procs.OpenFiles` refuses an item with open files. Directory symlinks are
+recreated with the directory flag decided from the source link, and errors
+that mean a locked file (access denied, sharing or lock violation) name the
+file as in use. Restoring junctions is not supported.
+
 The OS trash is selected per platform by `newOSTrasher` in
 `ostrash_unix.go` (freedesktop), `ostrash_darwin.go` and
 `ostrash_windows.go`; quarantine and delete live in `quarantine.go` and

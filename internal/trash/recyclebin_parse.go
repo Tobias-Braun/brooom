@@ -1,10 +1,12 @@
 package trash
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf16"
 )
@@ -388,23 +390,184 @@ func checkBinInfoPath(info, stored string) error {
 	return nil
 }
 
-// checkBinItemPath verifies that p is a direct item of a per-user bin
-// directory (<volume>\$Recycle.Bin\<sid>\<prefix>...) on the same volume as
-// original. Restore acts on paths from a manifest, so this is the boundary
-// that keeps a tampered record from moving arbitrary files.
-func checkBinItemPath(p, prefix, original string) error {
-	vol, rest, kind := winSplit(p)
-	ovol, _, _ := winSplit(original)
-	if kind != "drive" || len(rest) != 3 || !strings.EqualFold(rest[0], binDirName) {
-		return fmt.Errorf("refusing %q: not an item directly inside a %s directory", p, binDirName)
+// checkBinItemPath verifies that p is a direct item of the user's bin
+// directory binDir (<volume>\$Recycle.Bin\<sid>, as derived from the original
+// path by userBinDir) and that its name starts with prefix. Restore acts on
+// paths from a manifest, so this is the boundary that keeps a tampered record
+// from moving arbitrary files. Comparing against the derived directory instead
+// of a fixed drive-letter shape also accepts volumes mounted into a folder
+// (C:\mnt\data), whose bin sits at the mount point.
+func checkBinItemPath(p, prefix, binDir string) error {
+	bvol, brest, bkind := winSplit(binDir)
+	if bkind != "drive" || len(brest) < 2 || !strings.EqualFold(brest[len(brest)-2], binDirName) {
+		return fmt.Errorf("refusing %q: %q is not a per-user %s directory", p, binDir, binDirName)
 	}
-	if !strings.EqualFold(vol, ovol) {
-		return fmt.Errorf("refusing %q: not on the volume of %q", p, original)
+	pvol, prest, pkind := winSplit(p)
+	if pkind != "drive" || !strings.EqualFold(pvol, bvol) || !isDirectChild(prest, brest) {
+		return fmt.Errorf("refusing %q: not an item directly inside %q", p, binDir)
 	}
-	if !strings.HasPrefix(rest[2], prefix) || len(rest[2]) <= len(prefix) {
+	name := prest[len(prest)-1]
+	if !strings.HasPrefix(name, prefix) || len(name) <= len(prefix) {
 		return fmt.Errorf("refusing %q: expected a name starting with %s", p, prefix)
 	}
 	return nil
+}
+
+// isDirectChild reports whether child is exactly one component below parent,
+// comparing the shared components case-insensitively.
+func isDirectChild(child, parent []string) bool {
+	if len(child) != len(parent)+1 {
+		return false
+	}
+	for i, c := range parent {
+		if !strings.EqualFold(child[i], c) {
+			return false
+		}
+	}
+	return true
+}
+
+// recycledSuffixLen is the length of the "$R" prefix plus the six random
+// characters of a bin item name.
+const recycledSuffixLen = 2 + 6
+
+// utf16Len is the length of s in UTF-16 code units, the unit of MAX_PATH.
+func utf16Len(s string) int { return len(utf16.Encode([]rune(s))) }
+
+// recycledPrefixLen returns the length, in UTF-16 units, of the directory
+// part an item gets inside the bin: <volume>\$Recycle.Bin\<sid>\$R<random><ext>.
+// The extension of the item is kept by the shell; it is counted whenever the
+// name has a dot, which can only overestimate and so errs towards refusing.
+func recycledPrefixLen(path, sid string) int {
+	vol, rest, _ := winSplit(path)
+	ext := ""
+	if len(rest) > 0 {
+		name := rest[len(rest)-1]
+		if i := strings.LastIndexByte(name, '.'); i >= 0 {
+			ext = name[i:]
+		}
+	}
+	return utf16Len(vol) + 1 + len(binDirName) + 1 + utf16Len(sid) + 1 + recycledSuffixLen + utf16Len(ext)
+}
+
+// checkTreeDepth refuses a tree whose deepest descendant would not fit
+// MAX_PATH, which the shell API (and therefore the bin) cannot handle.
+// longestRel is the UTF-16 length of the longest descendant path relative to
+// path, including its leading separator (0 for a file or an empty directory).
+//
+// Two limits apply. The descendants must already fit under the original
+// path, otherwise the shell cannot even open them. And they are re-rooted
+// below $Recycle.Bin\<sid>\$R<random> when recycled, a prefix of roughly 70
+// characters that is usually longer than a short original path: a tree that
+// only just fits before overflows in the bin, where the shell reports "too
+// long to recycle" and waits on the permanent-deletion dialog (see winTrash).
+func checkTreeDepth(path, sid string, longestRel int) error {
+	if longestRel <= 0 {
+		return nil
+	}
+	if n := utf16Len(path) + longestRel; n > maxShellPath {
+		return fmt.Errorf("cannot move %s to the Recycle Bin: it contains a path of %d characters, longer than the %d the Windows shell API supports; %s", path, n, maxShellPath, quarantineHint)
+	}
+	if n := recycledPrefixLen(path, sid) + longestRel; n > maxShellPath {
+		return fmt.Errorf("cannot move %s to the Recycle Bin: its deepest item would have a path of %d characters inside the Recycle Bin, longer than the %d the Windows shell API supports (Windows would stall on a confirmation dialog); %s", path, n, maxShellPath, quarantineHint)
+	}
+	return nil
+}
+
+// errCallBound reports that a bounded call did not return in time.
+var errCallBound = fmt.Errorf("the call did not return within its time limit: %w", context.DeadlineExceeded)
+
+// callBounded runs a blocking shell call in its own goroutine and gives up
+// waiting when ctx ends or timeout elapses. A blocked SHFileOperationW cannot
+// be cancelled, so the goroutine is left to finish on its own; its result is
+// dropped. err is non-nil exactly when the call was abandoned, in which case
+// the outcome is unknown and the caller must inspect the item (Lstat) before
+// doing anything else with it.
+func callBounded(ctx context.Context, timeout time.Duration, call func() (int, bool)) (code int, aborted bool, err error) {
+	type result struct {
+		code    int
+		aborted bool
+	}
+	done := make(chan result, 1)
+	go func() {
+		c, a := call()
+		done <- result{c, a}
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r.code, r.aborted, nil
+	case <-ctx.Done():
+		return 0, false, ctx.Err()
+	case <-timer.C:
+		return 0, false, errCallBound
+	}
+}
+
+// infoCache remembers parsed $I files by name for the lifetime of a trasher.
+// A batch of N removals lists the bin N times; without the cache every
+// listing re-reads and re-parses all M existing $I files (N x M reads). A $I
+// file is written once by the shell and never modified, so its name identifies
+// its contents.
+type infoCache struct {
+	mu sync.Mutex
+	m  map[string]cachedInfo
+}
+
+// cachedInfo is one remembered $I result; ok is false for a file that could
+// not be parsed, which is remembered too so it is not re-read every time.
+type cachedInfo struct {
+	rec infoRecord
+	ok  bool
+}
+
+// collectEntries turns $I file names into entries. read loads one file and
+// reports whether it is usable and whether that verdict may be remembered
+// (a $I whose $R is not there yet must be looked at again). A nil cache reads
+// everything.
+func collectEntries(names []string, cache *infoCache, read func(name string) (rec infoRecord, ok, cacheable bool)) []binEntry {
+	var out []binEntry
+	for _, n := range names {
+		if rec, ok, hit := cache.get(n); hit {
+			if ok {
+				out = append(out, binEntry{Name: n, Info: rec})
+			}
+			continue
+		}
+		rec, ok, cacheable := read(n)
+		if cacheable {
+			cache.put(n, rec, ok)
+		}
+		if ok {
+			out = append(out, binEntry{Name: n, Info: rec})
+		}
+	}
+	return out
+}
+
+// get returns the remembered result for name; a nil cache never hits.
+func (c *infoCache) get(name string) (rec infoRecord, ok, hit bool) {
+	if c == nil {
+		return infoRecord{}, false, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ci, hit := c.m[name]
+	return ci.rec, ci.ok, hit
+}
+
+// put remembers a result; a nil cache ignores it.
+func (c *infoCache) put(name string, rec infoRecord, ok bool) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = map[string]cachedInfo{}
+	}
+	c.m[name] = cachedInfo{rec: rec, ok: ok}
 }
 
 // shellErrorTable maps the legacy DE_* codes SHFileOperation returns (they

@@ -7,8 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"golang.org/x/term"
-
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/output"
 )
@@ -17,7 +15,7 @@ import (
 // terminal, scripted readers (tests, pipes wrapped by callers) never are.
 func isTerminal(in io.Reader) bool {
 	f, ok := in.(*os.File)
-	return ok && term.IsTerminal(int(f.Fd()))
+	return ok && output.IsTerminal(f)
 }
 
 // confirmer asks the confirmation questions. All prompts share one
