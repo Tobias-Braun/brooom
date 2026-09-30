@@ -2,3 +2,7 @@
 // registers itself with detect.Register from its init function; adding a
 // detector means adding one blank import here.
 package all
+
+import (
+	_ "github.com/Tobias-Braun/brooom/internal/detectors/stalebranch"
+)
