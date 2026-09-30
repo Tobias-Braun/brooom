@@ -44,6 +44,18 @@ var HugeDirNames = []string{
 	"System Volume Information",
 }
 
+// ProjectSkipDirs are the directory names the project walks of the logs and
+// ai-artifacts detectors never descend into: they hold dependencies and build
+// output of thousands of files, no tool writes its logs or transcripts there,
+// and the build-artifacts detector already reports the outputs among them
+// (.gradle, .next), so descending would only slow the scan and produce
+// overlapping findings. One list keeps both detectors in step. Treat the
+// slice as read-only.
+var ProjectSkipDirs = []string{
+	"node_modules", "vendor", ".venv", "venv", "target", "dist", "build",
+	".gradle", ".next",
+}
+
 // homeOnlySkipNames are skipped only when they are a direct child of the
 // user's home directory, so a project folder that merely happens to be named
 // Library elsewhere is still scanned.

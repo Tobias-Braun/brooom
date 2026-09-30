@@ -369,6 +369,32 @@ func TestClaimsOnlyApplyWhenOtherDetectorIsEnabled(t *testing.T) {
 	h.want(h.run(), "dist/bundle.js")
 }
 
+// TestClaimsOnlyForSelectedDetectors pins issue #235: with build-artifacts
+// (and the other catalog detectors) left out of the run, nobody reports
+// node_modules, so large-untracked must; with everything selected, or an empty
+// selection meaning all, it stays claimed.
+func TestClaimsOnlyForSelectedDetectors(t *testing.T) {
+	tests := []struct {
+		name     string
+		selected []string
+		want     []string
+	}{
+		{"only large-untracked", []string{config.DetectorLargeUntracked}, []string{"node_modules", "keep/plain.bin"}},
+		{"build-artifacts selected", []string{config.DetectorLargeUntracked, config.DetectorBuildArtifacts}, []string{"keep/plain.bin"}},
+		{"empty means all", nil, []string{"keep/plain.bin"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.repo.WriteFile(".gitignore", "node_modules/\n")
+			h.big("node_modules/pkg/huge.bin")
+			h.big("keep/plain.bin")
+			h.env.Selected = tc.selected
+			h.want(h.run(), tc.want...)
+		})
+	}
+}
+
 func TestExcludes(t *testing.T) {
 	tests := []struct {
 		name  string

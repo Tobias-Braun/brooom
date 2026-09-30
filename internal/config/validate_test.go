@@ -41,6 +41,7 @@ func TestValidateRejects(t *testing.T) {
 			c.Roots = []Root{{Path: abs}, {Path: filepath.Join(abs, "sub", "..")}}
 		}, "roots[1].path"},
 		{"root bad glob", func(c *Config) { c.Roots = []Root{{Path: abs, Exclude: []string{"[a"}}} }, "roots[0].exclude[0]"},
+		{"root backslash glob", func(c *Config) { c.Roots = []Root{{Path: abs, Exclude: []string{`vendor\legacy`}}} }, "roots[0].exclude[0]"},
 		{"root empty glob", func(c *Config) { c.Roots = []Root{{Path: abs, Exclude: []string{""}}} }, "roots[0].exclude[0]"},
 		{"root unknown detector", func(c *Config) {
 			c.Roots = []Root{{Path: abs, Detectors: map[string]bool{"nope": false}}}

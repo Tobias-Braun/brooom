@@ -149,6 +149,12 @@ func validGlob(pattern string) error {
 	if hasControlChars(pattern) {
 		return errors.New("must not contain control characters")
 	}
+	// Exclude matching splits on "/" only and treats a backslash as a glob
+	// escape, so `vendor\legacy` would silently match "vendorlegacy" and never
+	// the directory the user meant (typically on Windows).
+	if strings.Contains(pattern, `\`) {
+		return errors.New("use '/' as the path separator (backslash is a glob escape)")
+	}
 	if _, err := path.Match(pattern, ""); err != nil {
 		return fmt.Errorf("invalid glob %q: %w", pattern, err)
 	}

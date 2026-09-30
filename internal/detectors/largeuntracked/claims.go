@@ -7,6 +7,7 @@ import (
 
 	"github.com/Tobias-Braun/brooom/internal/catalog"
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/detectors/buildartifacts"
 )
 
@@ -37,25 +38,27 @@ type claims struct {
 
 // newClaims builds the claims for the effective configuration cfg of the
 // repository at dir: the build-artifacts matcher plus the project-level patterns of the
-// ai-artifacts and log-and-runtime-files catalogs.
-func newClaims(dir string, cfg *config.Config) (*claims, error) {
+// ai-artifacts and log-and-runtime-files catalogs. A detector claims only when
+// it is enabled and selected for the run (env.Selects), since one that does not
+// run reports nothing.
+func newClaims(dir string, cfg *config.Config, env *detect.Env) (*claims, error) {
 	c := &claims{}
 	d := cfg.Detectors
-	if d.BuildArtifacts.Enabled {
+	if d.BuildArtifacts.Enabled && env.Selects(config.DetectorBuildArtifacts) {
 		fn, err := buildartifacts.ClaimsWith(dir, d.BuildArtifacts)
 		if err != nil {
 			return nil, fmt.Errorf("largeuntracked: %w", err)
 		}
 		c.buildDirs = fn
 	}
-	if d.AIArtifacts.Enabled {
+	if d.AIArtifacts.Enabled && env.Selects(config.DetectorAIArtifacts) {
 		cat, err := catalog.Load(catalog.Options{Extra: d.AIArtifacts.Extra, Tools: d.AIArtifacts.Tools, DefaultCategory: catalog.CategoryAI})
 		if err != nil {
 			return nil, fmt.Errorf("largeuntracked: ai-artifacts catalog: %w", err)
 		}
 		c.matchers = append(c.matchers, cat.ProjectMatcher(catalog.CategoryAI))
 	}
-	if d.Logs.Enabled {
+	if d.Logs.Enabled && env.Selects(config.DetectorLogs) {
 		cat, err := catalog.Load(catalog.Options{Extra: d.Logs.Extra, Categories: d.Logs.Categories, DefaultCategory: catalog.CategoryLogs})
 		if err != nil {
 			return nil, fmt.Errorf("largeuntracked: log-and-runtime-files catalog: %w", err)

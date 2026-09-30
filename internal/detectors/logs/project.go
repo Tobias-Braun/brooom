@@ -21,11 +21,6 @@ import (
 // project root; a deeper walk would mostly cost time in vendored trees.
 const maxProjectDepth = 10
 
-// hugeDirs are never descended into: they hold dependencies and build output
-// of thousands of files, no tool writes its logs there, and walking
-// them is what would make a scan slow.
-var hugeDirs = []string{"node_modules", "vendor", ".venv", "venv", "target", "dist", "build"}
-
 // run carries everything one Detect call needs. It is created per call, so
 // concurrent targets never share it.
 type run struct {
@@ -89,7 +84,7 @@ func (r *run) projectCandidates(ctx context.Context) ([]candidate, error) {
 	col := &collector{}
 	opts := walk.Options{
 		Concurrency: r.cfg.Scan.Concurrency,
-		SkipNames:   append(slices.Clone(hugeDirs), r.cfg.Scan.SkipDirs...),
+		SkipNames:   append(slices.Clone(scope.ProjectSkipDirs), r.cfg.Scan.SkipDirs...),
 		MaxDepth:    maxProjectDepth,
 	}
 	err := walk.Walk(ctx, r.target.Path, opts, func(e walk.Entry) walk.Decision {

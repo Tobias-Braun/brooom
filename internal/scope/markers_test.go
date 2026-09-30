@@ -2,6 +2,7 @@ package scope
 
 import (
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
@@ -63,5 +64,16 @@ func TestProjectMarkersReturnsCopy(t *testing.T) {
 	m[0] = "changed"
 	if ProjectMarkers()[0] == "changed" {
 		t.Fatal("ProjectMarkers exposes the internal table")
+	}
+}
+
+// TestProjectSkipDirsCoverBuildOutputs pins issue #236: the one walker skip
+// list of logs and ai-artifacts contains the build outputs that build-artifacts
+// already reports, so neither detector descends into them.
+func TestProjectSkipDirsCoverBuildOutputs(t *testing.T) {
+	for _, name := range []string{"node_modules", "vendor", ".venv", "venv", "target", "dist", "build", ".gradle", ".next"} {
+		if !slices.Contains(ProjectSkipDirs, name) {
+			t.Errorf("ProjectSkipDirs lacks %q", name)
+		}
 	}
 }

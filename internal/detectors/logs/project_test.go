@@ -550,3 +550,20 @@ func TestUnsupportedTargetKindIsIgnored(t *testing.T) {
 		t.Errorf("got %v, %v", got, err)
 	}
 }
+
+// TestSkipsBuildOutputDirsOfBuildArtifacts pins issue #236: .gradle and .next
+// are reported as a whole by build-artifacts, so logs must not descend into
+// them and list the files inside as well.
+func TestSkipsBuildOutputDirsOfBuildArtifacts(t *testing.T) {
+	sandbox(t)
+	repo := testutil.NewRepo(t)
+	put(t, repo.Dir, "npm-debug.log", 100)
+	put(t, repo.Dir, ".gradle/x/npm-debug.log", 100)
+	put(t, repo.Dir, ".next/cache/npm-debug.log", 100)
+	oldDirs(t, repo.Dir)
+	env := newEnv(t, config.Default(), repo.Dir)
+	paths := relPaths(t, mustScan(t, env, repoTarget(repo.Dir)), repo.Dir)
+	if !reflect.DeepEqual(paths, []string{"npm-debug.log"}) {
+		t.Errorf("paths = %v, want only npm-debug.log", paths)
+	}
+}

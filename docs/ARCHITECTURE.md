@@ -126,7 +126,7 @@ their paths in the guard. It only declares locations and never detects.
 
 The `ai-artifacts` detector (`internal/detectors/aiartifacts`) matches the
 `ai` category of the catalog. Project targets get one pruned `walk.Walk`
-(`.git`, `scan.skip_dirs`, well-known huge dirs, matched directories, root and
+(`.git`, `scan.skip_dirs`, the shared `scope.ProjectSkipDirs` list (also used by `log-and-runtime-files`), matched directories, root and
 repo excludes and nested repositories are not descended into). Catalog
 `protect` patterns always win: a candidate that is protected, below a
 protected path or a directory containing one is dropped, as is a matched
@@ -148,6 +148,12 @@ confidence; and one batched `procs.OpenFiles` per target flags files a process
 has open with `file_open_by_process`, which is blocking and never overridable,
 so those findings suggest `none` even with `--force`. `tracked_files` is
 force-overridable and then suggests `trash` with a `forced: ...` reason.
+
+`detect.Env.Selected` carries the detectors chosen for the run (empty means
+all). `large-untracked` claims paths of the catalog-driven detectors only when
+they are enabled and selected, so `scan -d large-untracked` still reports an
+ignored `node_modules`. Crash-dump catalog entries carry a `verify` content
+check (ELF core / MDMP header); a candidate that fails it is dropped.
 
 Detector names (config keys, `--detector` values): `stale-branch`,
 `merged-branch`, `worktrees`, `git-bloat`, `large-untracked`,

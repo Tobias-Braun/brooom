@@ -36,7 +36,7 @@ func TestClaimsCovers(t *testing.T) {
 	}
 	cfg := config.Default()
 	cfg.Detectors.BuildArtifacts.ExtraDirs = []string{"generated"}
-	c, err := newClaims(dir, cfg)
+	c, err := newClaims(dir, cfg, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestClaimsCovers(t *testing.T) {
 func TestClaimsFoldCaseOnCaseInsensitiveSystems(t *testing.T) {
 	dir := testutil.ResolvedTempDir(t)
 	testutil.WriteFile(t, dir, "package.json", "x")
-	c, err := newClaims(dir, config.Default())
+	c, err := newClaims(dir, config.Default(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

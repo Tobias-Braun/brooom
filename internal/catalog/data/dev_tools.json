@@ -761,6 +761,7 @@
         {
           "scope": "project",
           "patterns": ["core", "core.[0-9]*"],
+          "verify": "core-dump",
           "kind": "file",
           "confidence": "medium",
           "min_age_days": 14,
@@ -770,6 +771,7 @@
         {
           "scope": "project",
           "patterns": ["*.dmp"],
+          "verify": "minidump",
           "kind": "file",
           "confidence": "medium",
           "min_age_days": 14,
