@@ -2,6 +2,8 @@ package action
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -87,5 +89,55 @@ func TestGitReflogExpireWithoutStashesDescribesNoStash(t *testing.T) {
 	step := mustPlan(t, fx, f)
 	if strings.Contains(step.Description, "stash") {
 		t.Errorf("description %q mentions stashes although there are none", step.Description)
+	}
+}
+
+// TestGitGCKeepsWorktreeRegistrationOfMissingDetachedWorktree: gc runs its own
+// `git worktree prune` after gc.worktreePruneExpire (3 months by default),
+// which would drop the registration of a long-missing detached worktree and
+// with it the only reference to its HEAD commit.
+func TestGitGCKeepsWorktreeRegistrationOfMissingDetachedWorktree(t *testing.T) {
+	fx := newMaintFixture(t)
+	fx.looseCommits(3)
+	p := fx.add("det", "")
+	fx.gitOut(p, "-c", "user.name=t", "-c", "user.email=t@e", "-c", "commit.gpgsign=false",
+		"commit", "--allow-empty", "-q", "-m", "unique")
+	head := fx.gitOut(p, "rev-parse", "HEAD")
+	head = strings.TrimSpace(head)
+	if err := os.RemoveAll(p); err != nil {
+		t.Fatal(err)
+	}
+	// Age the admin dir past the default expiry: git decides by the mtime of
+	// the worktree's index file (gitdir is aged too for versions that look
+	// at it).
+	old := time.Now().AddDate(-1, 0, 0)
+	for _, name := range []string{"index", "gitdir"} {
+		admin := filepath.Join(fx.repo.Dir, ".git", "worktrees", "det", name)
+		if err := os.Chtimes(admin, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := fx.finding(findings.ActionGitGC, map[string]string{"prune": "now"})
+	step := mustPlan(t, fx, f)
+	if _, err := act(t, findings.ActionGitGC).Apply(context.Background(), fx.env, step); err != nil {
+		t.Fatal(err)
+	}
+	if !fx.registered(p) {
+		t.Error("gc dropped the registration of the missing detached worktree")
+	}
+	if !fx.hasObject(head) {
+		t.Error("the unique detached commit was pruned")
+	}
+}
+
+func TestGCArgsProtectWorktreeRegistrations(t *testing.T) {
+	got := strings.Join(gcArgs("now"), " ")
+	for _, want := range []string{"-c gc.worktreePruneExpire=never", "gc --quiet --prune=now", "gc.refs/stash.reflogExpire=never"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("gcArgs = %q, missing %q", got, want)
+		}
+	}
+	if strings.Index(got, "gc.worktreePruneExpire=never") > strings.Index(got, " gc --quiet") {
+		t.Errorf("gcArgs = %q: -c options must precede the subcommand", got)
 	}
 }

@@ -310,7 +310,7 @@ func gcHint(prune string) string {
 	return "not restorable; unreachable objects older than " + prune + " are deleted, and reflog entries older than " +
 		"gc.reflogExpire / gc.reflogExpireUnreachable (git defaults 90 / 30 days) are expired, so resets and deleted " +
 		"branches older than that cannot be recovered via the reflog. Stash entries (refs/stash) are kept: Brooom " +
-		"protects them for the run."
+		"protects them for the run. Worktree registrations are kept too (gc.worktreePruneExpire=never)."
 }
 
 func gitPruneHint(date string) string {

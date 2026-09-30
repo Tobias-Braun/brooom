@@ -3,10 +3,12 @@ package action
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
@@ -1057,5 +1059,63 @@ func TestWorktreeHelpers(t *testing.T) {
 	hint = readdHint(map[string]string{"worktree": "/wt", "branch": "feat/x", "head": "abc"})
 	if hint != "git worktree add /wt feat/x" {
 		t.Errorf("branch hint = %q", hint)
+	}
+}
+
+// detachedOnRemoteOnly builds a detached worktree whose HEAD commit is held
+// only by origin/feat: the local branch is deleted after the checkout, so the
+// remote-tracking ref is the single thing that keeps the commit reachable
+// once the worktree's admin dir is gone.
+func (fx *wtFixture) detachedOnRemoteOnly() string {
+	fx.t.Helper()
+	fx.repo.Origin = testutil.ResolvedTempDir(fx.t)
+	fx.repo.Git("init", "--bare", "-q", "-b", "main", fx.repo.Origin)
+	fx.repo.Git("remote", "add", "origin", fx.repo.Origin)
+	fx.repo.Git("push", "-q", "origin", "main")
+	fx.repo.Git("checkout", "-q", "-b", "feat")
+	fx.repo.Commit("feat.txt", "work", "feat work", testutil.BaseTime.Add(time.Hour))
+	fx.repo.Push("feat")
+	fx.repo.Git("checkout", "-q", "main")
+	p := fx.add("det", "")
+	fx.gitOut(p, "checkout", "-q", "--detach", "feat")
+	fx.repo.Git("branch", "-D", "feat")
+	return p
+}
+
+// TestRemoveWorktreeRevalidatesDetachedHead pins the apply-time containment
+// check: a detached worktree that was safe at scan time must be refused once
+// the remote branch holding its HEAD is gone, with or without --force.
+func TestRemoveWorktreeRevalidatesDetachedHead(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		t.Run(fmt.Sprintf("force=%v", force), func(t *testing.T) {
+			fx := newWTFixture(t)
+			p := fx.detachedOnRemoteOnly()
+			f := fx.removeFinding(p)
+			fx.env.Force = force
+			// Still contained in origin/feat: plan succeeds.
+			if _, err := fx.plan(removeWorktree{}, f); err != nil {
+				t.Fatalf("Plan while contained: %v", err)
+			}
+			fx.repo.DeleteRemoteBranch("feat")
+			fx.repo.Fetch()
+			_, err := fx.plan(removeWorktree{}, f)
+			wantSkip(t, err, "held by no branch or tag")
+			en, err := removeWorktree{}.Apply(context.Background(), fx.env, Step{Finding: f})
+			if err != nil || en.Status != session.StatusSkipped {
+				t.Errorf("Apply = %+v, %v; want skipped", en, err)
+			}
+			if !fx.registered(p) || !exists(p) {
+				t.Error("worktree was removed although its HEAD became unreachable")
+			}
+		})
+	}
+}
+
+func TestRemoveWorktreeDetachedContainedIsRemoved(t *testing.T) {
+	fx := newWTFixture(t)
+	p := fx.detachedOnRemoteOnly()
+	en, err := fx.apply(removeWorktree{}, fx.removeFinding(p))
+	if err != nil || en.Status != session.StatusApplied {
+		t.Fatalf("Apply = %+v, %v", en, err)
 	}
 }

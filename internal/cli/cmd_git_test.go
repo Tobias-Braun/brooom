@@ -217,7 +217,7 @@ func TestGitPurgeGCOnlyTouchesReposWithFindings(t *testing.T) {
 func TestGitPurgeExplanations(t *testing.T) {
 	f := newPurgeFixture(t, map[string]any{"detectors": map[string]any{"git-bloat": map[string]any{"loose_objects_threshold": 5}}})
 	f.looseCommits(20)
-	wording := []string{"gc.reflogExpire", "gc.reflogExpireUnreachable", "90 / 30", "unreachable objects", "worktree prune", "rerere gc"}
+	wording := []string{"gc.reflogExpire", "gc.reflogExpireUnreachable", "90 / 30", "unreachable objects", "gc.worktreePruneExpire=never", "rerere gc"}
 
 	_, help, _ := brooom(t, "", "git", "purge", "--help")
 	for _, want := range append([]string{"90.days.ago", "2026-01-01", "recovery", "permanently", "rewrites packs"}, wording...) {
