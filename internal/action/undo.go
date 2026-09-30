@@ -24,6 +24,10 @@ const (
 	UndoConflict UndoKind = "conflict"
 	// UndoCannot means the entry cannot be restored; Reason says why.
 	UndoCannot UndoKind = "cannot-restore"
+	// UndoOutside means the scope guard refused the entry's location. The data
+	// is untouched in quarantine or the trash; only the scope of this run is
+	// too narrow, so it is reported apart from entries that cannot be restored.
+	UndoOutside UndoKind = "outside-scope"
 	// UndoDone means the entry was restored by an earlier undo run.
 	UndoDone UndoKind = "already-restored"
 )
@@ -74,7 +78,7 @@ func planUndoEntry(env *Env, idx int, e session.Entry) UndoStep {
 		return st
 	}
 	if p := outsideScope(env, e); p != "" {
-		st.Kind, st.OutsideScope = UndoCannot, true
+		st.Kind, st.OutsideScope = UndoOutside, true
 		st.Reason = fmt.Sprintf("outside the current scope; re-run from %s or with --workspaces", repoHint(p))
 		return st
 	}

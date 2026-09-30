@@ -49,6 +49,9 @@ type UndoResult struct {
 	Failed int
 	// NotRestorable counts entries that were not restorable from the start.
 	NotRestorable int
+	// OutsideScope counts entries the scope guard refused. They are intact
+	// and restorable with a wider scope, so they are not "not restorable".
+	OutsideScope int
 	// AlreadyRestored counts entries restored by an earlier run.
 	AlreadyRestored int
 	// Declined is true when the user answered no to the prompt.
@@ -123,6 +126,8 @@ func (r *UndoResult) tally() {
 			r.Conflicts++
 		case UndoCannot:
 			r.NotRestorable++
+		case UndoOutside:
+			r.OutsideScope++
 		case UndoDone:
 			r.AlreadyRestored++
 		}
@@ -216,7 +221,7 @@ func renderUndoStep(w io.Writer, s UndoStep) {
 		return
 	case UndoConflict:
 		fmt.Fprintf(w, "  conflict %s: %s\n", label, output.Sanitize(s.Reason))
-	case UndoDone:
+	case UndoDone, UndoOutside:
 		fmt.Fprintf(w, "  skip %s: %s\n", label, output.Sanitize(s.Reason))
 		return
 	default:
@@ -235,7 +240,11 @@ func renderUndoSummary(w io.Writer, r *UndoResult) {
 		}
 		fmt.Fprintf(w, "  %s %s: %s\n", kind, output.Sanitize(p.Label), output.Sanitize(p.Message))
 	}
-	fmt.Fprintf(w, "summary: %d restored, %d conflicts, %d failed, %d not restorable, %d already restored\n",
+	fmt.Fprintf(w, "summary: %d restored, %d conflicts, %d failed, %d not restorable, %d already restored",
 		r.Restored, r.Conflicts, r.Failed, r.NotRestorable, r.AlreadyRestored)
+	if r.OutsideScope > 0 {
+		fmt.Fprintf(w, ", %d skipped (outside scope; re-run with -w)", r.OutsideScope)
+	}
+	fmt.Fprintln(w)
 	fmt.Fprintf(w, "session: %s\n", output.Sanitize(r.SessionID))
 }

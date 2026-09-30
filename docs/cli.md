@@ -995,9 +995,11 @@ and a manual recovery hint).
 
 Nothing is ever overwritten: an entry whose original location exists again is
 reported as a conflict and stays as it was. Entries are only restored inside
-the current scope (the repository you are in, or --workspaces), because
-manifests are files that can be edited. Run it from the repository the
-session worked on or use --workspaces.
+the current scope, because manifests are files that can be edited. The scope
+is the repository you are in; for a session that was applied with --workspaces
+it is the configured roots (--root narrows them). Entries outside the scope
+are reported as skipped, not as lost: run undo from the repository they belong
+to or with --workspaces.
 
 Exit status: 0 when every restorable entry was restored, 1 when one conflicted
 or failed, 2 when confirmation is needed but stdin is not a terminal (pass

@@ -282,7 +282,7 @@ func TestPlanUndoScopeGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Restored != 1 || res.NotRestorable != 3 || len(undoLog) != 1 || undoLog[0] != inside.Path {
+	if res.Restored != 1 || res.NotRestorable != 0 || res.OutsideScope != 3 || len(undoLog) != 1 || undoLog[0] != inside.Path {
 		t.Fatalf("res=%+v log=%v", res, undoLog)
 	}
 	for _, s := range res.Steps {
@@ -299,7 +299,7 @@ func TestPlanUndoWithoutGuardRefusesEverything(t *testing.T) {
 	fx := newUndoFixture(t)
 	fx.env.Guard = nil
 	steps := PlanUndo(fx.manifest(fx.entry("a")), fx.env)
-	if steps[0].Kind != UndoCannot || !steps[0].OutsideScope {
+	if steps[0].Kind != UndoOutside || !steps[0].OutsideScope {
 		t.Fatalf("%+v", steps[0])
 	}
 }

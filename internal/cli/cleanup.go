@@ -285,16 +285,18 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 	id := session.NewID(time.Now())
 	resolver := newTrasherResolver(in.cfg, strategy, dirs, id, a.io.Err)
 	exec := action.NewExecutor(action.Options{
-		Apply:     af.apply,
-		Quiet:     a.flags.quiet,
-		Yes:       af.yes,
-		Force:     af.force,
-		IO:        action.IO{In: a.io.In, Out: a.io.Out, Err: a.io.Err},
-		Store:     &session.Store{Dir: dirs.Sessions},
-		Env:       buildActionEnv(in, af, resolver),
-		Command:   a.commandLine(),
-		SessionID: id,
-		RerunHint: a.rerunHint(cmd),
+		Apply:      af.apply,
+		Quiet:      a.flags.quiet,
+		Yes:        af.yes,
+		Force:      af.force,
+		IO:         action.IO{In: a.io.In, Out: a.io.Out, Err: a.io.Err},
+		Store:      &session.Store{Dir: dirs.Sessions},
+		Env:        buildActionEnv(in, af, resolver),
+		Command:    a.commandLine(),
+		Workspaces: a.flags.workspaces,
+		UndoFlags:  a.scopeFlags(),
+		SessionID:  id,
+		RerunHint:  a.rerunHint(cmd),
 	})
 	return exec.Run(ctx, in.findings)
 }

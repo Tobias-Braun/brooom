@@ -27,9 +27,11 @@ and a manual recovery hint).
 
 Nothing is ever overwritten: an entry whose original location exists again is
 reported as a conflict and stays as it was. Entries are only restored inside
-the current scope (the repository you are in, or --workspaces), because
-manifests are files that can be edited. Run it from the repository the
-session worked on or use --workspaces.
+the current scope, because manifests are files that can be edited. The scope
+is the repository you are in; for a session that was applied with --workspaces
+it is the configured roots (--root narrows them). Entries outside the scope
+are reported as skipped, not as lost: run undo from the repository they belong
+to or with --workspaces.
 
 Exit status: 0 when every restorable entry was restored, 1 when one conflicted
 or failed, 2 when confirmation is needed but stdin is not a terminal (pass
@@ -58,10 +60,6 @@ func (a *app) runUndo(cmd *cobra.Command, args []string, af applyFlags) error {
 	if err != nil {
 		return err
 	}
-	req, err := a.newScanRequest(scanOptions{})
-	if err != nil {
-		return err
-	}
 	dirs, err := config.ResolveDirs()
 	if err != nil {
 		return err
@@ -72,6 +70,11 @@ func (a *app) runUndo(cmd *cobra.Command, args []string, af applyFlags) error {
 		fmt.Fprintln(a.io.Out, "nothing to undo")
 		return nil
 	}
+	if err != nil {
+		return err
+	}
+	a.adoptSessionScope(m)
+	req, err := a.newScanRequest(scanOptions{})
 	if err != nil {
 		return err
 	}
@@ -88,6 +91,18 @@ func (a *app) runUndo(cmd *cobra.Command, args []string, af applyFlags) error {
 		RerunHint:  "re-run '" + cmd.CommandPath() + " " + m.ID + " --apply'",
 	})
 	return mapUndoError(res, err, af.apply)
+}
+
+// adoptSessionScope makes undo of a session recorded with --workspaces resolve
+// the workspace scope without the flag, so the printed `brooom undo <id>` works
+// from any directory. Only the fact is taken from the manifest: the guard is
+// still built from the configured roots (all of them, since a recorded --root
+// may have been removed since), never from paths the manifest names, and every
+// entry is checked against it. An explicit --root on this invocation is kept.
+func (a *app) adoptSessionScope(m *session.Manifest) {
+	if m.Workspaces {
+		a.flags.workspaces = true
+	}
 }
 
 // mapUndoError maps the outcome to exit codes: a missing confirmation is a
