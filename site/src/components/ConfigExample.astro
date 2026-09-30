@@ -1,22 +1,6 @@
 ---
-/**
- * Every key below exists in internal/config/config.go and the values are
- * valid: roots[].path, thresholds.min_age_days, detectors.<name>.enabled and
- * trash.strategy / trash.quarantine_retention_days. If Default() changes,
- * the code wins and this excerpt must follow.
- */
-const config = `{
-  "version": 1,
-  "roots": [{ "path": "~/code" }],
-  "thresholds": { "min_age_days": 30 },
-  "detectors": {
-    "git-bloat": { "enabled": false }
-  },
-  "trash": {
-    "strategy": "quarantine",
-    "quarantine_retention_days": 14
-  }
-}`;
+import CopyButton from './CopyButton.vue';
+import { configJson } from '../lib/config-example';
 ---
 
 <section class="section" id="config" aria-labelledby="config-title">
@@ -29,7 +13,18 @@ const config = `{
       days, turns one detector off and moves removed files to quarantine.
     </p>
     <div data-slot="config-copy" class="code-block">
-      <pre tabindex="0"><code>{config}</code></pre>
+      <div class="toolbar">
+        <CopyButton client:idle text={configJson} label="Copy config example" />
+      </div>
+      <pre tabindex="0"><code>{configJson}</code></pre>
     </div>
   </div>
 </section>
+
+<style>
+  .toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--space-2);
+  }
+</style>

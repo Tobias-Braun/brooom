@@ -1,35 +1,43 @@
 ---
+import InstallTabs from './InstallTabs.vue';
 import { REPO_URL } from '../lib/url';
 
 /**
- * Reserved slot for the tabbed install island (#43). Until releases exist the
- * static content is honest about the status and only offers what works
- * today: building from source. No package manager commands are shown.
+ * Slot of the tabbed install island (#43). The island renders its first tab
+ * on the server. Without JavaScript the other tabs cannot be reached, so the
+ * noscript block repeats the honest static fallback: no release yet, and
+ * building from source is what works today.
  */
 ---
 
 <section class="section install" aria-labelledby="install-title">
   <div class="wrap">
     <h2 id="install-title">Install</h2>
-    <div id="install" data-slot="install" class="card">
-      <p>
-        Brooom is under active development towards v0.1.0 and has no release yet. Package manager
-        support is prepared but not enabled.
-      </p>
-      <p>With Go installed you can build it from source today:</p>
-      <div class="code-block">
-        <pre tabindex="0"><code>go install github.com/Tobias-Braun/brooom/cmd/brooom@latest</code></pre>
+    <InstallTabs client:idle />
+    <noscript>
+      <div class="card fallback">
+        <p>
+          Brooom is under active development towards v0.1.0 and has no release yet. With Go
+          installed you can build it from source today:
+        </p>
+        <div class="code-block">
+          <pre tabindex="0"><code>go install github.com/Tobias-Braun/brooom/cmd/brooom@latest</code></pre>
+        </div>
+        <p class="links">
+          <a href={REPO_URL}>Source on GitHub</a>
+          <a href={`${REPO_URL}/releases`}>Releases</a>
+        </p>
       </div>
-      <p class="links">
-        <a href={REPO_URL}>Source on GitHub</a>
-        <a href={`${REPO_URL}/releases`}>Releases</a>
-      </p>
-    </div>
+    </noscript>
   </div>
 </section>
 
 <style>
-  .code-block {
+  .fallback {
+    margin-top: var(--space-3);
+  }
+
+  .fallback .code-block {
     margin-bottom: var(--space-3);
   }
 

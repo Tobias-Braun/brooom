@@ -1,0 +1,21 @@
+/**
+ * Every key below exists in internal/config/config.go and the values are
+ * valid: roots[].path, thresholds.min_age_days, detectors.<name>.enabled and
+ * trash.strategy / trash.quarantine_retention_days. If Default() changes,
+ * the code wins and this excerpt must follow.
+ *
+ * A single constant feeds both the visible code block and the copy button,
+ * so what is copied can never drift from what is shown.
+ */
+export const configJson = `{
+  "version": 1,
+  "roots": [{ "path": "~/code" }],
+  "thresholds": { "min_age_days": 30 },
+  "detectors": {
+    "git-bloat": { "enabled": false }
+  },
+  "trash": {
+    "strategy": "quarantine",
+    "quarantine_retention_days": 14
+  }
+}`;

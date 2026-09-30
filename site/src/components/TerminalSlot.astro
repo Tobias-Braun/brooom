@@ -1,33 +1,12 @@
 ---
+import TerminalDemo from './TerminalDemo.vue';
+
 /**
- * Reserved slot for the animated terminal island (#43). The static <pre>
- * inside is the no-JavaScript fallback; #43 replaces the slot's contents and
- * keeps the section, heading and caption. It only uses detector names,
- * actions and flags from docs/SPEC.md, and the sizes are made up on purpose.
+ * Slot of the animated terminal island (#43). The island is server-rendered
+ * with the completed final frame, which is also the no-JavaScript view; the
+ * section, heading and caption stay static. Output is illustrative and lives
+ * in src/lib/terminal-script.ts.
  */
-const demo = [
-  '$ brooom sweep',
-  '',
-  'merged-branch                              2 findings',
-  '  feat/login-form         merged (squash)  delete-branch',
-  '  fix/typo                merged (merge)   delete-branch',
-  '',
-  'worktrees                                  1 finding',
-  '  ../app-agent-3          branch merged    remove-worktree',
-  '',
-  'ai-artifacts                               2 findings   1.4 GB',
-  '  run-0142.jsonl          old transcript   trash',
-  '  .aider.chat.history.md  old history      trash',
-  '',
-  'build-artifacts                            1 finding    610 MB',
-  '  node_modules            inactive project trash',
-  '',
-  'log-and-runtime-files                      3 findings   38 MB',
-  '  npm-debug.log, .DS_Store, coverage/      trash',
-  '',
-  'Total: 9 findings, about 2.0 GB reclaimable',
-  'Dry run: nothing was changed. Re-run with --apply to clean up (asks first).',
-].join('\n');
 ---
 
 <section class="section demo" aria-labelledby="demo-title">
@@ -37,46 +16,12 @@ const demo = [
       <code>brooom sweep</code> is the no-brainer command: a safe preset, grouped by detector, with
       the reclaimable space up front.
     </p>
-    <div id="terminal-demo" data-slot="terminal-demo" class="terminal">
-      <div class="chrome" aria-hidden="true">
-        <span></span><span></span><span></span>
-      </div>
-      <pre tabindex="0" aria-label="Example output of brooom sweep"><code>{demo}</code></pre>
-    </div>
+    <TerminalDemo client:visible />
     <p class="caption">Illustrative output</p>
   </div>
 </section>
 
 <style>
-  .terminal {
-    max-width: 100%;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg-elevated);
-    box-shadow: 0 0 40px rgb(96 165 250 / 0.12);
-    overflow: hidden;
-  }
-
-  .chrome {
-    display: flex;
-    gap: 6px;
-    padding: 0.7rem 1rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-  }
-
-  .chrome span {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--border);
-  }
-
-  pre {
-    padding: var(--space-3) var(--space-4);
-    color: var(--text);
-  }
-
   .caption {
     margin: var(--space-2) 0 0;
     color: var(--text-muted);

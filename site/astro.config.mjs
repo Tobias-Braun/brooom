@@ -49,7 +49,7 @@ export default defineConfig({
   site: 'https://tobias-braun.github.io',
   base: '/brooom',
   output: 'static',
-  // Registered for the interactive islands owned by #43; no component uses
-  // it yet.
+  // Vue powers only the three interactive islands (terminal demo, install
+  // tabs, copy buttons); every other section is static HTML.
   integrations: [vue(), pruneUnusedScripts()],
 });
