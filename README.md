@@ -52,6 +52,28 @@ go install github.com/Tobias-Braun/brooom/cmd/brooom@latest
 Coming soon: Homebrew, Scoop, winget, AUR and deb/rpm packages. See
 [releasing](docs/releasing.md) for the release process.
 
+## Privacy
+
+Brooom has no telemetry and never contacts the network on its own. The only
+network access in the whole tool is the opt-in update check:
+
+- `brooom update-check` sends one unauthenticated `GET` to
+  `https://api.github.com/repos/Tobias-Braun/brooom/releases/latest`
+  (headers `Accept` and `User-Agent: brooom/<version>` only, no token, no
+  query parameters, no data about you) and prints whether a newer release
+  exists and how to upgrade. Running the command is your consent. Brooom
+  never updates itself.
+- Optionally set `"update_check": true` in `~/.brooom/config.json` to let
+  Brooom check at most once per 24 hours in the background. The result is
+  cached in `~/.brooom/cache/update.json`, and a one-line hint goes to
+  stderr after a command when a newer version exists. It only runs in an
+  interactive terminal with the default table output, never with `--quiet`,
+  never fails a command, and waits at most 200 ms for the answer before
+  giving up (a slow or failed request is not retried for an hour).
+- Set `BROOOM_NO_UPDATE_CHECK=1` to disable the background check regardless
+  of the config. `BROOOM_UPDATE_URL` points the check at a mirror (mainly
+  used by tests).
+
 ## Usage
 
 ```sh
