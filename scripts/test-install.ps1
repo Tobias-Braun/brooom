@@ -89,6 +89,15 @@ function Invoke-Installer([hashtable]$environment) {
   }
 }
 
+# Returns a copy of the base environment with the given keys overridden. The
+# "+" operator on hashtables throws on duplicate keys, so cases that replace a
+# base key (like BROOOM_LATEST_URL) must go through this instead.
+function Merge-Env([hashtable]$base, [hashtable]$overrides) {
+  $merged = $base.Clone()
+  foreach ($k in $overrides.Keys) { $merged[$k] = $overrides[$k] }
+  return $merged
+}
+
 try {
   $version = '1.2.3'
   $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
@@ -119,7 +128,7 @@ try {
 
   Write-Host "== install resolving the latest tag ($($PSVersionTable.PSVersion))"
   $dir = Join-Path $work 'install-latest'
-  $result = Invoke-Installer ($baseEnv + @{ BROOOM_INSTALL_DIR = $dir })
+  $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dir })
   if ($result.Code -ne 0) { Fail "install exited $($result.Code): $($result.Output)" }
   $exe = Join-Path $dir 'brooom.exe'
   if (-not (Test-Path $exe)) { Fail "brooom.exe was not installed: $($result.Output)" }
@@ -132,29 +141,29 @@ try {
 
   Write-Host '== 32-bit PowerShell on 64-bit Windows'
   $dir32 = Join-Path $work 'install-wow64'
-  $result = Invoke-Installer ($baseEnv + @{
+  $result = Invoke-Installer (Merge-Env $baseEnv @{
       BROOOM_INSTALL_DIR = $dir32; PROCESSOR_ARCHITECTURE = 'x86'; PROCESSOR_ARCHITEW6432 = $arch.ToUpperInvariant()
     })
   if ($result.Code -ne 0 -or -not (Test-Path (Join-Path $dir32 'brooom.exe'))) { Fail "wow64 install failed: $($result.Output)" }
 
   Write-Host '== unsupported architecture'
   $dirBad = Join-Path $work 'install-x86'
-  $result = Invoke-Installer ($baseEnv + @{ BROOOM_INSTALL_DIR = $dirBad; PROCESSOR_ARCHITECTURE = 'x86' })
+  $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirBad; PROCESSOR_ARCHITECTURE = 'x86' })
   if ($result.Code -eq 0 -or (Test-Path $dirBad)) { Fail "an x86 host must be refused: $($result.Output)" }
 
   Write-Host '== explicit version'
   $dirV = Join-Path $work 'install-version'
-  $result = Invoke-Installer ($baseEnv + @{ BROOOM_INSTALL_DIR = $dirV; BROOOM_VERSION = "v$version"; BROOOM_LATEST_URL = "$base/missing.json" })
+  $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirV; BROOOM_VERSION = "v$version"; BROOOM_LATEST_URL = "$base/missing.json" })
   if ($result.Code -ne 0 -or -not (Test-Path (Join-Path $dirV 'brooom.exe'))) { Fail "versioned install failed: $($result.Output)" }
 
   Write-Host '== unknown version'
   $dirU = Join-Path $work 'install-unknown'
-  $result = Invoke-Installer ($baseEnv + @{ BROOOM_INSTALL_DIR = $dirU; BROOOM_VERSION = '9.9.9' })
+  $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirU; BROOOM_VERSION = '9.9.9' })
   if ($result.Code -eq 0 -or (Test-Path $dirU)) { Fail "an unknown version must fail without installing: $($result.Output)" }
 
   Write-Host '== unresolvable latest release'
   $dirL = Join-Path $work 'install-nolatest'
-  $result = Invoke-Installer ($baseEnv + @{ BROOOM_INSTALL_DIR = $dirL; BROOOM_LATEST_URL = "$base/missing.json" })
+  $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirL; BROOOM_LATEST_URL = "$base/missing.json" })
   if ($result.Code -eq 0 -or (Test-Path $dirL)) { Fail "an unresolvable latest release must fail without installing: $($result.Output)" }
 
   Write-Host '== tampered checksum'
@@ -163,7 +172,7 @@ try {
   $line = Get-Content $sums | Select-Object -First 1
   Set-Content -Path $sums -Value ((('0' * 64)) + '  ' + ($line -split '\s+')[1])
   $dirT = Join-Path $work 'install-tampered'
-  $result = Invoke-Installer ($baseEnv + @{ BROOOM_INSTALL_DIR = $dirT })
+  $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirT })
   if ($result.Code -eq 0 -or (Test-Path (Join-Path $dirT 'brooom.exe'))) { Fail "a checksum mismatch must abort the install: $($result.Output)" }
   if ($result.Output -notmatch 'Checksum mismatch') { Fail "expected a checksum mismatch message: $($result.Output)" }
 
