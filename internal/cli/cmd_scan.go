@@ -31,6 +31,10 @@ type scanOptions struct {
 	// minConfidence drops findings below this confidence before they are
 	// reported or planned; the zero value keeps everything.
 	minConfidence findings.Confidence
+	// targetsOnly builds targets, guard and environment but runs no
+	// detector. `brooom git purge` uses it when only explicit dates are
+	// given: it needs the repositories in scope, not their bloat findings.
+	targetsOnly bool
 }
 
 // keep reports whether a finding passes the confidence floor.
