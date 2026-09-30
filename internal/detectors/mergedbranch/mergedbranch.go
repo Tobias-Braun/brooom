@@ -89,6 +89,19 @@ type scan struct {
 	prCheck  string
 	branches []gitx.Branch
 	emit     func(findings.Finding)
+	// errs collects per-branch git failures. They are returned joined at the
+	// end of Detect so a branch that could not be classified shows up as a
+	// non-fatal scan error instead of silently vanishing from the report.
+	errs []error
+}
+
+// fail records a non-fatal per-branch problem. Context cancellation is not
+// recorded; the engine reports the interruption itself.
+func (s *scan) fail(ctx context.Context, what string, err error) {
+	if ctx.Err() != nil {
+		return
+	}
+	s.errs = append(s.errs, fmt.Errorf("merged-branch: %s: %w", what, err))
 }
 
 const (
@@ -115,9 +128,11 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 		}
 	}
 	if s.cfg.Detectors.MergedBranch.IncludeRemote {
-		return s.remoteBranches(ctx)
+		if err := s.remoteBranches(ctx); err != nil {
+			return err
+		}
 	}
-	return nil
+	return errors.Join(s.errs...)
 }
 
 // load gathers the per-target state. It returns a nil scan without error when
@@ -203,7 +218,9 @@ func (s *scan) localBranch(ctx context.Context, b gitx.Branch) error {
 	}
 	res, err := s.repo.MergedInto(ctx, s.base.Ref, b.Name, s.squash)
 	if err != nil {
-		// One unclassifiable branch must not hide the others.
+		// One unclassifiable branch must not hide the others, but it must
+		// not vanish silently either.
+		s.fail(ctx, fmt.Sprintf("classify branch %q in %q", b.Name, s.target.Path), err)
 		return ctx.Err()
 	}
 	if !res.Merged {
@@ -213,14 +230,30 @@ func (s *scan) localBranch(ctx context.Context, b gitx.Branch) error {
 	return nil
 }
 
-// unstarted reports a freshly created branch that was never pushed and still
-// sits on the base tip: not clutter, deleting it would only annoy.
+// unstarted reports a freshly created branch that was never pushed, still
+// sits on the base tip and whose reflog shows nothing but its creation: not
+// clutter, deleting it would only annoy. The reflog is what tells it apart
+// from an agent branch that was committed on and then fast-forward merged,
+// which also sits on the base tip and was never pushed under its own name.
+// Failing checks are recorded and count as unstarted, the conservative side.
 func (s *scan) unstarted(ctx context.Context, b gitx.Branch) bool {
 	if s.baseTip == "" || b.Tip != s.baseTip {
 		return false
 	}
 	never, err := s.repo.NeverPushed(ctx, b)
-	return err == nil && never
+	if err != nil {
+		s.fail(ctx, fmt.Sprintf("check pushes of branch %q in %q", b.Name, s.target.Path), err)
+		return true
+	}
+	if !never {
+		return false
+	}
+	created, err := s.repo.BranchCreatedOnly(ctx, b.Name)
+	if err != nil {
+		s.fail(ctx, fmt.Sprintf("read reflog of branch %q in %q", b.Name, s.target.Path), err)
+		return true
+	}
+	return created
 }
 
 func (s *scan) newFinding(ref, tip string, date time.Time) findings.Finding {
@@ -426,6 +459,7 @@ func (s *scan) remoteBranches(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			s.fail(ctx, fmt.Sprintf("classify remote branch %q in %q", rb.Name, s.target.Path), err)
 			continue
 		}
 		if res.Merged {

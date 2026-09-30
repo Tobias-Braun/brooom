@@ -82,15 +82,23 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	// emission order.
 	branches = slices.Clone(branches)
 	slices.SortFunc(branches, func(a, b gitx.Branch) int { return strings.Compare(a.Name, b.Name) })
+	// Per-branch git failures are collected and returned joined at the end:
+	// one broken branch must not hide the others, but it must show up as a
+	// scan error instead of silently missing from the report.
+	var errs []error
 	for _, b := range branches {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if f, ok := s.assess(ctx, b); ok {
+		f, ok, err := s.assess(ctx, b)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if ok {
 			emit(f)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // newScan resolves configuration, repository, guarded main worktree path,
@@ -152,12 +160,16 @@ func (s *scan) isCandidate(b gitx.Branch) bool {
 
 // mergedSkip reports whether merged-branch owns the branch. It uses the same
 // MergedInto call and mode as that detector so the two never disagree. An
-// error means unknown, which is never treated as merged.
-func (s *scan) mergedSkip(ctx context.Context, name string) bool {
+// error means unknown, which is never treated as merged; it is returned so the
+// caller can surface it.
+func (s *scan) mergedSkip(ctx context.Context, name string) (bool, error) {
 	if !s.hasBase {
-		return false
+		return false, nil
 	}
 	squash := s.cfg.Detectors.MergedBranch.Mode == config.MergeAncestorSquash
 	res, err := s.repo.MergedInto(ctx, s.base.Ref, name, squash)
-	return err == nil && res.Merged
+	if err != nil {
+		return false, fmt.Errorf("stale-branch: check whether branch %q is merged into %s: %w", name, s.base.Ref, err)
+	}
+	return res.Merged, nil
 }

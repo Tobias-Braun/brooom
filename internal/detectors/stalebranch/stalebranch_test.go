@@ -190,7 +190,7 @@ func (f *fixture) checkAction(got findings.Finding, w want) {
 	}
 }
 
-const unpushedReason = "1 commits exist on no remote; deleting would lose them (re-run with --force to override)"
+const unpushedReason = "1 commit exists only on this branch; deleting would lose them (re-run with --force to override)"
 
 func TestUpstreamGoneContainedIsHigh(t *testing.T) {
 	f := newFixture(t, true)
@@ -244,7 +244,7 @@ func TestNeverPushedLocalCommitsAreBlocked(t *testing.T) {
 	f.check(f.only(), want{
 		ref: "feat/local", confidence: findings.ConfidenceLow, age: 100,
 		flags:    []findings.RiskFlag{findings.RiskUnpushedCommits, findings.RiskNeverPushed},
-		evidence: []string{"last_commit_age", "never_pushed", "unpushed_commits"},
+		evidence: []string{"last_commit_age", "never_pushed", "unpushed_commits", "unique_commits"},
 		action:   findings.ActionNone, reason: unpushedReason, prCheck: prCheckDisabled,
 	})
 }
@@ -258,7 +258,7 @@ func TestUnpushedAheadOfUpstreamIsBlockedNotMedium(t *testing.T) {
 	f.check(f.only(), want{
 		ref: "feat/ahead", confidence: findings.ConfidenceLow, age: 100,
 		flags:    []findings.RiskFlag{findings.RiskUnpushedCommits},
-		evidence: []string{"last_commit_age", "unpushed_commits"},
+		evidence: []string{"last_commit_age", "unpushed_commits", "unique_commits"},
 		action:   findings.ActionNone, reason: unpushedReason, prCheck: prCheckDisabled,
 	})
 }
@@ -296,8 +296,8 @@ func TestRepoWithoutRemote(t *testing.T) {
 	f.check(got, want{
 		ref: "feat/local", confidence: findings.ConfidenceLow, age: 100,
 		flags:    []findings.RiskFlag{findings.RiskUnpushedCommits, findings.RiskNeverPushed},
-		evidence: []string{"last_commit_age", "never_pushed", "unpushed_commits"},
-		action:   findings.ActionNone, reason: "2 commits exist on no remote; deleting would lose them (re-run with --force to override)",
+		evidence: []string{"last_commit_age", "never_pushed", "unpushed_commits", "unique_commits"},
+		action:   findings.ActionNone, reason: "1 commit exists only on this branch; deleting would lose them (re-run with --force to override)",
 		prCheck: prCheckDisabled,
 	})
 	if got.Meta["base"] != "main" {

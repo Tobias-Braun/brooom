@@ -96,6 +96,18 @@ Rules:
   entries silently or via evidence.
 - `stale-branch` skips branches that `merged-branch` reports (a branch is
   reported once, as merged).
+- `merged-branch` hides a branch as unstarted only when it sits on the base
+  tip, was never pushed and its reflog holds at most the creation entry
+  (`gitx.Repo.BranchCreatedOnly`); a fast-forward-merged branch has more
+  entries and is reported.
+- Branch detectors never drop a branch on a git failure: per-branch errors are
+  collected and returned joined (a non-fatal `ScanError`) while the other
+  findings are still emitted.
+- Stale-branch separates the safety gate (`UnpushedCount`: commits on no
+  remote, evidence `unpushed_commits`) from the number shown to users
+  (`UniqueCount`: commits only this branch holds, evidence `unique_commits`).
+  An upstream that is a local branch (`Branch.UpstreamRef` under `refs/heads/`,
+  remote ".") is checked against that ref and never counts as a push.
 
 A detector that needs user-level targets (catalog locations below the home
 directory) additionally implements the optional `detect.TargetSource`
