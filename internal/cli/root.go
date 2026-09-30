@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -76,6 +77,13 @@ type app struct {
 
 	// update is the state of the opt-in background update check.
 	update updateState
+
+	// stdinTTY reports whether prompting is possible; nil means "io.In is a
+	// terminal". Tests inject it to script confirmations.
+	stdinTTY func() bool
+	// clock returns the current time; nil means time.Now. Tests inject it to
+	// age quarantined sessions.
+	clock func() time.Time
 }
 
 // usageError marks errors caused by invalid invocation (exit code 2).
@@ -165,7 +173,7 @@ Without flags Brooom only looks at the git repository you are in. Use
 	pf.BoolVarP(&a.flags.verbose, "verbose", "v", false, "print progress and diagnostics to stderr")
 	pf.StringVar(&a.flags.configPath, "config", "", "config file (default ~/.brooom/config.json)")
 
-	a.postRunHooks = append(a.postRunHooks, a.finishUpdateCheck)
+	a.postRunHooks = append(a.postRunHooks, a.finishUpdateCheck, a.retentionNotice)
 
 	root.AddCommand(
 		newScanCmd(a),

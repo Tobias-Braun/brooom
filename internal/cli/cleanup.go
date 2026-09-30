@@ -268,10 +268,17 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 // buildActionEnv assembles the action environment: the same guard and
 // configuration the findings were produced or validated with.
 func buildActionEnv(in execInput, af applyFlags, r *trasherResolver) *action.Env {
+	return newActionEnv(in.cfg, in.git, in.guard, af, r)
+}
+
+// newActionEnv is the single wiring of action.Env, shared by the cleanup
+// commands (from a scan or a findings file) and undo (from a manifest and a
+// resolved scope).
+func newActionEnv(cfg *config.Config, git gitx.Runner, guard *scope.Guard, af applyFlags, r *trasherResolver) *action.Env {
 	return &action.Env{
-		Config:     in.cfg,
-		Git:        in.git,
-		Guard:      in.guard,
+		Config:     cfg,
+		Git:        git,
+		Guard:      guard,
 		Trasher:    r.forDetector,
 		TrasherFor: r.forStrategy,
 		Force:      af.force,

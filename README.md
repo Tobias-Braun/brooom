@@ -88,7 +88,9 @@ brooom branches --merged    # merged branches, incl. squash merges
 brooom worktrees --apply    # remove leftover worktrees
 brooom ai --user            # agent artifacts, incl. user-level caches
 brooom scan -w -f json      # all workspace roots, machine-readable
-brooom undo                 # restore the last session
+brooom undo                 # show what restoring the last session would do
+brooom undo --apply         # restore it (from the same repo, or with -w)
+brooom purge --apply        # delete quarantined sessions past their retention
 ```
 
 Every command, flag and example is listed in the [CLI reference](docs/cli.md)

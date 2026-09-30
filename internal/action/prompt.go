@@ -35,6 +35,13 @@ func newConfirmer(in io.Reader, out io.Writer) *confirmer {
 	return &confirmer{r: bufio.NewReader(in), out: out}
 }
 
+// Confirm asks one yes/no question on out and reads the answer from in. Only
+// an explicit yes counts: an empty answer, no and a closed input all mean no,
+// so it can never be read as consent by accident.
+func Confirm(in io.Reader, out io.Writer, prompt string) bool {
+	return newConfirmer(in, out).ask(prompt, "yn") == ansYes
+}
+
 // answer values returned by ask.
 const (
 	ansYes   = 'y'
