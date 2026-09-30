@@ -203,30 +203,39 @@ func slashDir(dir string) (string, bool) {
 // backslashes when the path starts with two separators. It is deliberately
 // independent of the host OS so that Windows layouts (UNC shares, "\\?\"
 // prefixes, drive letters) are handled identically when simulated on another
-// machine. The volume is one of "//server/share", "//?/UNC/server/share",
+// machine. The flip side is that on POSIX hosts a path such as "//a/b/c" or
+// "c:/x" is split as a volume too; those spellings do not occur in real
+// homes and the split only serves consistent cleaning and comparison. The
+// volume is one of "//server/share", "//?/UNC/server/share",
 // "//?/C:" (and the "//./" device spelling) or "X:"; it is empty for ordinary
 // paths.
 func splitVolume(p string) (vol, rest string) {
-	if len(p) >= 2 && strings.IndexByte(`\/`, p[0]) >= 0 && strings.IndexByte(`\/`, p[1]) >= 0 {
-		p = strings.ReplaceAll(p, `\`, "/")
-		parts := strings.SplitN(p[2:], "/", 5)
-		n := 2 // server and share
-		if len(parts) > 0 && (parts[0] == "?" || parts[0] == ".") {
-			n = 2
-			if len(parts) > 1 && strings.EqualFold(parts[1], "UNC") {
-				n = 4
-			}
-		}
-		if len(parts) < n {
-			return p, ""
-		}
-		vol = "//" + strings.Join(parts[:n], "/")
-		return vol, p[len(vol):]
+	if len(p) >= 2 && isSep(p[0]) && isSep(p[1]) {
+		return splitUNC(strings.ReplaceAll(p, `\`, "/"))
 	}
 	if len(p) >= 2 && p[1] == ':' && (p[0]|0x20 >= 'a' && p[0]|0x20 <= 'z') {
 		return p[:2], p[2:]
 	}
 	return "", p
+}
+
+func isSep(c byte) bool { return c == '/' || c == '\\' }
+
+// splitUNC splits a forward-slash path that starts with "//" into its
+// "//server/share" or "//?/..." volume and the rest.
+func splitUNC(p string) (vol, rest string) {
+	parts := strings.SplitN(p[2:], "/", 5)
+	n := 2 // server and share
+	if parts[0] == "?" || parts[0] == "." {
+		if len(parts) > 1 && strings.EqualFold(parts[1], "UNC") {
+			n = 4
+		}
+	}
+	if len(parts) < n {
+		return p, ""
+	}
+	vol = "//" + strings.Join(parts[:n], "/")
+	return vol, p[len(vol):]
 }
 
 // cleanSlash is path.Clean that keeps a Windows volume intact: only the part
@@ -325,15 +334,22 @@ func (u *UserProtection) Patterns() []string {
 // rule in its lexical and resolved spelling, so it does not matter which
 // spelling the caller holds.
 func (u *UserProtection) Protected(abs string) bool {
-	spellings := []string{abs}
-	if r := resolveExisting(abs); r != abs {
-		spellings = append(spellings, r)
+	if u.coveredBy(abs) {
+		return true
 	}
+	// Symlink resolution touches the disk, so it only happens when the
+	// lexical spelling did not already match.
+	if r := resolveExisting(abs); r != abs {
+		return u.coveredBy(r)
+	}
+	return false
+}
+
+// coveredBy reports whether any rule, in either spelling, covers abs.
+func (u *UserProtection) coveredBy(abs string) bool {
 	for _, r := range u.rules {
-		for _, a := range spellings {
-			if r.covers(a, u.fold) {
-				return true
-			}
+		if r.covers(abs, u.fold) {
+			return true
 		}
 	}
 	return false

@@ -3,6 +3,7 @@ package catalog
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -397,21 +398,30 @@ func TestUserProtectionThroughSymlinks(t *testing.T) {
 		}
 	})
 	t.Run("symlinked tool directory", func(t *testing.T) {
-		if err := os.RemoveAll(filepath.Join(real, ".tool")); err != nil {
+		// A separate home keeps the shared fixture above untouched.
+		home := filepath.Join(root, "home2")
+		target := filepath.Join(real, "dot", "tool")
+		if err := os.MkdirAll(home, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(filepath.Join(real, "dot", "tool"), filepath.Join(real, ".tool")); err != nil {
+		if err := os.Symlink(target, filepath.Join(home, ".tool")); err != nil {
 			t.Skipf("symlinks unavailable: %v", err)
 		}
-		p := c.UserProtection(env(real))
-		if !p.Protected(filepath.Join(real, "dot", "tool", "skills", "a.md")) {
+		p := c.UserProtection(env(home))
+		if !p.Protected(filepath.Join(target, "skills", "a.md")) {
 			t.Error("target of a symlinked ~/.tool must be protected")
 		}
-		if p.Protected(filepath.Join(real, "dot", "tool", "todos", "a.json")) {
+		if p.Protected(filepath.Join(target, "todos", "a.json")) {
 			t.Error("unprotected sibling must stay unprotected")
 		}
-		if got := p.Patterns(); len(got) != 3 || got[0] != filepath.Join(real, ".tool", "settings.json") {
-			t.Errorf("Patterns must list only lexical spellings, got %v", got)
+		lexical := filepath.Join(home, ".tool", "settings.json")
+		if got := p.Patterns(); !slices.Contains(got, lexical) {
+			t.Errorf("Patterns must list the lexical spelling %q, got %v", lexical, got)
+		}
+		for _, pat := range p.Patterns() {
+			if strings.HasPrefix(pat, target) {
+				t.Errorf("Patterns must not list resolved spellings, got %q", pat)
+			}
 		}
 	})
 }
