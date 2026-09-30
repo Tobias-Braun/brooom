@@ -43,6 +43,12 @@ type Env struct {
 	// Trasher returns the trasher for a detector (honouring per-detector
 	// strategy overrides and the --trash-strategy flag).
 	Trasher func(detector string) (trash.Trasher, error)
+	// TrasherFor returns the trasher for an explicit strategy. Undo needs it
+	// because it must restore with the strategy recorded in the manifest, not
+	// with whatever the current config or --trash-strategy selects; Trasher
+	// only takes a detector name. Unlike Trasher it is bound to the session
+	// that is being undone where a strategy needs one.
+	TrasherFor func(strategy config.TrashStrategy) (trash.Trasher, error)
 	// Force allows acting on findings with blocking risk flags and makes
 	// delete-branch use -D.
 	Force bool
