@@ -197,7 +197,8 @@ func TestRemoveWorktreeClean(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantContains(t, step.Command, chainCommands("", "git worktree remove -- "))
+	// The chain operator follows the host shell (&& or PowerShell's if ($?)).
+	wantContains(t, step.Command, strings.SplitN(chainCommands("", "@"), "@", 2)[0]+"git worktree remove -- ")
 	if strings.Contains(step.Command, "--force") || strings.Contains(step.Command, "prune") {
 		t.Errorf("command = %q", step.Command)
 	}
