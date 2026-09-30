@@ -1,0 +1,289 @@
+{
+  "schema_version": 1,
+  "brooom_version": "test",
+  "generated_at": "2026-09-01T12:00:00Z",
+  "scopes": [
+    {
+      "type": "repo",
+      "path": "/work/shop"
+    },
+    {
+      "type": "user",
+      "path": "/home/dev/.cache/tool"
+    }
+  ],
+  "findings": [
+    {
+      "id": "ai1",
+      "detector": "ai-artifacts",
+      "scope": {
+        "type": "user",
+        "path": "/home/dev/.cache/tool"
+      },
+      "path": "/home/dev/.cache/tool/logs/a&b<c>.log",
+      "kind": "file",
+      "tool": "claude-code",
+      "size_bytes": 4096,
+      "last_modified": "2026-08-02T12:00:00Z",
+      "age_days": 30,
+      "confidence": "high",
+      "evidence": [
+        {
+          "code": "age",
+          "message": "last modified 30 days ago",
+          "value": "30d"
+        }
+      ],
+      "suggested_action": {
+        "type": "trash"
+      },
+      "risk_flags": [
+        "outside_repo"
+      ],
+      "meta": {
+        "tool_version": "1.0"
+      }
+    },
+    {
+      "id": "",
+      "detector": "build-artifacts",
+      "scope": {
+        "type": "repo",
+        "path": "/work/shop"
+      },
+      "path": "/work/shop/dist",
+      "kind": "dir",
+      "size_bytes": 999950,
+      "age_days": 0,
+      "confidence": "medium",
+      "evidence": [],
+      "suggested_action": {
+        "type": "trash"
+      },
+      "risk_flags": []
+    },
+    {
+      "id": "",
+      "detector": "build-artifacts",
+      "scope": {
+        "type": "repo",
+        "path": "/work/shop"
+      },
+      "path": "/work/shop/node_modules",
+      "kind": "dir",
+      "size_bytes": 1234567890,
+      "last_modified": "2025-07-28T12:00:00Z",
+      "age_days": 400,
+      "confidence": "high",
+      "evidence": [],
+      "suggested_action": {
+        "type": "trash"
+      },
+      "risk_flags": []
+    },
+    {
+      "id": "",
+      "detector": "build-artifacts",
+      "scope": {
+        "type": "repo",
+        "path": "/work/shop"
+      },
+      "path": "/work/shop/node_modules/.cache",
+      "kind": "dir",
+      "size_bytes": 500000000,
+      "last_modified": "2026-07-18T12:00:00Z",
+      "age_days": 45,
+      "confidence": "low",
+      "evidence": [],
+      "suggested_action": {
+        "type": "trash"
+      },
+      "risk_flags": []
+    },
+    {
+      "id": "",
+      "detector": "build-artifacts",
+      "scope": {
+        "type": "repo",
+        "path": "/work/shop"
+      },
+      "path": "/work/shop/packages/storefront/.next/cache/webpack/client-production",
+      "kind": "dir",
+      "size_bytes": 88000000,
+      "last_modified": "2026-02-13T12:00:00Z",
+      "age_days": 200,
+      "confidence": "high",
+      "evidence": [],
+      "suggested_action": {
+        "type": "trash"
+      },
+      "risk_flags": []
+    },
+    {
+      "id": "gc1",
+      "detector": "git-bloat",
+      "scope": {
+        "type": "repo",
+        "path": "/work/shop"
+      },
+      "path": "/work/shop",
+      "kind": "git-packs",
+      "size_bytes": 3000000,
+      "age_days": 0,
+      "confidence": "medium",
+      "evidence": [],
+      "suggested_action": {
+        "type": "git-gc",
+        "args": {
+          "expire": "2.weeks.ago"
+        },
+        "command": "git gc"
+      },
+      "risk_flags": []
+    },
+    {
+      "id": "",
+      "detector": "merged-branch",
+      "scope": {
+        "type": "repo",
+        "path": "/work/shop"
+      },
+      "path": "/work/shop",
+      "kind": "branch",
+      "ref": "feat/old-cart",
+      "size_bytes": 0,
+      "last_modified": "2026-05-30T12:00:00Z",
+      "age_days": 94,
+      "confidence": "high",
+      "evidence": [],
+      "suggested_action": {
+        "type": "delete-branch"
+      },
+      "risk_flags": [
+        "upstream_gone"
+      ]
+    },
+    {
+      "id": "",
+      "detector": "merged-branch",
+      "scope": {
+        "type": "repo",
+        "path": "/work/shop"
+      },
+      "path": "/work/shop",
+      "kind": "branch",
+      "ref": "feat/wip",
+      "size_bytes": 0,
+      "last_modified": "2026-08-20T12:00:00Z",
+      "age_days": 12,
+      "confidence": "medium",
+      "evidence": [],
+      "suggested_action": {
+        "type": "none"
+      },
+      "risk_flags": [
+        "unpushed_commits",
+        "never_pushed"
+      ]
+    },
+    {
+      "id": "wt3",
+      "detector": "worktrees",
+      "scope": {
+        "type": "repo",
+        "path": "/work/shop"
+      },
+      "path": "/work/gone-wt",
+      "kind": "worktree-missing",
+      "size_bytes": 0,
+      "age_days": 0,
+      "confidence": "high",
+      "evidence": [],
+      "suggested_action": {
+        "type": "prune-worktrees"
+      },
+      "risk_flags": []
+    },
+    {
+      "id": "",
+      "detector": "worktrees",
+      "scope": {
+        "type": "repo",
+        "path": "/work/shop"
+      },
+      "path": "/work/shop-wt",
+      "kind": "worktree",
+      "size_bytes": 52000000,
+      "last_modified": "2026-08-29T12:00:00Z",
+      "age_days": 3,
+      "confidence": "low",
+      "evidence": [],
+      "suggested_action": {
+        "type": "none",
+        "reason": "worktree has uncommitted changes"
+      },
+      "risk_flags": [
+        "worktree_dirty"
+      ]
+    },
+    {
+      "id": "wt2",
+      "detector": "worktrees",
+      "scope": {
+        "type": "repo",
+        "path": "/work/shop"
+      },
+      "path": "/work/shop-wt2",
+      "kind": "worktree",
+      "ref": "feat/done",
+      "size_bytes": 10000000,
+      "last_modified": "2026-07-03T12:00:00Z",
+      "age_days": 60,
+      "confidence": "high",
+      "evidence": [],
+      "suggested_action": {
+        "type": "remove-worktree"
+      },
+      "risk_flags": []
+    }
+  ],
+  "totals": {
+    "findings": 11,
+    "actionable": 9,
+    "reclaimable_bytes": 1336571936,
+    "by_detector": {
+      "ai-artifacts": {
+        "findings": 1,
+        "actionable": 1,
+        "reclaimable_bytes": 4096
+      },
+      "build-artifacts": {
+        "findings": 4,
+        "actionable": 4,
+        "reclaimable_bytes": 1323567840
+      },
+      "git-bloat": {
+        "findings": 1,
+        "actionable": 1,
+        "reclaimable_bytes": 3000000
+      },
+      "merged-branch": {
+        "findings": 2,
+        "actionable": 1,
+        "reclaimable_bytes": 0
+      },
+      "worktrees": {
+        "findings": 3,
+        "actionable": 2,
+        "reclaimable_bytes": 10000000
+      }
+    }
+  },
+  "errors": [
+    {
+      "detector": "git-bloat",
+      "path": "/work/shop",
+      "message": "git count-objects failed"
+    }
+  ]
+}
