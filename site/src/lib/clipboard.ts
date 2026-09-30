@@ -16,7 +16,7 @@ const FALLBACK_SELECTION_MS = 15000;
  * path runs afterwards, which still works in browsers that keep the gesture
  * alive across a microtask.
  */
-export async function copyText(text: string, doc: Document = document): Promise<CopyResult> {
+export async function copyText(text: string, doc: Document = document, visible?: Node | null): Promise<CopyResult> {
   const view = doc.defaultView;
   if (view?.navigator.clipboard && view.isSecureContext) {
     try {
@@ -26,7 +26,7 @@ export async function copyText(text: string, doc: Document = document): Promise<
       // Fall through to the legacy path below.
     }
   }
-  return legacyCopy(text, doc);
+  return legacyCopy(text, doc, visible);
 }
 
 /**
@@ -35,7 +35,7 @@ export async function copyText(text: string, doc: Document = document): Promise<
  * afterwards. If the command fails or throws, the text is selected in a
  * hidden element instead so a manual copy works, and `fallback` is returned.
  */
-function legacyCopy(text: string, doc: Document): CopyResult {
+function legacyCopy(text: string, doc: Document, visible?: Node | null): CopyResult {
   const body = doc.body;
   if (!body) return 'failed';
   // The typeof guard keeps the function usable in non-DOM test environments.
@@ -58,7 +58,9 @@ function legacyCopy(text: string, doc: Document): CopyResult {
 
   let done = false;
   try {
-    done = doc.execCommand('copy');
+    // Typed through a local shape: execCommand is deprecated but is the only
+    // synchronous copy path older Safari and insecure contexts have.
+    done = (doc as unknown as { execCommand(cmd: string): boolean }).execCommand('copy');
   } catch {
     done = false;
   }
@@ -69,7 +71,7 @@ function legacyCopy(text: string, doc: Document): CopyResult {
     restoreSelection(selection, saved);
     return 'copied';
   }
-  return selectForManualCopy(text, doc, selection) ? 'fallback' : 'failed';
+  return selectForManualCopy(text, doc, selection, visible) ? 'fallback' : 'failed';
 }
 
 function restoreSelection(selection: Selection | null, saved: Range | null): void {
@@ -79,17 +81,27 @@ function restoreSelection(selection: Selection | null, saved: Range | null): voi
 }
 
 /**
- * Selects `text` inside a hidden element so Ctrl/Cmd+C copies it. The element
- * is removed after the next copy or after a timeout, whichever comes first.
+ * Selects `text` so Ctrl/Cmd+C copies it. When the visible element that shows
+ * exactly this text is known, it is selected in place so the visitor sees the
+ * selection. Otherwise a hidden element holds the text; it is removed after
+ * the next copy or after a timeout, whichever comes first.
  */
-function selectForManualCopy(text: string, doc: Document, selection: Selection | null): boolean {
+function selectForManualCopy(
+  text: string,
+  doc: Document,
+  selection: Selection | null,
+  visible?: Node | null,
+): boolean {
   if (!selection || !doc.body) return false;
+  const showsText = visible?.textContent?.trim() === text.trim();
   const holder = doc.createElement('pre');
-  holder.textContent = text;
-  holder.style.cssText = 'position:fixed;top:0;left:-9999px;margin:0;';
-  doc.body.appendChild(holder);
+  if (!showsText) {
+    holder.textContent = text;
+    holder.style.cssText = 'position:fixed;top:0;left:-9999px;margin:0;';
+    doc.body.appendChild(holder);
+  }
   const range = doc.createRange();
-  range.selectNodeContents(holder);
+  range.selectNodeContents(showsText && visible ? visible : holder);
   selection.removeAllRanges();
   selection.addRange(range);
 

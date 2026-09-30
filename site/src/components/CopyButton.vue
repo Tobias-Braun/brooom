@@ -46,9 +46,14 @@ function clearTimer() {
   timer = null;
 }
 
-async function onClick() {
+async function onClick(event: MouseEvent) {
   // Called synchronously from the click so Safari still sees a user gesture.
-  const outcome = await copyText(props.text);
+  const outcome = await copyText(
+    props.text,
+    document,
+    // The visible code next to the button, so a manual-copy selection shows.
+    (event.currentTarget as HTMLElement | null)?.closest('[data-copy-scope]')?.querySelector('[data-copy-source]'),
+  );
   clearTimer();
   result.value = outcome;
   timer = window.setTimeout(

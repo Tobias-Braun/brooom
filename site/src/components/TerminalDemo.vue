@@ -150,8 +150,9 @@ function togglePause() {
         </div>
         <div v-if="animated && screen.length === 0" class="line"><span class="cursor"></span></div>
       </div>
+      <!-- Inside the focusable group so screen reader users who land on it hear the text, not an empty group. -->
+      <pre class="visually-hidden">{{ textAlternative }}</pre>
     </div>
-    <pre class="visually-hidden">{{ textAlternative }}</pre>
   </div>
 </template>
 

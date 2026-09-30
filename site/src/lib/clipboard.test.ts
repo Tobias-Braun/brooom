@@ -47,7 +47,7 @@ function fakeDoc(opts: {
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   };
-  return { doc: doc as unknown as Document, textarea, selection };
+  return { doc: doc as unknown as Document, textarea, selection, appended };
 }
 
 describe('copyText', () => {
@@ -85,6 +85,14 @@ describe('copyText', () => {
     const { doc, selection } = fakeDoc({ execCommand: () => false, withSelection: true });
     await expect(copyText('abc', doc)).resolves.toBe('fallback');
     expect(selection?.addRange).toHaveBeenCalled();
+  });
+
+  it('selects the visible code in place when it shows the same text', async () => {
+    const { doc, appended } = fakeDoc({ execCommand: () => false, withSelection: true });
+    const visible = { textContent: '  abc\n' } as unknown as Node;
+    await expect(copyText('abc', doc, visible)).resolves.toBe('fallback');
+    // Only the temporary textarea was appended, no off-screen holder.
+    expect(appended).toHaveLength(1);
   });
 
   it('treats a throwing execCommand like a failed one', async () => {

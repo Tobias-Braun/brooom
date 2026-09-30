@@ -1,12 +1,14 @@
 /**
  * Content and timing of the landing page terminal demo, kept as data so the
  * Vue component contains no scattered timers. Nothing here is recorded from
- * the real binary: the output is hand-authored, modelled on the table format
- * (internal/output/table.go: SIZE AGE CONF ACTION PATH columns, one block per
- * detector, totals per block and overall) and on the apply flow
- * (internal/action/prompt.go: per-group confirmation, summary, undo hint).
- * It only uses real detector names, actions and flags from docs/SPEC.md, and
- * every size and path is sample data inside an imaginary demo repository.
+ * the real binary: the output is hand-authored, modelled on the sweep flow in
+ * internal/action/prompt.go (renderPlan: a "detector / action: N items, SIZE"
+ * header per group, each item with its "$ command" line, then "total
+ * reclaimable"; per-group confirmation prompts; renderSummary with session
+ * and undo hint) and internal/action/executor.go (the lowercase dry run
+ * notice). Only the default safe preset is shown, so only detectors that
+ * belong to it appear. Every size and path is sample data inside an
+ * imaginary demo repository.
  */
 
 /** How a rendered line is coloured; purely presentational. */
@@ -50,62 +52,42 @@ const plain = (text: string): Line => ({ text, tone: 'plain' });
 const dim = (text: string): Line => ({ text, tone: 'dim' });
 const bold = (text: string): Line => ({ text, tone: 'bold' });
 const ok = (text: string): Line => ({ text, tone: 'ok' });
-const blank = plain('');
 
 export const SWEEP_COMMAND = 'brooom sweep';
 export const APPLY_COMMAND = 'brooom sweep --apply';
 
-/** The dry-run table printed by `brooom sweep`. */
+/**
+ * The plan `brooom sweep` prints (renderPlan): a header per detector and
+ * action, then each item's description with its display-only command.
+ */
+const planLines: Line[] = [
+  bold('merged-branch / delete-branch: 2 items, 0 B'),
+  plain('  delete branch feat/login-form with -d (0 B)'),
+  dim('    $ git branch -d feat/login-form'),
+  plain('  delete branch fix/typo with -d (0 B)'),
+  dim('    $ git branch -d fix/typo'),
+  bold('build-artifacts / trash: 1 item, 610.0 MB'),
+  plain('  move node_modules (610.0 MB) to trash (610.0 MB)'),
+  dim('    $ trash /home/dev/code/acme-api/node_modules'),
+  plain('total reclaimable: 610.0 MB'),
+];
+
+/** The dry run: the plan, then the notice that nothing was changed. */
 export const dryRunLines: Line[] = [
-  bold('merged-branch - branches already merged into the base branch (2)'),
-  dim('SIZE  AGE  CONF  ACTION         PATH  REF'),
-  plain('   -  3mo  high  delete-branch  .     feat/login-form'),
-  plain('   -  2mo  high  delete-branch  .     fix/typo'),
-  dim('2 findings, 2 actionable, 0 B reclaimable'),
-  blank,
-  bold('worktrees - leftover git worktrees (1)'),
-  dim('    SIZE  AGE  CONF  ACTION           PATH'),
-  plain('212.0 MB  5w   high  remove-worktree  ../acme-api-agent-3'),
-  dim('1 finding, 1 actionable, 212.0 MB reclaimable'),
-  blank,
-  bold('ai-artifacts - agent transcripts, logs and caches (2)'),
-  dim('   SIZE  AGE  CONF    ACTION  PATH'),
-  plain('1.1 GB  6w   high    trash   .claude/projects/run-0142.jsonl'),
-  plain('96.0 MB  3mo  medium  trash   .aider.chat.history.md'),
-  dim('2 findings, 2 actionable, 1.2 GB reclaimable'),
-  blank,
-  bold('build-artifacts - rebuildable build output (1)'),
-  dim('    SIZE  AGE  CONF  ACTION  PATH'),
-  plain('610.0 MB  4mo  high  trash   node_modules'),
-  dim('1 finding, 1 actionable, 610.0 MB reclaimable'),
-  blank,
-  bold('6 findings, 6 actionable, 2.0 GB reclaimable'),
-  blank,
-  plain('Dry run: nothing was changed; re-run with --apply to execute'),
+  ...planLines,
+  plain('dry run: nothing was changed; re-run with --apply to execute'),
 ];
 
 /** The confirmation prompts of `--apply`, each auto-answered "y". */
 const confirmLines: Line[] = [
   plain('merged-branch / delete-branch: apply 2 items (0 B)? [y]es/[n]o/[i]ndividually/[q]uit y'),
-  plain('worktrees / remove-worktree: apply 1 item (212.0 MB)? [y]es/[n]o/[i]ndividually/[q]uit y'),
-  plain('ai-artifacts / trash: apply 2 items (1.2 GB)? [y]es/[n]o/[i]ndividually/[q]uit y'),
   plain('build-artifacts / trash: apply 1 item (610.0 MB)? [y]es/[n]o/[i]ndividually/[q]uit y'),
 ];
 
-/** Per-action progress; only ever touches the demo repository. */
-const progressLines: Line[] = [
-  plain('git branch -d feat/login-form  (~/code/acme-api)'),
-  plain('git branch -d fix/typo  (~/code/acme-api)'),
-  plain('git worktree remove ../acme-api-agent-3'),
-  plain('trash ~/code/acme-api/.claude/projects/run-0142.jsonl'),
-  plain('trash ~/code/acme-api/.aider.chat.history.md'),
-  plain('trash ~/code/acme-api/node_modules'),
-];
-
+/** renderSummary; the real flow prints no per-action progress lines. */
 const summaryLines: Line[] = [
-  blank,
-  plain('summary: 6 applied, 0 skipped, 0 failed'),
-  ok('reclaimed: 2.0 GB'),
+  plain('summary: 3 applied, 0 skipped, 0 failed'),
+  ok('reclaimed: 610.0 MB'),
   plain('session: 20260930-142201-3f9a'),
   plain('undo: brooom undo 20260930-142201-3f9a'),
 ];
@@ -117,8 +99,8 @@ export const terminalScript: Step[] = [
   { kind: 'pause', ms: 3500 },
   { kind: 'clear' },
   { kind: 'type', text: APPLY_COMMAND },
+  { kind: 'print', lines: planLines, delay: 55 },
   { kind: 'print', lines: confirmLines, delay: 450 },
-  { kind: 'print', lines: progressLines, delay: 320 },
   { kind: 'print', lines: summaryLines, delay: 120 },
   { kind: 'pause', ms: 4500 },
 ];

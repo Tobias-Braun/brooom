@@ -11,8 +11,8 @@ import {
 } from './terminal-script';
 
 /** Detector names and actions that exist in docs/SPEC.md and the Go code. */
-const REAL_DETECTORS = ['merged-branch', 'worktrees', 'ai-artifacts', 'build-artifacts'];
-const REAL_ACTIONS = ['delete-branch', 'remove-worktree', 'trash'];
+const REAL_DETECTORS = ['merged-branch', 'build-artifacts'];
+const REAL_ACTIONS = ['delete-branch', 'trash'];
 
 describe('terminal script', () => {
   it('types the real commands, dry run first', () => {
@@ -29,21 +29,37 @@ describe('terminal script', () => {
 
   it('shows the dry-run notice and only real detectors and actions', () => {
     const all = transcript();
-    expect(all).toContain('Dry run: nothing was changed');
+    expect(all).toContain('dry run: nothing was changed; re-run with --apply to execute');
+    expect(all).not.toContain('Dry run:');
     for (const d of REAL_DETECTORS) expect(all).toContain(d);
-    // Table rows: SIZE ("-" or "1.1 GB"), AGE, CONF, then the ACTION column.
-    const rows = /^ *(?:-|[\d.]+ (?:B|KB|MB|GB)) +\S+ +\S+ +(\S+) /gm;
-    const actions = [...all.matchAll(rows)].map((m) => m[1]);
-    expect(actions).toHaveLength(6);
-    for (const a of actions) expect(REAL_ACTIONS).toContain(a);
+    // Group headers of renderPlan: "detector / action: N items, SIZE".
+    const headers = [...all.matchAll(/^(\S+) \/ (\S+): \d+ items?, /gm)];
+    // Two groups, shown once in the dry run and once in the apply run.
+    expect(headers).toHaveLength(4);
+    for (const h of headers) {
+      expect(REAL_DETECTORS).toContain(h[1]);
+      expect(REAL_ACTIONS).toContain(h[2]);
+    }
+    expect(all).toContain('total reclaimable: 610.0 MB');
+  });
+
+  it('only shows detectors of the default safe preset', () => {
+    expect(transcript()).not.toContain('ai-artifacts');
+  });
+
+  it('prints no invented per-action progress lines', () => {
+    const lines = transcript().split('\n');
+    // Commands only ever appear as indented "$ ..." lines inside the plan.
+    expect(lines.filter((l) => /^(git |trash )/.test(l))).toEqual([]);
+    expect(lines.filter((l) => l.startsWith('    $ ')).length).toBeGreaterThan(0);
   });
 
   it('never touches anything outside the demo repository', () => {
-    const progress = transcript()
+    const commands = transcript()
       .split('\n')
-      .filter((l) => /^(git |trash )/.test(l));
-    expect(progress.length).toBeGreaterThan(0);
-    for (const l of progress) expect(l).toMatch(/acme-api|\.\.\/acme-api/);
+      .filter((l) => l.startsWith('    $ ') && !l.includes('git branch'));
+    expect(commands.length).toBeGreaterThan(0);
+    for (const l of commands) expect(l).toContain('/acme-api/');
   });
 
   it('uses git branch -d, never a forced delete', () => {
@@ -51,8 +67,8 @@ describe('terminal script', () => {
   });
 
   it('transcript includes the cleared dry run, the final frame does not', () => {
-    expect(transcript()).toContain('6 findings, 6 actionable, 2.0 GB reclaimable');
-    expect(finalFrame().map((l) => l.text).join('\n')).not.toContain('6 findings, 6 actionable');
+    expect(transcript()).toContain('dry run: nothing was changed');
+    expect(finalFrame().map((l) => l.text).join('\n')).not.toContain('dry run: nothing was changed');
   });
 
   it('reserves at least the height of the tallest screen', () => {

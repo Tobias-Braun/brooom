@@ -78,12 +78,12 @@ function onKeydown(event: KeyboardEvent, current: number) {
     >
       <template v-for="(block, b) in tab.blocks" :key="b">
         <p v-if="block.type === 'text'" class="text">{{ block.text }}</p>
-        <div v-else-if="block.type === 'command'" class="command">
+        <div v-else-if="block.type === 'command'" class="command" data-copy-scope>
           <div class="command-head">
             <span class="os">{{ block.os ?? 'Any OS' }}</span>
             <CopyButton :text="block.command" :label="block.copyLabel" />
           </div>
-          <pre tabindex="0"><code>{{ block.command }}</code></pre>
+          <pre tabindex="0"><code data-copy-source>{{ block.command }}</code></pre>
         </div>
         <p v-else-if="block.type === 'link'" class="links">
           <a :href="block.href">{{ block.label }}</a>
