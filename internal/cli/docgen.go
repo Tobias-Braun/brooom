@@ -130,18 +130,72 @@ func flagDefault(f *pflag.Flag) string {
 
 // symbolic replaces machine-specific absolute prefixes by placeholders.
 func symbolic(v string) string {
-	if cwd, err := os.Getwd(); err == nil && cwd != "" {
-		v = replacePath(v, cwd, "<cwd>")
+	cwd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	return symbolicWith(v, cwd, home)
+}
+
+// symbolicWith is symbolic with the machine-specific prefixes passed in, so
+// the replacement rules are testable on every OS.
+func symbolicWith(v, cwd, home string) string {
+	v = replacePath(v, cwd, "<cwd>")
+	return replacePath(v, home, "~")
+}
+
+// replacePath replaces prefix by symbol only at path boundaries: the prefix
+// must be followed by the end of the value or a separator, and must not be
+// preceded by a path character. A plain substring replace would turn every
+// slash into the symbol for a root prefix and match /home/u inside
+// /home/user2. Empty and root prefixes are skipped for the same reason.
+func replacePath(v, prefix, symbol string) string {
+	if isRootPath(prefix) {
+		return v
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		v = replacePath(v, home, "~")
+	for _, p := range []string{filepath.ToSlash(prefix), prefix} {
+		v = replaceAtBoundary(v, strings.TrimRight(p, `/\`), symbol)
 	}
 	return v
 }
 
-func replacePath(v, prefix, symbol string) string {
-	v = strings.ReplaceAll(v, filepath.ToSlash(prefix), symbol)
-	return strings.ReplaceAll(v, prefix, symbol)
+// isRootPath reports whether p is empty or consists only of separators or is a
+// volume root such as C:\.
+func isRootPath(p string) bool {
+	rest := strings.Trim(p, `/\`)
+	// A drive letter is recognised by hand so the rule also holds when the
+	// document is generated on a unix host with a Windows-style value.
+	if len(rest) == 2 && rest[1] == ':' {
+		return true
+	}
+	return rest == "" || filepath.Dir(p) == p
+}
+
+// replaceAtBoundary replaces every occurrence of prefix that starts the value
+// or follows a non-path character (a list separator, a quote, a space) and
+// ends the value or precedes a separator.
+func replaceAtBoundary(v, prefix, symbol string) string {
+	var b strings.Builder
+	for {
+		i := strings.Index(v, prefix)
+		if i < 0 {
+			b.WriteString(v)
+			return b.String()
+		}
+		end := i + len(prefix)
+		startOK := i == 0 || !isPathChar(v[i-1])
+		endOK := end == len(v) || v[end] == '/' || v[end] == '\\'
+		if startOK && endOK {
+			b.WriteString(v[:i] + symbol)
+		} else {
+			b.WriteString(v[:end])
+		}
+		v = v[end:]
+	}
+}
+
+// isPathChar reports whether c can be part of a path element, which is what
+// makes a match in the middle of a longer path.
+func isPathChar(c byte) bool {
+	return c != ' ' && c != ',' && c != ':' && c != ';' && c != '"' && c != '\'' && c != '[' && c != '='
 }
 
 // escapeCell keeps flag descriptions from breaking the table.

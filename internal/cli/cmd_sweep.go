@@ -69,10 +69,17 @@ Like every command, sweep is a dry run unless you pass --apply.`)
 
 // resolvePreset picks the preset: the --preset flag, else sweep.preset from
 // the config, else the built-in default. An unknown name is a usage error that
-// lists the valid ones. The config is only read when the flag is absent.
+// lists the valid ones, and so is an explicitly empty --preset: falling back to
+// the default there would run a preset the user never named and ignore
+// sweep.preset. The config is only read when the flag is absent.
 func (a *app) resolvePreset(cmd *cobra.Command, flagValue string) (presets.Preset, error) {
 	name := flagValue
-	if !cmd.Flags().Changed("preset") {
+	if cmd.Flags().Changed("preset") {
+		if strings.TrimSpace(name) == "" {
+			return presets.Preset{}, usageError{fmt.Errorf("--preset must not be empty (valid presets: %s)",
+				strings.Join(presets.Names(), ", "))}
+		}
+	} else {
 		cfg, _, err := a.loadConfig()
 		if err != nil {
 			return presets.Preset{}, err

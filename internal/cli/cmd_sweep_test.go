@@ -411,3 +411,20 @@ func TestSweepHelpIsGeneratedFromPresets(t *testing.T) {
 		t.Errorf("flag usage does not list the presets:\n%s", out)
 	}
 }
+
+// TestSweepEmptyPresetIsUsageError pins that an explicitly empty --preset is
+// not silently replaced by the default or by sweep.preset.
+func TestSweepEmptyPresetIsUsageError(t *testing.T) {
+	for _, value := range []string{"", "  "} {
+		newCleanupFixture(t, map[string]any{"sweep": map[string]any{"preset": "aggressive"}})
+		code, _, errOut := brooom(t, "", "sweep", "--preset", value)
+		if code != ExitUsage {
+			t.Fatalf("--preset %q: code %d, want %d; stderr %q", value, code, ExitUsage, errOut)
+		}
+		for _, want := range []string{"safe", "standard", "aggressive"} {
+			if !strings.Contains(errOut, want) {
+				t.Errorf("--preset %q: error does not name %q: %q", value, want, errOut)
+			}
+		}
+	}
+}

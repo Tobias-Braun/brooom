@@ -37,7 +37,7 @@ func registerCompletions(root *cobra.Command, a *app) {
 	_ = root.RegisterFlagCompletionFunc("detector", completeDetectors)
 	_ = root.RegisterFlagCompletionFunc("format", completeFormats)
 	_ = root.RegisterFlagCompletionFunc("root", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return a.completeRoots(cmd, toComplete)
+		return a.completeRoots(cmd, toComplete, true)
 	})
 
 	var walk func(c *cobra.Command)
@@ -82,7 +82,7 @@ func registerSessionArgs(root *cobra.Command, a *app) {
 	}
 	if c, _, err := root.Find([]string{"roots", "remove"}); err == nil && c.Name() == "remove" {
 		c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return a.completeRoots(cmd, toComplete)
+			return a.completeRoots(cmd, toComplete, false)
 		}
 	}
 }
@@ -184,9 +184,13 @@ func filterPrefix(names []string, prefix string, descriptions map[string]string)
 
 // completeRoots offers the roots stored in the config, already listed ones
 // excluded when completing a repeated argument. A config that cannot be
-// loaded yields nothing.
-func (a *app) completeRoots(_ *cobra.Command, toComplete string) ([]string, cobra.ShellCompDirective) {
-	prefix, current, chosen := splitCommaPrefix(toComplete)
+// loaded yields nothing. Only a list-valued flag (--root) is split at commas;
+// a positional argument is one path, and a comma is a legal path character.
+func (a *app) completeRoots(_ *cobra.Command, toComplete string, listValued bool) ([]string, cobra.ShellCompDirective) {
+	prefix, current, chosen := "", toComplete, []string(nil)
+	if listValued {
+		prefix, current, chosen = splitCommaPrefix(toComplete)
+	}
 	var out []string
 	for _, r := range a.configuredRootStrings() {
 		if slices.Contains(chosen, r) || !strings.HasPrefix(r, current) {

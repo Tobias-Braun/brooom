@@ -286,7 +286,10 @@ Bash (needs the bash-completion package):
     source <(brooom completion bash)
 
   Install it permanently:
-    Linux:  brooom completion bash > /etc/bash_completion.d/brooom
+    Linux (per user, no root needed):
+      mkdir -p ~/.local/share/bash-completion/completions
+      brooom completion bash > ~/.local/share/bash-completion/completions/brooom
+    Linux (system-wide, needs root): brooom completion bash | sudo tee /etc/bash_completion.d/brooom >/dev/null
     macOS (Homebrew): brooom completion bash > "$(brew --prefix)/etc/bash_completion.d/brooom"
 
 Zsh:
@@ -320,7 +323,7 @@ Start a new shell after installing a script.
 **Examples**
 
 ```sh
-brooom completion bash > /etc/bash_completion.d/brooom
+brooom completion bash > ~/.local/share/bash-completion/completions/brooom
 brooom completion fish > ~/.config/fish/completions/brooom.fish
 brooom completion powershell | Out-String | Invoke-Expression
 ```
@@ -368,7 +371,7 @@ You will need to start a new shell for this setup to take effect.
 
 ```sh
 source <(brooom completion bash)
-brooom completion bash > /etc/bash_completion.d/brooom
+brooom completion bash > ~/.local/share/bash-completion/completions/brooom
 ```
 
 **Flags**
@@ -927,13 +930,13 @@ Presets:
       - OS junk and old logs
       - build artifacts of inactive projects (active projects rate below high)
 
-  standard: safe plus stale branches, AI tool artifacts and caches
+  standard: safe plus stale branches and AI tool artifacts
       detectors: merged-branch, worktrees, log-and-runtime-files, build-artifacts, stale-branch, ai-artifacts
       minimum confidence: medium
       - everything in safe, at medium confidence and above
       - stale branches
       - AI tool artifacts in projects (never user-level locations)
-      - all log and cache categories
+      - log and cache categories as configured (safe limits them to OS junk and old logs)
 
   aggressive: standard plus lower age thresholds and git maintenance
       detectors: merged-branch, worktrees, log-and-runtime-files, build-artifacts, stale-branch, ai-artifacts, large-untracked, git-bloat

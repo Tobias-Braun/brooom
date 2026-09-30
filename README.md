@@ -96,7 +96,10 @@ brooom purge --apply        # delete quarantined sessions past their retention
 Every command, flag and example is listed in the [CLI reference](docs/cli.md)
 (generated from the command tree). Shell completions for bash, zsh, fish and
 PowerShell come with the binary, for example `source <(brooom completion bash)`;
-`brooom completion --help` shows how to install them for each shell.
+`brooom completion --help` shows how to install them for each shell. On Linux,
+bash completion installs per user with
+`brooom completion bash > ~/.local/share/bash-completion/completions/brooom`
+(the system path `/etc/bash_completion.d` needs `sudo`).
 
 ### Sweep presets
 
@@ -111,7 +114,7 @@ them.
 | Preset | Detectors | Min. confidence | Notes |
 | --- | --- | --- | --- |
 | `safe` | merged-branch, worktrees, log-and-runtime-files, build-artifacts | high | prunable and merged clean worktrees only, OS junk and old logs, build artifacts of inactive projects |
-| `standard` | safe + stale-branch, ai-artifacts | medium | project-level AI artifacts only, all log and cache categories |
+| `standard` | safe + stale-branch, ai-artifacts | medium | project-level AI artifacts only, log and cache categories as configured (safe limits them to OS junk and old logs) |
 | `aggressive` | standard + large-untracked, git-bloat | medium | lowers age thresholds (never above your own values), includes ignored files, gc/reflog expire/prune (a configured expiry is only ever shortened to `90.days.ago`, never lengthened, so the default `prune_expire` of `2.weeks.ago` stays) |
 
 Output formats: `table` (default), `tree`, `json`, `ndjson`, `plain`,
