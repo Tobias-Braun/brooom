@@ -94,6 +94,9 @@ type Repo struct {
 	// for uncached handles, which always call gh.
 	gh *ghBreaker
 
+	// diffLimit overrides maxDiffBytes when positive (tests only).
+	diffLimit int64
+
 	version        memo[struct{}, Version]
 	branches       memo[struct{}, []Branch]
 	remoteBranches memo[struct{}, []RemoteBranch]

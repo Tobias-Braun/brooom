@@ -57,7 +57,16 @@ type ExecRunner struct {
 	// a hung git (slow remote, stuck hook) cannot stall a scan forever. Zero
 	// means DefaultTimeout, negative disables the bound.
 	Timeout time.Duration
+	// MaxOutput bounds the stdout of every call in bytes. A command that
+	// prints more is killed at once and the call fails with ErrOutputLimit,
+	// so unbounded output (`log -p` of a huge history) cannot exhaust memory.
+	// Zero means unbounded.
+	MaxOutput int64
 }
+
+// ErrOutputLimit is returned when a command's output exceeded the configured
+// cap and the command was killed.
+var ErrOutputLimit = errors.New("gitx: git output exceeds the size limit")
 
 // DefaultTimeout is generous enough for gc on very large repositories while
 // still ending a truly hung command.
@@ -87,10 +96,12 @@ func (r *ExecRunner) Run(ctx context.Context, dir string, args ...string) (strin
 // run is the single code path behind Run and RunInput so both use the same
 // environment, error type and output trimming.
 func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args []string) (string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	if _, ok := ctx.Deadline(); !ok && r.timeout() > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, r.timeout())
-		defer cancel()
+		var cancelTimeout context.CancelFunc
+		ctx, cancelTimeout = context.WithTimeout(ctx, r.timeout())
+		defer cancelTimeout()
 	}
 	full := append([]string{"-C", dir}, args...)
 	cmd := exec.CommandContext(ctx, r.Path, full...)
@@ -103,17 +114,40 @@ func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args 
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	var stderr bytes.Buffer
+	stdout := &limitBuffer{max: r.MaxOutput, cancel: cancel}
+	cmd.Stdout = stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if stdout.exceeded {
+			return "", fmt.Errorf("git %s (in %s): %w", strings.Join(args, " "), dir, ErrOutputLimit)
+		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			return "", &Error{Args: args, Dir: dir, ExitCode: exitErr.ExitCode(), Stderr: stderr.String()}
 		}
 		return "", mapStartErr(err)
 	}
-	return strings.TrimRight(stdout.String(), "\r\n"), nil
+	return strings.TrimRight(stdout.buf.String(), "\r\n"), nil
+}
+
+// limitBuffer is a bytes.Buffer with an optional cap. Going over it cancels
+// the command's context (killing git) and fails the write, so at most max
+// bytes are ever held.
+type limitBuffer struct {
+	buf      bytes.Buffer
+	max      int64
+	cancel   context.CancelFunc
+	exceeded bool
+}
+
+func (b *limitBuffer) Write(p []byte) (int, error) {
+	if b.max > 0 && int64(b.buf.Len()+len(p)) > b.max {
+		b.exceeded = true
+		b.cancel()
+		return 0, ErrOutputLimit
+	}
+	return b.buf.Write(p)
 }
 
 // strippedEnvKeys are the exact variables that select or reconfigure the
