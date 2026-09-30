@@ -21,7 +21,7 @@ clutter modern AI-assisted development leaves behind:
 - Every command is a **dry run** unless you pass `--apply`.
 - Applying asks for confirmation (skip with `--yes` in scripts).
 - Files go to your **OS trash** (or a quarantine folder); branches are
-  deleted with `git branch -d`; worktrees with `git worktree remove`.
+  deleted with `git branch -d`; worktrees are moved to the trash and then deregistered from git.
   Linked worktrees outside the scanned repository (such as `../repo-wt`) are
   never touched; `brooom worktrees` lists them with a hint to run
   `brooom roots add <parent>` or use `--workspaces` (not in `--format plain`,

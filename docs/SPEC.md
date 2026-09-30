@@ -44,7 +44,8 @@ cleanup safe, fast and reviewable.
    when base ancestry or remote containment is re-verified at apply time
    (a squash/rebase merge counts only with the commits on a remote), or with
    `--force`; worktrees are
-   removed with `git worktree remove` and pruned; git history pruning uses a
+   moved to the trash and deregistered from git (a plain `git worktree remove`
+   would permanently delete ignored files); git history pruning uses a
    conservative expiry. Every applied session writes a manifest so
    `brooom undo` can restore what is restorable.
 5. **Fast.** Parallel directory walking, skip lists for known-huge irrelevant

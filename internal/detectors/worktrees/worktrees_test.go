@@ -448,8 +448,11 @@ func TestDirtyWorktrees(t *testing.T) {
 			if f.SuggestedAction.Type != tt.wantAction {
 				t.Errorf("action %q, want %q", f.SuggestedAction.Type, tt.wantAction)
 			}
-			if tt.wantReason != "" && f.SuggestedAction.Reason != tt.wantReason {
+			if tt.wantReason != "" && !strings.HasPrefix(f.SuggestedAction.Reason, tt.wantReason) {
 				t.Errorf("reason %q", f.SuggestedAction.Reason)
+			}
+			if f.SuggestedAction.Type == findings.ActionRemoveWorktree && f.SuggestedAction.Command != "" {
+				t.Errorf("remove-worktree command %q must be empty", f.SuggestedAction.Command)
 			}
 			if !f.HasRisk(findings.RiskWorktreeDirty) {
 				t.Errorf("flags %v", f.RiskFlags)

@@ -18,7 +18,8 @@ packages and the same findings schema.
    writes, no git commands that take locks). Actions consume findings.
 4. **Reversible by default.** Files go to the OS trash (or quarantine);
    branches are deleted with `git branch -d`; `-D` is used only when base ancestry, or remote containment (alone or together with a squash/rebase merge), is re-verified at apply time, or with `--force` (a squash/rebase merge of commits on no remote needs `--force`); worktrees are
-   removed with `git worktree remove`; git maintenance uses conservative
+   moved to the trash and deregistered from git (never a bare `git worktree
+   remove`, which would delete ignored files permanently); git maintenance uses conservative
    expiries. Every applied session writes a manifest for `brooom undo`.
 5. **Fast.** Parallel walking, skip lists, a git blob scan cache keyed on refs
    and packs, and an optional mtime-invalidated `DirSize` cache (unused by
