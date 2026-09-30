@@ -154,6 +154,12 @@ func (r *resolver) step(comp string) (tail bool, err error) {
 	next := filepath.Join(r.cur, comp)
 	info, err := os.Lstat(next)
 	if errors.Is(err, fs.ErrNotExist) {
+		// Unix reports ENOTDIR for "file/child", but Windows reports "not
+		// found"; a regular file can never have children, so refuse here
+		// instead of treating the rest as a creatable tail.
+		if !r.curDir {
+			return false, fmt.Errorf("%q is not a directory, cannot resolve %q below it", r.cur, comp)
+		}
 		return true, nil
 	}
 	if err != nil {

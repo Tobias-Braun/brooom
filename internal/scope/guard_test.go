@@ -2,6 +2,7 @@ package scope
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ func TestNewGuardRefusals(t *testing.T) {
 		{"missing", []string{filepath.Join(tr.root, "missing")}, "missing"},
 		{"file", []string{file}, "not a directory"},
 		{"filesystem root", []string{volumeRoot(t)}, "filesystem root"},
-		{"root with dots", []string{filepath.Join(tr.allowed, "..", "..", "..", "..", "..", "..", "..", "..")}, "filesystem root"},
+		{"root with dots", []string{filepath.Join(tr.allowed, strings.Repeat(".."+string(os.PathSeparator), 64))}, "filesystem root"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,8 +130,9 @@ func TestResolveErrorNamesInputAndResolvedPath(t *testing.T) {
 	if !errors.Is(err, ErrOutsideScope) {
 		t.Fatalf("err = %v, want ErrOutsideScope", err)
 	}
+	// The error quotes paths with %q, which doubles Windows backslashes.
 	for _, want := range []string{in, tr.outside} {
-		if !strings.Contains(err.Error(), want) {
+		if !strings.Contains(err.Error(), fmt.Sprintf("%q", want)) {
 			t.Errorf("error %q should name %q", err, want)
 		}
 	}

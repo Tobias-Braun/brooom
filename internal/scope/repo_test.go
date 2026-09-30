@@ -2,6 +2,7 @@ package scope
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -122,7 +123,8 @@ func TestFindRepoRootNoRepo(t *testing.T) {
 	if !errors.Is(err, ErrNotInRepo) {
 		t.Fatalf("err = %v, want ErrNotInRepo", err)
 	}
-	if !strings.Contains(err.Error(), dir) {
+	// The error quotes the path with %q, which doubles Windows backslashes.
+	if !strings.Contains(err.Error(), fmt.Sprintf("%q", dir)) {
 		t.Errorf("error %q should name the start path %q", err, dir)
 	}
 }
