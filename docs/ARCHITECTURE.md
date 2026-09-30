@@ -109,6 +109,43 @@ whether risk flags allow acting. `Apply` returns a `session.Entry` with undo
 information. `Undo` reverses an entry where possible. The `Executor` owns
 confirmation, manifests and the summary; individual actions never prompt.
 
+#### The `trash` action
+
+`internal/action/trash.go` removes files, directories and symlinks through the
+configured `trash.Trasher`. `Plan` re-validates in this order and skips with a
+reason at the first failure:
+
+1. `Guard.ResolveParent` (the final element is kept, so symlinks are removed
+   as links and never followed); outside the allowed roots is refused.
+2. Static refusals on the resolved path: filesystem/volume roots, allowed
+   roots, repository roots, `.git` or anything inside it, the Brooom home
+   (and anything containing it) and its `sessions` and `quarantine` dirs, and
+   the user's home directory (and anything containing it).
+3. Existence and contents: one `walk.Walk` pass with `Fresh: true` sums the
+   size exactly like `walk.DirSize` and looks for a `.git` entry (file or
+   directory) at any depth below a directory. A nested repository, linked
+   worktree or submodule refuses the whole directory. A directory that cannot
+   be read completely is refused too, since an unreadable subtree could hide
+   a repository. `SizeBytes` and `LastModified` are refreshed in the step's
+   finding copy, whose `Path` is the resolved path.
+4. Open files (`procs.OpenFiles`): an open path is refused.
+   `ErrUnavailable`, `ErrIncomplete` (for `false` entries) and other errors
+   mean unknown and are allowed, but noted in the step description.
+5. Blocking risk flags via `findings.Actionable`.
+6. Tracked files: `git ls-files -z -- <path>` in the repository root; tracked
+   files, or a failing check, skip unless `--force`.
+7. Delete-strategy guard: with the `delete` strategy a finding whose
+   `Meta["user_data_risk"]` is `untracked` is refused.
+
+Not overridable by `--force`: steps 1, 2, 3, 4 (open files, also via the
+`file_open_by_process` flag) and 7. `--force` only lifts blocking risk flags
+and the tracked-files check. `Apply` re-resolves and re-checks the static
+refusals, removes the re-resolved path and returns a manifest entry with the
+trash record; a path that vanished is a skip, not a failure. `Undo` restores
+with the strategy recorded in the entry (`Env.TrasherFor`), never the
+configured one, after checking that the original path lies inside the allowed
+roots; `ErrRestoreConflict` and `ErrNotRestorable` are passed through.
+
 ### Trash (`internal/trash`)
 
 `Remove(path) (Record, error)` / `Restore(Record)`. Never follows symlinks.
