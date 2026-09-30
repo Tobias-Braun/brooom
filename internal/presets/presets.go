@@ -1,15 +1,19 @@
-// Package presets defines the no-brainer presets of `brooom sweep`.
+// Package presets defines the intent presets of `brooom sweep`.
 //
 // A preset is pure data: the detectors to run, the minimum confidence a
-// finding needs to be planned and a configuration overlay. Presets can only
-// narrow or tune what a scan looks for. They never touch the safety rails:
-// blocking risk flags, dry run by default, confirmation, --force semantics,
-// the trash strategy, protected branches and the tighten-only .brooom.json are
-// all outside their reach (see Apply and the invariants in the tests).
+// finding needs to be planned and a configuration overlay. Presets are named
+// after what the user wants to do (clean up after an agent run, tidy up,
+// sweep everything), not after how risky they are, because every preset keeps
+// the same safety rails: blocking risk flags, the confirmation before anything
+// is changed, the trash strategy, protected branches and the tighten-only
+// .brooom.json are all outside their reach (see Apply and the invariants in
+// the tests). No preset removes unmerged work: stale branches and large
+// untracked files are left to `brooom scan -d ...`.
 package presets
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"regexp"
 	"slices"
@@ -20,16 +24,16 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/findings"
 )
 
-// Preset names, least to most aggressive.
+// Preset names, narrowest first.
 const (
-	Safe       = "safe"
-	Standard   = "standard"
-	Aggressive = "aggressive"
+	AfterAgents = "after-agents"
+	Tidy        = "tidy"
+	Everything  = "everything"
 )
 
 // Preset is one sweep preset.
 type Preset struct {
-	// Name is the value of --preset and sweep.preset.
+	// Name is the positional argument of `brooom sweep` and sweep.preset.
 	Name string
 	// Summary is a one-line description for help texts.
 	Summary string
@@ -39,6 +43,11 @@ type Preset struct {
 	// MinConfidence is the confidence floor: findings below it are dropped
 	// before planning.
 	MinConfidence findings.Confidence
+	// Floors raise the confidence floor for single detectors above
+	// MinConfidence. Build artifacts of a project that is still being worked
+	// on only reach medium confidence, and trashing its node_modules in the
+	// middle of the work is not what "everything" means.
+	Floors map[string]findings.Confidence
 	// Overlay adjusts a configuration in place. Callers use Apply, which
 	// hands it a private copy.
 	Overlay func(*config.Config)
@@ -46,89 +55,62 @@ type Preset struct {
 	Includes []string
 }
 
-// AggressiveAges is the single table of the age thresholds the aggressive
-// preset lowers. Every value is applied as min(current, value), so a user who
-// configured something lower keeps it. Tune the preset here.
-var AggressiveAges = struct {
-	// StaleBranchDays is detectors.stale-branch.min_age_days.
-	StaleBranchDays int
-	// MinAgeDays is thresholds.min_age_days.
-	MinAgeDays int
-	// InactiveDays is detectors.build-artifacts.inactive_days.
-	InactiveDays int
-}{
-	StaleBranchDays: 30,
-	MinAgeDays:      7,
-	InactiveDays:    30,
-}
+// Expiry is the git expiry the everything preset shortens reflog expiry and
+// pruning of unreachable objects to (see shorterExpiry).
+const Expiry = "90.days.ago"
 
-// AggressiveExpiry is the git expiry the aggressive preset shortens reflog
-// expiry and pruning of unreachable objects to (see shorterExpiry).
-const AggressiveExpiry = "90.days.ago"
+// legacyNames are the preset names of earlier releases. They still resolve,
+// to everything, because `brooom config init` wrote "safe" into every config
+// file as the default, so a legacy name in a config is rarely a deliberate
+// choice of a narrower preset.
+var legacyNames = []string{"safe", "standard", "aggressive"}
 
-// safeDetectors is what every preset runs. Standard and aggressive extend it,
-// so the superset relation holds by construction.
-var safeDetectors = []string{
-	config.DetectorMergedBranch,
-	config.DetectorWorktrees,
-	config.DetectorLogs,
-	config.DetectorBuildArtifacts,
-}
-
-// nonSafeLogCategories are the log-and-runtime-files categories the safe
-// preset switches off: it keeps OS junk and old logs only.
-var nonSafeLogCategories = []string{"cache", "crash", "ai", "build"}
-
-// all returns fresh definitions on every call, so callers can never modify the
-// shared data by mutating a returned Preset.
 func all() []Preset {
-	standardDetectors := append(slices.Clone(safeDetectors), config.DetectorStaleBranch, config.DetectorAIArtifacts)
-	aggressiveDetectors := append(slices.Clone(standardDetectors), config.DetectorLargeUntracked, config.DetectorGitBloat)
 	return []Preset{
 		{
-			Name:          Safe,
-			Summary:       "only high-confidence findings that regenerate or are already merged",
-			Detectors:     slices.Clone(safeDetectors),
-			MinConfidence: findings.ConfidenceHigh,
-			Overlay:       overlaySafe,
+			Name:          AfterAgents,
+			Summary:       "clean up after an agent run: merged worktrees and branches, agent leftovers",
+			Detectors:     []string{config.DetectorAIArtifacts, config.DetectorMergedBranch, config.DetectorWorktrees},
+			MinConfidence: findings.ConfidenceMedium,
+			Overlay:       overlayCommon,
 			Includes: []string{
-				"merged branches",
-				"prunable and merged worktrees, clean ones only (no stale worktrees)",
-				"OS junk and old logs",
-				"build artifacts of inactive projects (active projects rate below high)",
+				"worktrees whose branch is merged (squash and rebase merges too), clean ones only",
+				"local branches merged into the base branch",
+				"AI tool artifacts in the repository: run logs, transcripts, caches, scratch files",
 			},
 		},
 		{
-			Name:          Standard,
-			Summary:       "safe plus stale branches and AI tool artifacts",
-			Detectors:     standardDetectors,
+			Name:          Tidy,
+			Summary:       "low-risk hygiene: logs, OS junk, test caches and coverage output",
+			Detectors:     []string{config.DetectorLogs},
 			MinConfidence: findings.ConfidenceMedium,
-			Overlay:       overlayStandard,
+			Overlay:       overlayCommon,
 			Includes: []string{
-				"everything in safe, at medium confidence and above",
-				"stale branches",
-				"AI tool artifacts in projects (never user-level locations)",
-				"log and cache categories as configured (safe limits them to OS junk and old logs)",
+				"debug and rotated logs, crash dumps, editor swap files",
+				".DS_Store, Thumbs.db and other OS junk",
+				"test caches and coverage output",
 			},
 		},
 		{
-			Name:          Aggressive,
-			Summary:       "standard plus lower age thresholds and git maintenance",
-			Detectors:     aggressiveDetectors,
+			Name:    Everything,
+			Summary: "all of the above plus build artifacts of inactive projects and git maintenance",
+			Detectors: []string{
+				config.DetectorAIArtifacts, config.DetectorBuildArtifacts, config.DetectorGitBloat,
+				config.DetectorLogs, config.DetectorMergedBranch, config.DetectorWorktrees,
+			},
 			MinConfidence: findings.ConfidenceMedium,
-			Overlay:       overlayAggressive,
+			Floors:        map[string]findings.Confidence{config.DetectorBuildArtifacts: findings.ConfidenceHigh},
+			Overlay:       overlayEverything,
 			Includes: []string{
-				"everything in standard",
-				fmt.Sprintf("lower age thresholds: stale branches %d days, minimum age %d days, inactive projects %d days (never raised above your own values)",
-					AggressiveAges.StaleBranchDays, AggressiveAges.MinAgeDays, AggressiveAges.InactiveDays),
-				"large untracked and ignored files",
-				"git gc, reflog expiry and pruning; expiries longer than " + AggressiveExpiry + " are shortened to it, shorter ones are kept",
+				"everything in after-agents and tidy",
+				"build artifacts (node_modules, target, .venv, ...) of inactive projects only",
+				"git gc, reflog expiry and pruning; expiries longer than " + Expiry + " are shortened to it, shorter ones are kept",
 			},
 		},
 	}
 }
 
-// Names returns the preset names, least to most aggressive.
+// Names returns the preset names, narrowest first.
 func Names() []string {
 	ps := all()
 	names := make([]string, len(ps))
@@ -138,8 +120,12 @@ func Names() []string {
 	return names
 }
 
+// LegacyNames returns the preset names of earlier releases that still resolve
+// (see Resolve).
+func LegacyNames() []string { return slices.Clone(legacyNames) }
+
 // Get returns the named preset. The error for an unknown name lists the valid
-// ones.
+// ones. Legacy names are unknown here; Resolve accepts them.
 func Get(name string) (Preset, error) {
 	for _, p := range all() {
 		if p.Name == name {
@@ -147,6 +133,18 @@ func Get(name string) (Preset, error) {
 		}
 	}
 	return Preset{}, fmt.Errorf("unknown preset %q (valid: %s)", name, strings.Join(Names(), ", "))
+}
+
+// Resolve is Get plus the legacy names, which resolve to everything. legacy
+// reports that the name was a legacy one, so the caller can say which preset
+// runs instead.
+func Resolve(name string) (p Preset, legacy bool, err error) {
+	if slices.Contains(legacyNames, name) {
+		p, err = Get(Everything)
+		return p, true, err
+	}
+	p, err = Get(name)
+	return p, false, err
 }
 
 // Describe renders the preset for help texts: a headline, the detectors, the
@@ -160,7 +158,11 @@ func Describe(name string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: %s\n", p.Name, p.Summary)
 	fmt.Fprintf(&b, "    detectors: %s\n", strings.Join(p.Detectors, ", "))
-	fmt.Fprintf(&b, "    minimum confidence: %s\n", p.MinConfidence)
+	fmt.Fprintf(&b, "    minimum confidence: %s", p.MinConfidence)
+	for _, d := range slices.Sorted(maps.Keys(p.Floors)) {
+		fmt.Fprintf(&b, " (%s: %s)", d, p.Floors[d])
+	}
+	b.WriteString("\n")
 	for _, line := range p.Includes {
 		fmt.Fprintf(&b, "    - %s\n", line)
 	}
@@ -182,7 +184,21 @@ func Apply(cfg *config.Config, p Preset) *config.Config {
 // Runs reports whether the preset runs the named detector.
 func (p Preset) Runs(detector string) bool { return slices.Contains(p.Detectors, detector) }
 
-// WithDetector returns the name of the least aggressive preset that runs the
+// Floor returns the confidence a finding of the detector needs to be planned.
+func (p Preset) Floor(detector string) findings.Confidence {
+	if c, ok := p.Floors[detector]; ok {
+		return c
+	}
+	return p.MinConfidence
+}
+
+// Keeps reports whether the preset plans a finding with this detector and
+// confidence.
+func (p Preset) Keeps(detector string, c findings.Confidence) bool {
+	return c.Rank() >= p.Floor(detector).Rank()
+}
+
+// WithDetector returns the name of the narrowest preset that runs the
 // detector, or "" if none does. Used to tell a user which preset to pick.
 func WithDetector(detector string) string {
 	for _, p := range all() {
@@ -193,39 +209,24 @@ func WithDetector(detector string) string {
 	return ""
 }
 
-// overlaySafe restricts what the detectors report. It only switches things
-// off, never on, so a user who disabled more keeps that.
-func overlaySafe(c *config.Config) {
+// overlayCommon keeps every preset to merged work: worktrees whose upstream is
+// gone are not merged, so they are left to `brooom review`. User-level tool
+// locations stay off; a preset only looks inside the repository. It only
+// switches things off, never on, so a user who disabled more keeps that.
+func overlayCommon(c *config.Config) {
 	c.Detectors.AIArtifacts.UserLocations = false
+	c.Detectors.Logs.UserLocations = false
 	c.Detectors.Worktrees.IncludeStale = false
-	if c.Detectors.Logs.Categories == nil {
-		c.Detectors.Logs.Categories = map[string]bool{}
-	}
-	for _, cat := range nonSafeLogCategories {
-		c.Detectors.Logs.Categories[cat] = false
-	}
 }
 
-// overlayStandard keeps AI artifact scanning to the project level. Log
-// categories and worktree settings stay as configured: switching a category
-// on would override a user's explicit choice to disable it.
-func overlayStandard(c *config.Config) {
-	c.Detectors.AIArtifacts.UserLocations = false
-}
-
-// overlayAggressive lowers the age thresholds (never raising one), reports
-// ignored files as well and shortens the git expiries to AggressiveExpiry
-// where they are longer (shorter or unknown values stay). It deliberately
-// leaves the worktree age threshold at its default 0 (no preset raises it),
-// RecentDays, ProtectedBranches, AllowDelete and the trash strategy alone.
-func overlayAggressive(c *config.Config) {
-	overlayStandard(c)
-	lower(&c.Detectors.StaleBranch.MinAgeDays, AggressiveAges.StaleBranchDays)
-	lower(&c.Thresholds.MinAgeDays, AggressiveAges.MinAgeDays)
-	lower(&c.Detectors.BuildArtifacts.InactiveDays, AggressiveAges.InactiveDays)
-	c.Detectors.LargeUntracked.IncludeIgnored = true
-	c.Detectors.GitBloat.ReflogExpire = shorterExpiry(c.Detectors.GitBloat.ReflogExpire, AggressiveExpiry)
-	c.Detectors.GitBloat.PruneExpire = shorterExpiry(c.Detectors.GitBloat.PruneExpire, AggressiveExpiry)
+// overlayEverything is overlayCommon plus the git expiries shortened to
+// Expiry where they are longer (shorter or unknown values stay). Age
+// thresholds, ProtectedBranches, AllowDelete and the trash strategy are left
+// alone.
+func overlayEverything(c *config.Config) {
+	overlayCommon(c)
+	c.Detectors.GitBloat.ReflogExpire = shorterExpiry(c.Detectors.GitBloat.ReflogExpire, Expiry)
+	c.Detectors.GitBloat.PruneExpire = shorterExpiry(c.Detectors.GitBloat.PruneExpire, Expiry)
 }
 
 // maxExpiryDays stands for "never" in expiryDays comparisons.
@@ -261,11 +262,11 @@ func expiryDays(s string) (int, bool) {
 }
 
 // shorterExpiry returns preset when it expires sooner than the configured
-// value and the configured value otherwise, like lower does for ages. A value
-// that cannot be compared is kept: a preset must not guess about a date the
-// user wrote in a form it does not understand, and a longer preset value
-// (the aggressive 90 days against the default 2.weeks.ago prune expiry) would
-// make the run prune less than the user configured.
+// value and the configured value otherwise. A value that cannot be compared
+// is kept: a preset must not guess about a date the user wrote in a form it
+// does not understand, and a longer preset value (90 days against the default
+// 2.weeks.ago prune expiry) would make the run prune less than the user
+// configured.
 func shorterExpiry(configured, preset string) string {
 	have, ok := expiryDays(configured)
 	if !ok {
@@ -277,7 +278,3 @@ func shorterExpiry(configured, preset string) string {
 	}
 	return preset
 }
-
-// lower sets *v to preset when that is lower, so a threshold the user already
-// configured lower stays.
-func lower(v *int, preset int) { *v = min(*v, preset) }

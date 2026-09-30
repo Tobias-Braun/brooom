@@ -6,9 +6,11 @@ packages and the same findings schema.
 
 ## Principles (non-negotiable)
 
-1. **Safety first.** Every command is a dry run unless `--apply` is given.
-   Applying asks for confirmation per group or item unless `--yes`. Nothing
-   is ever deleted silently.
+1. **Safety first.** Every command that changes something shows its plan and
+   asks once (`Proceed? [y/N]`) before it acts; `--dry-run` stops after the
+   plan, `--yes` skips the question, and without a terminal an unanswered
+   question is a usage error. Nothing is ever deleted silently, and `sweep`
+   never acts on unmerged or uncommitted work.
 2. **Scoped by default.** Without flags only the git repository containing
    the working directory is scanned. `--workspaces` scans every repository and
    project folder below the configured roots. Every path is made absolute,
@@ -141,7 +143,7 @@ The `log-and-runtime-files` detector (`internal/detectors/logs`) mirrors
 `ai-artifacts` for the catalog categories `logs`, `cache`, `os-junk` and
 `crash` (toggled by `detectors.log-and-runtime-files.categories`; user-level
 targets need `detectors.log-and-runtime-files.user_locations`, set for one run
-by `brooom logs --user`). The walk, protect and nested-repository rules are the
+by `brooom clean --user` for the findings it accepts). The walk, protect and nested-repository rules are the
 same (the code is duplicated locally on purpose; extracting a shared helper is
 a later cleanup). Differences: the size pass is `Fresh` because logs are written
 in place; a recently modified `*.log` / `*.log.N` file drops from high to medium
@@ -541,41 +543,51 @@ Accepted git maintenance findings lose their `Args`: the expiry of `git-gc`,
 (`targetGitBloat`), so a forged `{"expire": "now"}` has no effect. `delete-branch`
 derives merged, squash-merged and remote containment from the repository at
 plan and apply time and never reads `Detector` or `Args["verified"]`. Execution
-is `runExecutor`, shared with the shortcut commands.
+is `runExecutor`, shared with sweep.
 
 ### Sweep presets (`internal/presets`, `internal/cli/cmd_sweep.go`)
 
-`brooom sweep` resolves the preset (flag, then `sweep.preset`, then `safe`) and
-calls `runCleanup` with the preset's detectors, its `MinConfidence` and an
-overlay. Sweep is the one cleanup command that applies by default: it sets
-`apply` and `yes` itself (`--dry-run` switches apply off; `--apply` and `--yes`
-are hidden no-ops kept for old scripts) and passes `compact`, which becomes
-`action.Options.Brief`. A brief run prints no plan and no prompts, only
+Sweep is the one cleaning command. `brooom sweep [preset]` resolves the preset
+(the positional argument, then `sweep.preset`, then `everything`; the legacy
+names `safe`, `standard` and `aggressive` resolve to `everything` with a note on
+stderr, because `config init` wrote `safe` into every config) and calls
+`runCleanup` with the preset's detectors, a keep filter built from its
+confidence floors and an overlay. Presets are named by intent:
+
+- `after-agents`: worktrees, merged-branch, ai-artifacts.
+- `tidy`: log-and-runtime-files.
+- `everything`: both plus build-artifacts and git-bloat. Build artifacts need
+  high confidence (`Preset.Floors`): medium means the project is still being
+  worked on, and trashing its `node_modules` is not what "everything" means.
+
+No preset runs stale-branch or large-untracked: sweep never removes unmerged
+work, and it has no `--force`. Those findings are listed by `brooom scan -d ...`
+and can be acted on through `clean --from` with `--force`.
+
+The executor shows the plan, asks `Proceed with N items (SIZE)? [y/N]` once
+(`action.confirmer.confirm`, naming permanent deletions in the question) and
+acts on an explicit yes. The terminal check comes after planning, so a run with
+nothing to do never needs an answer. `compact` becomes `action.Options.Brief`:
+the plan is still shown when the run asks, but the summary is the one line of
 `renderBriefSummary` (`internal/action/brief.go`): failures, a skipped count,
-the undo line and, last, the counts per kind with the reclaimed size. `--verbose`
-turns Brief off and brings the plan and the full summary back; a dry run always
-shows the plan. A machine `--format` never applies, so without an explicit
-`--apply` it stays the read-only report. The overlay is applied right after `config.Load` in `newScanRequest`
-and before `ForTarget`, so root overrides and the tighten-only `.brooom.json`
-still act on top of it. Findings below the confidence floor are dropped in
-`execute`, before reporting and planning; blocked findings are not treated
-specially and stay blocked. Age thresholds are set as `min(current, preset)`
-and lowered values live in one table (`presets.AggressiveAges`). The aggressive git
-expiries follow the same rule (`shorterExpiry`): the preset's `90.days.ago`
+the undo line and, last, the counts per kind with the reclaimed size.
+`--verbose` turns Brief off. A machine `--format` only reports, like
+`--dry-run`, and is a usage error with `--yes`. The overlay is applied right
+after `config.Load` in `newScanRequest` and before `ForTarget`, so root
+overrides and the tighten-only `.brooom.json` still act on top of it. Findings
+the keep filter rejects are dropped in `execute`, before reporting and
+planning; blocked findings are not treated specially and stay blocked.
+`everything` shortens the git expiries with `shorterExpiry`: `90.days.ago`
 replaces a configured `reflog_expire` / `prune_expire` only when it is shorter
 in the restricted comparison of `now`, `never`, `N.days.ago` and `N.weeks.ago`;
 longer, equal and unparseable values are kept, so the default `2.weeks.ago`
-prune expiry is never raised. `standard` leaves the log
-categories as configured (it never switches one on, so a category the user
-disabled stays disabled; only `safe` limits them to OS junk and old logs).
-Overlays never
-touch `RecentDays`, the worktree age threshold (default 0, never raised), protected branches, the trash strategy or `AllowDelete`,
-and never switch `ai-artifacts.user_locations` on. `--detector` is intersected
-with the preset; naming one outside it is a usage error. Preset detectors that
-cannot be missing from the build (every detector is linked in through
-`internal/detectors/all`), so a name outside the registry is a usage error.
-`config.PresetNames` mirrors `presets.Names()` (pinned by a test) because
-`presets` imports `config`.
+prune expiry is never raised. Overlays only switch things off
+(`user_locations`, `include_stale` worktrees) and never touch age thresholds,
+`RecentDays`, protected branches, the trash strategy or `AllowDelete`.
+`--detector` is intersected with the preset; naming one outside it is a usage
+error that names the preset that runs it. `config.PresetNames` and
+`config.LegacyPresetNames` mirror the presets package (pinned by a test)
+because `presets` imports `config`.
 
 #### The git maintenance actions
 
@@ -955,8 +967,8 @@ interactive stdout terminal for its background colour once at process start
 ### Completions and the CLI reference (`internal/cli`)
 
 `completion.go` registers the dynamic shell completions (`--detector` with
-comma lists, `--format`, `--preset`, `--trash-strategy`, `--root`, session ids,
-`roots remove`) by walking the tree in `newRootCmd`; they only read registries,
+comma lists, `--format`, the sweep preset argument, `--trash-strategy`,
+`--root`, session ids, `roots remove`) by walking the tree in `newRootCmd`; they only read registries,
 config and manifests and degrade to an empty list. `completion_cmd.go` keeps
 cobra's `completion` command visible with per-shell install instructions.
 `docs/cli.md` is generated by `go run ./internal/tools/gendocs` from
@@ -1034,22 +1046,23 @@ Scan errors come in two classes (#191), told apart by `findings.ScanError.Fatal`
 A detector picks the class by what it returns from `Detect`: `detect.Note(err)`
 for a note, any other error for a failure. The engine sets `Fatal` from that
 and nowhere else. Exit `3` still wins when nothing was scanned at all. The
-apply flows (`sweep`, `clean` and the shortcut commands with `--apply`) keep
+acting flows (`sweep` and `clean`) keep
 their own exit rules and do not return `4`: a run that has already trashed
 items must not report a failure for a detector problem that its plan never saw;
 the errors are still printed (stderr or in-band). Every error is listed in the
 report (table, tree, summary, json) or on stderr (plain, ndjson).
 
-Suggested apply commands (`applyHint`) repeat the invocation without `--apply`,
-`--yes`/`-y` (a pasted hint must not skip the confirmation) and
-`--format`/`-f` (an explicit machine format is refused with `--apply`). A
-`scan --force` hint keeps `--force` on every command it names. With `--apply`,
-an explicit `-f tree|table|summary` renders the scan report before the plan;
-without `-f` an applying run prints no report; a machine format is a usage
-error with `--apply`.
+After a scan with actionable findings, `scanHint` prints one line: the sweep
+that acts on them (`brooom sweep` with the scope flags, the preset only when
+the configured one covers none of the findings, and the `--detector` names the
+preset runs), plus how many findings no preset covers. Sweep shows its plan
+and asks, so the hint needs no preview step. An explicit `-f
+tree|table|summary` renders the scan report before the plan of an acting run;
+without `-f` an acting run shows only the plan; a machine format only reports
+and is a usage error with `--yes`.
 
 Decision (#182 item 5): the issue proposed rejecting every explicit `--format`
-together with `--apply`. Brooom instead honours an explicit human format
+on an acting run. Brooom instead honours an explicit human format
 (`tree`, `table`, `summary`), because a user who asked for a report expects to
 see it before confirming, and rejects only machine formats, whose consumers
 would receive a plan prompt mixed into their data.

@@ -21,9 +21,10 @@ func newUndoCmd(a *app) *cobra.Command {
 		Use:   "undo [session-id]",
 		Short: "Restore what a session removed (default: the latest session)",
 		Long: `Restore the items a session removed, last applied first. Pass a full session
-id or a unique prefix; without one the latest session is used. Without --apply
-this only prints what would be restored and what cannot be (with the reason
-and a manual recovery hint).
+id or a unique prefix; without one the latest session is used. Undo shows what
+would be restored and what cannot be (with the reason and a manual recovery
+hint), asks once and then restores. --dry-run stops after the list, --yes
+skips the question.
 
 Nothing is ever overwritten: an entry whose original location exists again is
 reported as a conflict and stays as it was. Entries are only restored inside
@@ -38,13 +39,14 @@ or failed, 2 when confirmation is needed but stdin is not a terminal (pass
 --yes).`,
 		Example: `  brooom undo
   brooom undo 20260929-224501-3f9a
-  brooom undo --apply`,
+  brooom undo --dry-run`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runUndo(cmd, args, af)
 		},
 	}
 	addApplyFlags(cmd, &af)
+	addForceFlag(cmd, &af)
 	return cmd
 }
 
@@ -85,15 +87,15 @@ func (a *app) runUndo(cmd *cobra.Command, args []string, af applyFlags) error {
 		return err
 	}
 	res, err := action.RunUndo(ctx, env, m, action.UndoOptions{
-		Apply:      af.apply,
+		Apply:      af.apply(),
 		Yes:        af.yes,
 		IO:         action.IO{In: a.io.In, Out: a.io.Out, Err: a.io.Err},
 		Store:      store,
 		StdinIsTTY: a.canPrompt,
 		Progress:   a.reporter(),
-		RerunHint:  "re-run '" + cmd.CommandPath() + " " + m.ID + " --apply'",
+		RerunHint:  "re-run '" + cmd.CommandPath() + " " + m.ID + "' without --dry-run",
 	})
-	return mapUndoError(res, err, af.apply)
+	return mapUndoError(res, err, af.apply())
 }
 
 // adoptSessionScope makes undo of a session recorded with --workspaces resolve

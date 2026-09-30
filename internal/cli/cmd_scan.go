@@ -12,8 +12,7 @@ import (
 )
 
 // scanOptions narrows a scan to a subset of detectors or categories; the
-// shortcut commands (branches, logs, artifacts, ai, ...) are scans with a
-// preset selection.
+// sweep presets are scans with a preset selection.
 type scanOptions struct {
 	// detectors restricts the scan to these detector names; it is combined
 	// with the --detector flag by intersection.
@@ -28,43 +27,43 @@ type scanOptions struct {
 	// read and before any per-root or per-repo layer (ForTarget), so a
 	// .brooom.json still tightens on top of it. It receives a private copy.
 	configOverlay func(*config.Config)
-	// minConfidence drops findings below this confidence before they are
-	// reported or planned; the zero value keeps everything.
-	minConfidence findings.Confidence
+	// keep drops the findings it rejects (a preset's confidence floors)
+	// before they are reported or planned; nil keeps everything.
+	keep func(findings.Finding) bool
 	// targetsOnly builds targets, guard and environment but runs no
 	// detector. `brooom git purge` uses it when only explicit dates are
 	// given: it needs the repositories in scope, not their bloat findings.
 	targetsOnly bool
 }
 
-// keep reports whether a finding passes the confidence floor.
-func (o scanOptions) keep(f findings.Finding) bool {
-	return o.minConfidence == "" || f.Confidence.Rank() >= o.minConfidence.Rank()
+// passes reports whether a finding passes the keep filter.
+func (o scanOptions) passes(f findings.Finding) bool {
+	return o.keep == nil || o.keep(f)
 }
 
 // filterStream wraps a streaming callback so it only sees findings that pass
-// the confidence floor. A nil callback stays nil.
+// the keep filter. A nil callback stays nil.
 func (o scanOptions) filterStream(onFinding func(findings.Finding)) func(findings.Finding) {
-	if onFinding == nil || o.minConfidence == "" {
+	if onFinding == nil || o.keep == nil {
 		return onFinding
 	}
 	return func(f findings.Finding) {
-		if o.keep(f) {
+		if o.passes(f) {
 			onFinding(f)
 		}
 	}
 }
 
-// filter returns the findings that pass the confidence floor. Blocked
-// findings are not treated specially: they stay when their confidence is high
-// enough and the executor reports them as blocked.
+// filter returns the findings that pass the keep filter. Blocked findings are
+// not treated specially: they stay when their confidence is high enough and
+// the executor reports them as blocked.
 func (o scanOptions) filter(in []findings.Finding) []findings.Finding {
-	if o.minConfidence == "" {
+	if o.keep == nil {
 		return in
 	}
 	out := make([]findings.Finding, 0, len(in))
 	for _, f := range in {
-		if o.keep(f) {
+		if o.passes(f) {
 			out = append(out, f)
 		}
 	}
@@ -82,8 +81,13 @@ func newScanCmd(a *app) *cobra.Command {
   brooom scan --force --format json > findings.json`,
 		Long: `Scan the current repository (or, with --workspaces, every repository and
 project below the configured roots) and report findings. Scanning never
-modifies anything; use 'brooom sweep', a specific command with --apply, or
-'brooom clean --from <file>' to act on findings.
+modifies anything; use 'brooom sweep' or 'brooom clean --from <file>' to act
+on findings. -d/--detector limits the scan to single detectors, including the
+ones no sweep preset runs (stale-branch, large-untracked).
+
+The plain format is a bare path list for pipes and omits informational
+findings, such as linked worktrees outside the scanned scope; use another
+format to see them.
 
 --force only changes what is reported: findings blocked by an overridable risk
 flag then suggest their action, so the file can be given to 'brooom clean
@@ -128,7 +132,9 @@ func (a *app) runScan(cmd *cobra.Command, opts scanOptions) error {
 		return werr
 	}
 	if !machineFormats[req.format] && !a.flags.quiet && res.Report.Totals.Actionable > 0 {
-		fmt.Fprintln(a.io.Out, a.applyHint(cmd, res))
+		if hint := a.scanHint(cmd, res); hint != "" {
+			fmt.Fprintln(a.io.Out, hint)
+		}
 	}
 	if err == nil {
 		err = scanFailure(res.Report)

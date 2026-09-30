@@ -54,7 +54,7 @@ func (a *app) retentionNotice(cmd *cobra.Command, _ []string) {
 // output.format. Deciding it from the flag and the config for every command
 // is wrong both ways: `sessions` or `version` never read the config format
 // (their table was printed, yet the notice was suppressed), and an acting run
-// (--apply, git purge operations) prints its plan as text even when the config
+// (anything without --dry-run, git purge operations) prints its plan as text even when the config
 // asks for a machine format. Only the commands that render findings honour
 // the config, dry runs with resolveFormat and acting runs with
 // resolveActingFormat; `clean` never renders in a format. The result may be
@@ -71,13 +71,18 @@ func (a *app) renderedFormat(cmd *cobra.Command, cfgFormat string) (string, erro
 }
 
 // actsThisRun reports whether cmd executes changes or a purge operation, whose
-// plan is human text.
+// plan is human text: a command with --dry-run acts unless that flag or an
+// explicit machine format (which only reports) says otherwise.
 func actsThisRun(cmd *cobra.Command) bool {
-	if f := cmd.Flags().Lookup("apply"); f != nil && f.Value.String() == "true" {
-		return true
+	dry := cmd.Flags().Lookup("dry-run")
+	if dry == nil || dry.Value.String() == "true" {
+		return false
+	}
+	if f := cmd.Flags().Lookup("format"); f != nil && machineFormats[f.Value.String()] {
+		return false
 	}
 	if cmd.CommandPath() != "brooom git purge" {
-		return false
+		return true
 	}
 	for _, name := range []string{"gc", "reflog-expire", "prune"} {
 		if f := cmd.Flags().Lookup(name); f != nil && f.Changed {

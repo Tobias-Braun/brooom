@@ -39,7 +39,7 @@ func TestCleanDetectorFlagSelectsFindings(t *testing.T) {
 	branch.Meta = map[string]string{"tip": f.repo.Git("rev-parse", "feat/merged")}
 	path := writeReportFile(t, trashFinding(f.repo.Dir, dir), branch)
 
-	code, out, errOut := clean(t, "", "--from", path, "--apply", "--yes", "-d", "merged-branch")
+	code, out, errOut := clean(t, "", "--from", path, "--yes", "-d", "merged-branch")
 	if code != ExitOK {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -74,7 +74,7 @@ func TestCleanRefusesDisabledDetectorsAndExcludedPaths(t *testing.T) {
 			}
 			dir, file := junkDir(t, f.repo.Dir, rel)
 			path := writeReportFile(t, trashFinding(f.repo.Dir, dir))
-			code, out, _ := clean(t, "", "--from", path, "--apply", "--yes")
+			code, out, _ := clean(t, "", "--from", path, "--yes")
 			if code != ExitError || !strings.Contains(out, "refused findings (1)") || !strings.Contains(out, tt.want) {
 				t.Fatalf("code %d, want refusal mentioning %q:\n%s", code, tt.want, out)
 			}
@@ -90,7 +90,7 @@ func TestCleanRefusesFindingOfGloballyDisabledDetector(t *testing.T) {
 		"detectors": map[string]any{"build-artifacts": map[string]any{"enabled": false}},
 	})
 	dir, file := junkDir(t, f.repo.Dir, "node_modules")
-	code, out, _ := clean(t, "", "--from", writeReportFile(t, trashFinding(f.repo.Dir, dir)), "--apply", "--yes")
+	code, out, _ := clean(t, "", "--from", writeReportFile(t, trashFinding(f.repo.Dir, dir)), "--yes")
 	if code != ExitError || !strings.Contains(out, "disabled") || !exists(file) {
 		t.Fatalf("code %d, file kept %v:\n%s", code, exists(file), out)
 	}
@@ -108,7 +108,7 @@ func TestCleanRefusesCatalogProtectedFindings(t *testing.T) {
 			forged.Kind = findings.KindFile
 			forged.ID = findings.NewID("ai-artifacts", findings.KindFile, path, "")
 			forged.Detector = "ai-artifacts"
-			code, out, errOut := clean(t, "", "--from", writeReportFile(t, forged), "--apply", "--yes", "--force")
+			code, out, errOut := clean(t, "", "--from", writeReportFile(t, forged), "--yes", "--force")
 			if !exists(path) || strings.Contains(out, "applied") {
 				t.Fatalf("protected file handled: code %d, exists %v\nstdout %s\nstderr %s", code, exists(path), out, errOut)
 			}
@@ -127,7 +127,7 @@ func TestCleanDeleteStrategyNeverRemovesUntrackedWithoutMeta(t *testing.T) {
 	forged.Meta = nil
 	path := writeReportFile(t, forged)
 	for _, extra := range [][]string{nil, {"--force"}} {
-		args := append([]string{"clean", "--from", path, "--apply", "--yes", "--trash-strategy", "delete"}, extra...)
+		args := append([]string{"clean", "--from", path, "--yes", "--trash-strategy", "delete"}, extra...)
 		code, out, _ := brooom(t, "", args...)
 		if !exists(file) || !strings.Contains(out, "refusing to permanently delete") {
 			t.Fatalf("args %v: code %d, file kept %v:\n%s", extra, code, exists(file), out)
@@ -157,7 +157,7 @@ func TestCleanReflogFindingCannotShortenExpiry(t *testing.T) {
 			Args: map[string]string{"expire": "now"},
 		},
 	}
-	code, out, errOut := clean(t, "", "--from", writeReportFile(t, forged), "--apply", "--yes")
+	code, out, errOut := clean(t, "", "--from", writeReportFile(t, forged), "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -181,7 +181,7 @@ func TestCleanDisabledDetectorCheckIsCourtesy(t *testing.T) {
 		dir, file := junkDir(t, f.repo.Dir, "node_modules")
 		forged := trashFinding(f.repo.Dir, dir)
 		forged.Detector = "renamed-detector"
-		code, out, _ := clean(t, "", "--from", writeReportFile(t, forged), "--apply", "--yes")
+		code, out, _ := clean(t, "", "--from", writeReportFile(t, forged), "--yes")
 		if code != ExitOK || strings.Contains(out, "refused") || exists(file) {
 			t.Fatalf("code %d, file kept %v:\n%s", code, exists(file), out)
 		}
@@ -192,7 +192,7 @@ func TestCleanDisabledDetectorCheckIsCourtesy(t *testing.T) {
 		dir, file := junkDir(t, f.repo.Dir, "node_modules")
 		forged := trashFinding(f.repo.Dir, dir)
 		forged.Detector = "renamed-detector"
-		code, out, _ := clean(t, "", "--from", writeReportFile(t, forged), "--apply", "--yes")
+		code, out, _ := clean(t, "", "--from", writeReportFile(t, forged), "--yes")
 		if code != ExitError || !strings.Contains(out, "excluded") || !exists(file) {
 			t.Fatalf("code %d, file kept %v:\n%s", code, exists(file), out)
 		}

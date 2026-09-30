@@ -40,7 +40,7 @@ func newGitCmd(a *app) *cobra.Command {
 		Use:   "git",
 		Short: "Git history maintenance",
 		Example: `  brooom git purge
-  brooom git purge --gc --apply`,
+  brooom git purge --gc`,
 		Args: cobra.NoArgs,
 		RunE: groupRunE,
 	}
@@ -67,12 +67,14 @@ func newGitPurgeCmd(a *app) *cobra.Command {
 		Use:   "purge",
 		Short: "Report git bloat and run gc, prune and reflog expiry (each opt-in)",
 		Example: `  brooom git purge
-  brooom git purge --gc --apply
-  brooom git purge --reflog-expire 90.days.ago --prune 2.weeks.ago --apply`,
+  brooom git purge --gc
+  brooom git purge --reflog-expire 90.days.ago --prune 2.weeks.ago --dry-run`,
 		Long: `Report loose objects, pack count, reflog size and large blobs, and run the
 selected maintenance operations. Without a flag nothing but the report is
 produced. Each operation is opt-in and independent, none can be undone, and
-each is validated with git's own dry run before it is offered.
+each is validated with git's own dry run before it is offered. The plan is
+shown and confirmed once before anything runs (--yes skips the question,
+--dry-run stops after the plan).
 
   --gc                    run 'git gc --prune=<prune_expire>' on repositories
                           with a loose-object or pack finding (healthy
@@ -105,6 +107,7 @@ does not do. Use --workspaces for all repositories below the configured roots.`,
 	cmd.Flags().StringVar(&pf.reflogExpire, "reflog-expire", "", "expire reflog entries older than this git date, e.g. 90.days.ago (removes recovery points)")
 	cmd.Flags().StringVar(&pf.prune, "prune", "", "delete unreachable objects older than this git date, e.g. 2.weeks.ago (permanent)")
 	addApplyFlags(cmd, &af)
+	addForceFlag(cmd, &af)
 	return cmd
 }
 
@@ -132,7 +135,7 @@ func (a *app) runGitPurge(cmd *cobra.Command, pf purgeFlags, af applyFlags) erro
 	result, err := a.runExecutor(ctx, cmd, execInput{
 		cfg: res.Config, git: res.Env.Git, guard: res.Guard, findings: fs,
 	}, af, strategy)
-	return mapExecutorError(result, err, af.apply)
+	return mapExecutorError(result, err, af.apply())
 }
 
 // purgeScan resolves the scope and the repositories in it and validates the
@@ -182,8 +185,8 @@ func (a *app) purgeSetup(pf purgeFlags, af applyFlags) (config.TrashStrategy, er
 // purgeReport is the flag-less mode: the git-bloat findings in the chosen
 // format, plus (for human formats) which flag performs what.
 func (a *app) purgeReport(cmd *cobra.Command, af applyFlags) error {
-	if af.apply {
-		return usageError{errors.New("--apply needs an operation: --gc, --reflog-expire <date> or --prune <date>")}
+	if af.yes {
+		return usageError{errors.New("--yes needs an operation: --gc, --reflog-expire <date> or --prune <date>")}
 	}
 	if err := a.runScan(cmd, scanOptions{detectors: []string{config.DetectorGitBloat}}); err != nil {
 		return err
@@ -201,7 +204,7 @@ func (a *app) purgeReport(cmd *cobra.Command, af applyFlags) error {
 		fmt.Fprintln(a.io.Out, "  brooom git purge --gc                    gc repositories with loose-object or pack findings")
 		fmt.Fprintln(a.io.Out, "  brooom git purge --reflog-expire <date>  remove reflog entries older than <date>")
 		fmt.Fprintln(a.io.Out, "  brooom git purge --prune <date>          delete unreachable objects older than <date>")
-		fmt.Fprintln(a.io.Out, dateSyntax+" Add --apply to execute.")
+		fmt.Fprintln(a.io.Out, dateSyntax+" Each asks before it runs.")
 	}
 	return nil
 }

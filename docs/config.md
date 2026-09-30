@@ -55,11 +55,11 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `detectors.stale-branch` | enabled, `min_age_days` 90, `include_unpushed` | Stale branch detector. |
 | `detectors.merged-branch` | enabled, `mode` `ancestor+squash`, `include_remote` false | `mode` is `ancestor` or `ancestor+squash`. |
 | `detectors.worktrees` | enabled, `include_stale`, `min_age_days` 0 | Worktree detector. `min_age_days` is the abandonment threshold of the stale rule only and defaults to 0 (no age threshold, stale rule off): merged and patch-equivalent detached worktrees are removable whatever their age, so cleanup can run right after a large agent run. No preset raises it. |
-| `detectors.git-bloat` | enabled, thresholds, `reflog_expire` `90.days.ago`, `prune_expire` `2.weeks.ago` | The two expiry values are passed to git as option values: they must be non-empty, contain no whitespace or control characters and must not start with `-`. Reflog expiry never touches the stash reflog (`refs/stash`); stash entries are uncommitted work. The `aggressive` sweep preset shortens an expiry to `90.days.ago` only when it is longer (`N.days.ago`, `N.weeks.ago`, `now`, `never` are compared; other forms are left as configured). |
+| `detectors.git-bloat` | enabled, thresholds, `reflog_expire` `90.days.ago`, `prune_expire` `2.weeks.ago` | The two expiry values are passed to git as option values: they must be non-empty, contain no whitespace or control characters and must not start with `-`. Reflog expiry never touches the stash reflog (`refs/stash`); stash entries are uncommitted work. The `everything` sweep preset shortens an expiry to `90.days.ago` only when it is longer (`N.days.ago`, `N.weeks.ago`, `now`, `never` are compared; other forms are left as configured). |
 | `detectors.large-untracked` | enabled, `min_size_bytes` 100 MiB, `include_ignored` | Large untracked files. |
 | `detectors.ai-artifacts` | enabled, `user_locations` false | Optional `tools`, `extra[]` catalog entries, `min_age_days`. |
 | `detectors.build-artifacts` | enabled, `inactive_days` 30 | Optional `dirs`, `extra_dirs`, both lists of `name` or `name:marker1,marker2` (see below). |
-| `detectors.log-and-runtime-files` | enabled, `user_locations` false | Optional `categories`, `extra[]`, `min_age_days`. `user_locations` scans the user-level caches and logs (`brooom logs --user` enables it for one run). |
+| `detectors.log-and-runtime-files` | enabled, `user_locations` false | Optional `categories`, `extra[]`, `min_age_days`. `user_locations` scans the user-level caches and logs (`brooom clean --user` accepts findings there). |
 | `trash.strategy` | `trash` | `trash`, `quarantine` or `delete`. |
 | `trash.per_detector` | | Strategy per detector name. |
 | `trash.quarantine_retention_days` | `14` | Quarantined sessions older than this are purged. **`0` means never purge**; negative is invalid. |
@@ -73,7 +73,7 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `agent.provider` | | `""`, `anthropic` or `openai-compatible`. |
 | `agent.endpoint`, `agent.model` | | Agent settings. |
 | `agent.api_key_env` | | Name of the environment variable holding the key (`[A-Za-z_][A-Za-z0-9_]*`); keys are never stored. |
-| `sweep.preset` | `safe` | Preset of `brooom sweep` when `--preset` is not given: `safe`, `standard` or `aggressive`. |
+| `sweep.preset` | `everything` | Preset of `brooom sweep` when no preset argument is given: `after-agents`, `tidy` or `everything`. The old names `safe`, `standard` and `aggressive` still load and run `everything`. |
 | `update_check` | `false` | Opt-in update check. |
 
 **Quarantine and volumes (Windows).** Quarantine lives in `<home>\quarantine`, by default below `%USERPROFILE%`. A project on another volume (say `D:\`) cannot be renamed into it, so it is copied, verified and then removed, which is slow, needs free space on the home volume and is refused for trees holding junctions (pnpm/npm workspaces) or files that a process has open. Set `BROOOM_HOME` to a directory on the same volume as your projects (for example `D:\.brooom`) and quarantine moves become plain renames. Brooom has no per-volume quarantine directory: one home keeps `undo`, `purge` and the retention notice simple.

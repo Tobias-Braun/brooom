@@ -42,7 +42,7 @@ func TestHelpListsCommands(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("help exit code %d", code)
 	}
-	for _, c := range []string{"scan", "sweep", "branches", "worktrees", "undo", "roots", "config"} {
+	for _, c := range []string{"scan", "sweep", "undo", "roots", "config"} {
 		if !strings.Contains(out, c) {
 			t.Errorf("help does not mention %q", c)
 		}

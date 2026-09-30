@@ -79,12 +79,12 @@ func ageQuarantine(t *testing.T, f *undoFixture, id string, created time.Time) {
 
 func TestPurgeDryRunListsExpiredOnly(t *testing.T) {
 	f := agedFixture(t)
-	code, out, _ := runApp(t, "", false, purgeClock, "purge")
+	code, out, _ := runApp(t, "", false, purgeClock, "purge", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
 	for _, want := range []string{oldSession, "60 days old", "older than 14 days", "total: 1 session(s), " + allocatedSizeOf(t, "old data"),
-		"dry run: nothing was deleted; re-run 'brooom purge --apply' to delete them permanently"} {
+		"dry run: nothing was deleted; re-run 'brooom purge' without --dry-run to delete them permanently"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -99,7 +99,7 @@ func TestPurgeDryRunListsExpiredOnly(t *testing.T) {
 
 func TestPurgeApplyDeletesAndMarksManifests(t *testing.T) {
 	f := agedFixture(t)
-	code, out, errOut := runApp(t, "", false, purgeClock, "purge", "--apply", "--yes")
+	code, out, errOut := runApp(t, "", false, purgeClock, "purge", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code=%d out=%s err=%s", code, out, errOut)
 	}
@@ -123,7 +123,7 @@ func TestPurgeApplyDeletesAndMarksManifests(t *testing.T) {
 		t.Fatalf("output:\n%s", out)
 	}
 	// undo now lists the purged entry as not restorable with the hint.
-	code, out, _ = runApp(t, "", false, purgeClock, "undo", oldSession)
+	code, out, _ = runApp(t, "", false, purgeClock, "undo", oldSession, "--dry-run")
 	if code != ExitOK || !strings.Contains(out, "cannot restore") || !strings.Contains(out, "purged from quarantine on 2026-09-30") {
 		t.Fatalf("undo after purge: code=%d\n%s", code, out)
 	}
@@ -144,7 +144,7 @@ func TestPurgeConfirmation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := agedFixture(t)
-			code, out, _ := runApp(t, tt.stdin, tt.tty, purgeClock, "purge", "--apply")
+			code, out, _ := runApp(t, tt.stdin, tt.tty, purgeClock, "purge")
 			if code != tt.wantCode {
 				t.Fatalf("code=%d out=%s", code, out)
 			}
@@ -162,7 +162,7 @@ func TestPurgeConfirmation(t *testing.T) {
 func TestPurgeRetentionZeroListsNothing(t *testing.T) {
 	f := agedFixture(t)
 	writeConfig(t, f.home, map[string]any{"trash": map[string]any{"quarantine_retention_days": 0}})
-	code, out, _ := runApp(t, "", false, purgeClock, "purge", "--apply", "--yes")
+	code, out, _ := runApp(t, "", false, purgeClock, "purge", "--yes")
 	if code != ExitOK || !strings.Contains(out, "never expire") {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
@@ -174,7 +174,7 @@ func TestPurgeRetentionZeroListsNothing(t *testing.T) {
 func TestPurgeUsesConfiguredRetention(t *testing.T) {
 	f := agedFixture(t)
 	writeConfig(t, f.home, map[string]any{"trash": map[string]any{"quarantine_retention_days": 1}})
-	_, out, _ := runApp(t, "", false, purgeClock, "purge")
+	_, out, _ := runApp(t, "", false, purgeClock, "purge", "--dry-run")
 	// 24 hours old is not older than 1 day yet; the 60 day old one is.
 	if !strings.Contains(out, "older than 1 days") || strings.Contains(out, newSession) || !strings.Contains(out, oldSession) {
 		t.Fatalf("output:\n%s", out)
@@ -183,7 +183,7 @@ func TestPurgeUsesConfiguredRetention(t *testing.T) {
 
 func TestPurgeNothingExpired(t *testing.T) {
 	newUndoFixture(t)
-	code, out, _ := runApp(t, "", false, purgeClock, "purge", "--apply", "--yes")
+	code, out, _ := runApp(t, "", false, purgeClock, "purge", "--yes")
 	if code != ExitOK || !strings.Contains(out, "nothing to purge") {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
@@ -201,7 +201,7 @@ func TestPurgeSkipsSymlinkedSessionDir(t *testing.T) {
 	if err := os.Symlink(victim, filepath.Join(f.quarantineDir(), oldSession)); err != nil {
 		t.Skipf("symlinks not available: %v", err)
 	}
-	code, out, errOut := runApp(t, "", false, purgeClock, "purge", "--apply", "--yes")
+	code, out, errOut := runApp(t, "", false, purgeClock, "purge", "--yes")
 	if code != ExitOK || !strings.Contains(errOut, "skipping") {
 		t.Fatalf("code=%d out=%s err=%s", code, out, errOut)
 	}
@@ -223,7 +223,7 @@ func TestPurgeManifestlessSessionUsesMtime(t *testing.T) {
 	if err := os.Chtimes(filepath.Join(f.quarantineDir(), oldSession), old, old); err != nil {
 		t.Fatal(err)
 	}
-	code, out, _ := runApp(t, "", false, purgeClock, "purge")
+	code, out, _ := runApp(t, "", false, purgeClock, "purge", "--dry-run")
 	if code != ExitOK || !strings.Contains(out, oldSession) || !strings.Contains(out, "90 days old") {
 		t.Fatalf("code=%d out=%s", code, out)
 	}

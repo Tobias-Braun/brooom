@@ -2,16 +2,14 @@
 
 # Brooom CLI reference
 
-Every command is a dry run unless `--apply` is given. Every command also accepts
+Every command that changes something shows its plan and asks once before it acts;
+`--dry-run` only shows the plan and `--yes` skips the question. Every command also accepts
 `-h, --help`. Run `brooom <command> --help` for the same text in your terminal.
 
 ## Contents
 
 - [Global flags](#global-flags)
 - [`brooom`](#brooom)
-- [`brooom ai`](#brooom-ai)
-- [`brooom artifacts`](#brooom-artifacts)
-- [`brooom branches`](#brooom-branches)
 - [`brooom clean`](#brooom-clean)
 - [`brooom completion`](#brooom-completion)
 - [`brooom completion bash`](#brooom-completion-bash)
@@ -26,7 +24,6 @@ Every command is a dry run unless `--apply` is given. Every command also accepts
 - [`brooom config validate`](#brooom-config-validate)
 - [`brooom git`](#brooom-git)
 - [`brooom git purge`](#brooom-git-purge)
-- [`brooom logs`](#brooom-logs)
 - [`brooom purge`](#brooom-purge)
 - [`brooom roots`](#brooom-roots)
 - [`brooom roots add`](#brooom-roots-add)
@@ -38,7 +35,6 @@ Every command is a dry run unless `--apply` is given. Every command also accepts
 - [`brooom undo`](#brooom-undo)
 - [`brooom update-check`](#brooom-update-check)
 - [`brooom version`](#brooom-version)
-- [`brooom worktrees`](#brooom-worktrees)
 
 ## Global flags
 
@@ -72,8 +68,10 @@ Brooom finds and safely cleans the clutter that heavy AI/agent-assisted
 development leaves behind: agent run logs and runtime files, stale and merged
 git branches, leftover worktrees, bloated git histories and build artifacts.
 
-Safety first: every command is a dry run unless you pass --apply, removed
-files go to the trash by default, and every applied session can be undone.
+Safety first: every command that changes something shows its plan and asks
+once before it acts (--dry-run only shows the plan, --yes skips the question),
+removed files go to the trash by default, and every session can be undone.
+Sweep never removes unmerged or uncommitted work.
 Brooom never removes a directory that contains version control metadata (.git,
 .hg, .jj, .svn) or a Windows junction, and the delete strategy is refused
 outside a git repository and whenever git cannot confirm that a path holds no
@@ -87,133 +85,25 @@ Without flags Brooom only looks at the git repository you are in. Use
 
 ```sh
 brooom
-brooom --workspaces --format json
 brooom sweep
+brooom sweep after-agents
 brooom undo
 ```
 
 **Subcommands**
 
-- [`brooom ai`](#brooom-ai): Find (and trash) AI agent artifacts: run logs, transcripts, caches
-- [`brooom artifacts`](#brooom-artifacts): Find (and trash) build artifacts of inactive projects
-- [`brooom branches`](#brooom-branches): Find (and delete) stale and merged local branches
 - [`brooom clean`](#brooom-clean): Act on a reviewed findings file (from --format json)
 - [`brooom completion`](#brooom-completion): Generate the autocompletion script for the specified shell
 - [`brooom config`](#brooom-config): Create, show, edit and validate the configuration
 - [`brooom git`](#brooom-git): Git history maintenance
-- [`brooom logs`](#brooom-logs): Find (and trash) logs, caches and runtime leftovers of dev tools
 - [`brooom purge`](#brooom-purge): Permanently delete quarantined sessions past their retention and stale scan caches
 - [`brooom roots`](#brooom-roots): Manage workspace roots used by --workspaces
 - [`brooom scan`](#brooom-scan): Scan for clutter and report findings (never modifies anything)
 - [`brooom sessions`](#brooom-sessions): List applied sessions, or show one session's manifest
-- [`brooom sweep`](#brooom-sweep): The no-brainer: scan and clean with a preset
+- [`brooom sweep`](#brooom-sweep): Scan, show what to clean, ask once, then clean
 - [`brooom undo`](#brooom-undo): Restore what a session removed (default: the latest session)
 - [`brooom update-check`](#brooom-update-check): Check GitHub for a newer release (opt-in, contacts api.github.com)
 - [`brooom version`](#brooom-version): Print version information
-- [`brooom worktrees`](#brooom-worktrees): Find (and remove) leftover git worktrees
-
-
-## `brooom ai`
-
-Find (and trash) AI agent artifacts: run logs, transcripts, caches
-
-```text
-brooom ai [flags]
-```
-
-```text
-Report artifacts left by AI coding tools (Claude Code, Cursor, Aider,
-Copilot, Codex, ...): run logs, JSONL transcripts, caches and scratch files in
-projects, and with --user also in well-known user-level locations. The list
-of tools is maintained as data; see docs/catalog.md to contribute entries.
-```
-
-**Examples**
-
-```sh
-brooom ai
-brooom ai --user
-brooom ai --user --apply
-```
-
-**Flags**
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--apply` | - | execute the plan (default is a dry run) |
-| `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
-| `--user` | - | also scan user-level tool locations (caches, logs) |
-| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
-
-
-## `brooom artifacts`
-
-Find (and trash) build artifacts of inactive projects
-
-```text
-brooom artifacts [flags]
-```
-
-```text
-Report build output and dependency folders (node_modules, dist, build,
-target, .venv, __pycache__, .next, .turbo, .gradle, ...) weighted by how long
-the project has been inactive.
-```
-
-**Examples**
-
-```sh
-brooom artifacts
-brooom artifacts --workspaces --root ~/code
-brooom artifacts --apply --yes
-```
-
-**Flags**
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--apply` | - | execute the plan (default is a dry run) |
-| `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
-| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
-
-
-## `brooom branches`
-
-Find (and delete) stale and merged local branches
-
-```text
-brooom branches [flags]
-```
-
-```text
-Report local branches that are merged into the base branch (including
-squash merges) or stale (no commits for a long time, upstream gone or never
-pushed). With --apply they are deleted with 'git branch -d' (-D with
---force). Every deleted branch's tip commit is recorded, so 'brooom undo'
-can recreate it; the manual recovery command ('git branch <name> <sha>') is
-printed as well. Recovery does not depend on the reflog.
-```
-
-**Examples**
-
-```sh
-brooom branches --merged
-brooom branches --stale --workspaces
-brooom branches --merged --apply
-```
-
-**Flags**
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--apply` | - | execute the plan (default is a dry run) |
-| `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--merged` | - | only merged branches |
-| `--stale` | - | only stale branches |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
-| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
 ## `brooom clean`
@@ -247,9 +137,10 @@ A finding without a suggested action stays untouched, even with --force: scan
 again with --force (export with 'brooom scan --force --format json') to get
 an action for findings blocked by an overridable risk flag.
 
-Use '--from -' to read the file from stdin. Without --apply this is a dry run.
-Stdin is then the findings, so there is no terminal to confirm on: --apply
-needs --yes (or use a file, which keeps the interactive confirmation).
+The plan is shown and confirmed once before anything is done; --dry-run stops
+after the plan and --yes skips the question. Use '--from -' to read the file
+from stdin. Stdin is then the findings, so there is no terminal to confirm on:
+pass --yes or --dry-run (or use a file, which keeps the confirmation).
 
 The file may be UTF-8 (with or without a byte order mark) or UTF-16 with a
 byte order mark, so 'brooom scan --format json > findings.json' also works in
@@ -261,15 +152,15 @@ Windows PowerShell 5.1, which writes UTF-16.
 ```sh
 brooom scan --format json > findings.json
 brooom clean --from findings.json
-brooom clean --from findings.json --id 8f2a41c7 --apply
-brooom scan --format json | brooom clean --from - --apply --yes
+brooom clean --from findings.json --id 8f2a41c7 --dry-run
+brooom scan --format json | brooom clean --from - --yes
 ```
 
 **Flags**
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--apply` | - | execute the plan (default is a dry run) |
+| `--dry-run` | - | only show what would be done and change nothing |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
 | `--from` | - | findings file ('-' for stdin) |
 | `--id` | - | only act on these finding IDs (repeatable, comma-separated) |
@@ -659,7 +550,7 @@ brooom git [flags]
 
 ```sh
 brooom git purge
-brooom git purge --gc --apply
+brooom git purge --gc
 ```
 
 **Subcommands**
@@ -679,7 +570,9 @@ brooom git purge [flags]
 Report loose objects, pack count, reflog size and large blobs, and run the
 selected maintenance operations. Without a flag nothing but the report is
 produced. Each operation is opt-in and independent, none can be undone, and
-each is validated with git's own dry run before it is offered.
+each is validated with git's own dry run before it is offered. The plan is
+shown and confirmed once before anything runs (--yes skips the question,
+--dry-run stops after the plan).
 
   --gc                    run 'git gc --prune=<prune_expire>' on repositories
                           with a loose-object or pack finding (healthy
@@ -707,54 +600,20 @@ does not do. Use --workspaces for all repositories below the configured roots.
 
 ```sh
 brooom git purge
-brooom git purge --gc --apply
-brooom git purge --reflog-expire 90.days.ago --prune 2.weeks.ago --apply
+brooom git purge --gc
+brooom git purge --reflog-expire 90.days.ago --prune 2.weeks.ago --dry-run
 ```
 
 **Flags**
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--apply` | - | execute the plan (default is a dry run) |
+| `--dry-run` | - | only show what would be done and change nothing |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
 | `--gc` | - | run git gc on repositories with a loose-object or pack finding (repos without one are not touched) |
 | `--prune` | - | delete unreachable objects older than this git date, e.g. 2.weeks.ago (permanent) |
 | `--reflog-expire` | - | expire reflog entries older than this git date, e.g. 90.days.ago (removes recovery points) |
 | `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
-| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
-
-
-## `brooom logs`
-
-Find (and trash) logs, caches and runtime leftovers of dev tools
-
-```text
-brooom logs [flags]
-```
-
-```text
-Report log and runtime files of general dev tooling: npm/yarn/pnpm debug
-logs, pip/poetry/uv caches, Jest/Vitest/pytest caches, coverage output,
-.DS_Store, Thumbs.db, editor swap files, crash dumps and rotated logs. Files
-that are currently open by a process are flagged, never suggested.
-```
-
-**Examples**
-
-```sh
-brooom logs
-brooom logs --apply --trash-strategy quarantine
-brooom logs --workspaces --format json
-```
-
-**Flags**
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--apply` | - | execute the plan (default is a dry run) |
-| `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
-| `--user` | - | also scan user-level tool locations (pip, npm, Go caches and logs) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
@@ -768,8 +627,8 @@ brooom purge [flags]
 
 ```text
 List the quarantined sessions (~/.brooom/quarantine/<session-id>) that are
-older than trash.quarantine_retention_days and, with --apply, delete them
-permanently. A retention of 0 means quarantined files never expire, so
+older than trash.quarantine_retention_days and, after one confirmation, delete
+them permanently (--dry-run only lists them, --yes skips the question). A retention of 0 means quarantined files never expire, so
 nothing is listed. Only session directories are touched, never anything else
 in the quarantine directory, the OS trash or the session manifests; the
 manifests of purged sessions are marked as not restorable.
@@ -784,14 +643,14 @@ are rebuilt by the next scan, so this frees disk space only.
 
 ```sh
 brooom purge
-brooom purge --apply
+brooom purge --dry-run
 ```
 
 **Flags**
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--apply` | - | delete the listed sessions and cache files (default is a dry run) |
+| `--dry-run` | - | only list the sessions and cache files and delete nothing |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
@@ -886,8 +745,13 @@ brooom scan [flags]
 ```text
 Scan the current repository (or, with --workspaces, every repository and
 project below the configured roots) and report findings. Scanning never
-modifies anything; use 'brooom sweep', a specific command with --apply, or
-'brooom clean --from <file>' to act on findings.
+modifies anything; use 'brooom sweep' or 'brooom clean --from <file>' to act
+on findings. -d/--detector limits the scan to single detectors, including the
+ones no sweep preset runs (stale-branch, large-untracked).
+
+The plain format is a bare path list for pipes and omits informational
+findings, such as linked worktrees outside the scanned scope; use another
+format to see them.
 
 --force only changes what is reported: findings blocked by an overridable risk
 flag then suggest their action, so the file can be given to 'brooom clean
@@ -919,7 +783,7 @@ brooom sessions [session-id] [flags]
 ```
 
 ```text
-List the sessions recorded by --apply runs, or show one session in detail
+List the sessions recorded by the runs that changed something, or show one session in detail
 (pass the full id or a unique prefix). Supports --format table (default),
 plain (session ids, or entry paths for one session), json and ndjson (one
 manifest, or one entry, per line). Read-only: nothing is modified.
@@ -936,71 +800,67 @@ brooom sessions --format json
 
 ## `brooom sweep`
 
-The no-brainer: scan and clean with a preset
+Scan, show what to clean, ask once, then clean
 
 ```text
-brooom sweep [flags]
+brooom sweep [preset] [flags]
 ```
 
 ```text
-Scan with a preset and clean up what it finds.
+Scan the repository, show what would be cleaned, ask once and then clean.
+Answer y to clean everything listed; anything else changes nothing. --yes
+skips the question (for scripts), --dry-run only shows the plan.
 
 Presets:
-  safe: only high-confidence findings that regenerate or are already merged
-      detectors: merged-branch, worktrees, log-and-runtime-files, build-artifacts
-      minimum confidence: high
-      - merged branches
-      - prunable and merged worktrees, clean ones only (no stale worktrees)
-      - OS junk and old logs
-      - build artifacts of inactive projects (active projects rate below high)
-
-  standard: safe plus stale branches and AI tool artifacts
-      detectors: merged-branch, worktrees, log-and-runtime-files, build-artifacts, stale-branch, ai-artifacts
+  after-agents: clean up after an agent run: merged worktrees and branches, agent leftovers
+      detectors: ai-artifacts, merged-branch, worktrees
       minimum confidence: medium
-      - everything in safe, at medium confidence and above
-      - stale branches
-      - AI tool artifacts in projects (never user-level locations)
-      - log and cache categories as configured (safe limits them to OS junk and old logs)
+      - worktrees whose branch is merged (squash and rebase merges too), clean ones only
+      - local branches merged into the base branch
+      - AI tool artifacts in the repository: run logs, transcripts, caches, scratch files
 
-  aggressive: standard plus lower age thresholds and git maintenance
-      detectors: merged-branch, worktrees, log-and-runtime-files, build-artifacts, stale-branch, ai-artifacts, large-untracked, git-bloat
+  tidy: low-risk hygiene: logs, OS junk, test caches and coverage output
+      detectors: log-and-runtime-files
       minimum confidence: medium
-      - everything in standard
-      - lower age thresholds: stale branches 30 days, minimum age 7 days, inactive projects 30 days (never raised above your own values)
-      - large untracked and ignored files
+      - debug and rotated logs, crash dumps, editor swap files
+      - .DS_Store, Thumbs.db and other OS junk
+      - test caches and coverage output
+
+  everything: all of the above plus build artifacts of inactive projects and git maintenance
+      detectors: ai-artifacts, build-artifacts, git-bloat, log-and-runtime-files, merged-branch, worktrees
+      minimum confidence: medium (build-artifacts: high)
+      - everything in after-agents and tidy
+      - build artifacts (node_modules, target, .venv, ...) of inactive projects only
       - git gc, reflog expiry and pruning; expiries longer than 90.days.ago are shortened to it, shorter ones are kept
 
-Without --preset the config key sweep.preset decides (default "safe").
+Without a preset the config key sweep.preset decides (default "everything").
 --detector narrows the preset's detectors; it cannot add ones the preset
-does not include. Findings below the preset's minimum confidence are dropped.
-Findings with blocking risk flags are shown as blocked and not planned; only
-an explicit --force lifts them, exactly as in every other command. Presets
-never change the trash strategy or protected branches.
+does not include. Findings below the preset's confidence floor are dropped.
 
-Unlike the other commands, sweep applies right away and does not ask: it
-prints how many items of each kind were removed and how much disk was
-reclaimed. --dry-run lists what it would do, with the commands, and changes
-nothing; --verbose lists every item before applying. Everything is recorded
-for 'brooom undo'.
+Sweep never removes unmerged or uncommitted work: worktrees with changes,
+branches that are not merged and other findings with blocking risk flags are
+listed as skipped. Stale branches and large untracked files are in no preset;
+use 'brooom scan -d stale-branch' or '-d large-untracked' to list them.
+
+Removed files go to the trash and everything is recorded for 'brooom undo'.
 ```
 
 **Examples**
 
 ```sh
 brooom sweep
-brooom sweep --dry-run
-brooom sweep --preset standard
-brooom sweep --workspaces --root ~/code --detector build-artifacts
+brooom sweep after-agents
+brooom sweep tidy --dry-run
+brooom sweep everything --yes
 ```
 
 **Flags**
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--dry-run` | - | show what would be cleaned and change nothing |
-| `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `-p`, `--preset` | - | preset: safe, standard, aggressive (default: sweep.preset from the config, else safe) |
+| `--dry-run` | - | only show what would be done and change nothing |
 | `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
+| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
 ## `brooom undo`
@@ -1013,9 +873,10 @@ brooom undo [session-id] [flags]
 
 ```text
 Restore the items a session removed, last applied first. Pass a full session
-id or a unique prefix; without one the latest session is used. Without --apply
-this only prints what would be restored and what cannot be (with the reason
-and a manual recovery hint).
+id or a unique prefix; without one the latest session is used. Undo shows what
+would be restored and what cannot be (with the reason and a manual recovery
+hint), asks once and then restores. --dry-run stops after the list, --yes
+skips the question.
 
 Nothing is ever overwritten: an entry whose original location exists again is
 reported as a conflict and stays as it was. Entries are only restored inside
@@ -1035,14 +896,14 @@ or failed, 2 when confirmation is needed but stdin is not a terminal (pass
 ```sh
 brooom undo
 brooom undo 20260929-224501-3f9a
-brooom undo --apply
+brooom undo --dry-run
 ```
 
 **Flags**
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--apply` | - | execute the plan (default is a dry run) |
+| `--dry-run` | - | only show what would be done and change nothing |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
 | `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
@@ -1088,51 +949,3 @@ brooom version [flags]
 brooom version
 brooom version --format json
 ```
-
-
-## `brooom worktrees`
-
-Find (and remove) leftover git worktrees
-
-```text
-brooom worktrees [flags]
-```
-
-```text
-Report worktrees whose branch is merged, worktrees whose branch ref is missing
-(reported without an action) and worktree metadata whose directory is gone.
-Worktrees are removable whatever their age, so the command can run right
-after a large agent run: clean merged worktrees and detached worktrees whose
-commits all landed on the base under other ids (rebased or squashed) are
-removed, and worktrees left at a not yet started branch are kept. Dirty or
-locked worktrees are reported but not suggested for removal (--force lifts
-the dirty protection), and a worktree in use is never removed. Recent
-activity is shown as an informational flag only. Abandoned worktrees are
-reported only when detectors.worktrees.min_age_days is set above 0.
-Linked worktrees outside the scanned scope (for example ../repo-wt) are
-listed as informational findings with the hint to run 'brooom roots add
-<parent>' or use --workspaces; they are never examined or removed.
-The plain format is a bare path list for pipes and omits these informational
-findings; use another format to see them. With --apply, a worktree directory
-is moved to the trash (so ignored files such as .env stay recoverable) and
-then deregistered from git; metadata of a missing directory is dropped without
-touching other entries. Do not run 'git worktree remove' by hand instead: it
-deletes ignored files permanently.
-```
-
-**Examples**
-
-```sh
-brooom worktrees
-brooom worktrees --apply
-brooom worktrees --workspaces --format tree
-```
-
-**Flags**
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--apply` | - | execute the plan (default is a dry run) |
-| `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
-| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |

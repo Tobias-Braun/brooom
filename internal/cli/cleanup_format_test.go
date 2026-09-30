@@ -12,7 +12,7 @@ func TestShortcutDryRunHonoursFormat(t *testing.T) {
 	f.mergedAndSquashed()
 	outs := map[string]string{}
 	for _, format := range []string{"table", "tree", "summary"} {
-		code, out, errOut := brooom(t, "", "branches", "-f", format)
+		code, out, errOut := brooom(t, "", "sweep", "after-agents", "-d", "merged-branch", "--dry-run", "-f", format)
 		if code != ExitOK {
 			t.Fatalf("%s: code %d, stderr %q", format, code, errOut)
 		}
@@ -34,8 +34,8 @@ func TestShortcutDryRunHonoursFormat(t *testing.T) {
 func TestShortcutQuietIsTerse(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	_, loud, _ := brooom(t, "", "branches")
-	code, quiet, errOut := brooom(t, "", "branches", "-q")
+	_, loud, _ := brooom(t, "", "sweep", "after-agents", "-d", "merged-branch", "--dry-run")
+	code, quiet, errOut := brooom(t, "", "sweep", "after-agents", "-d", "merged-branch", "--dry-run", "-q")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -48,11 +48,13 @@ func TestShortcutQuietIsTerse(t *testing.T) {
 		}
 	}
 
-	_, loudApply, _ := brooom(t, "", "branches", "--apply", "--yes")
+	_, loudApply, _ := brooom(t, "", "sweep", "after-agents", "-d", "merged-branch", "--yes")
 	f2 := newCleanupFixture(t, nil)
 	f2.mergedAndSquashed()
-	_, quietApply, _ := brooom(t, "", "branches", "--apply", "--yes", "-q")
-	if len(quietApply) >= len(loudApply) || !strings.Contains(quietApply, "summary:") {
-		t.Errorf("quiet apply summary did not shrink:\nquiet %q\nloud %q", quietApply, loudApply)
+	_, quietApply, _ := brooom(t, "", "sweep", "after-agents", "-d", "merged-branch", "--yes", "-q")
+	// A successful quiet sweep says nothing; the loud one ends with its
+	// one-line summary.
+	if quietApply != "" || !strings.Contains(loudApply, "2 merged branches removed") {
+		t.Errorf("quiet apply:\nquiet %q\nloud %q", quietApply, loudApply)
 	}
 }

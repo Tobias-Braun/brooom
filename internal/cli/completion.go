@@ -62,13 +62,10 @@ func registerLocalCompletions(c *cobra.Command) {
 	if local.Lookup("trash-strategy") != nil {
 		_ = c.RegisterFlagCompletionFunc("trash-strategy", completeTrashStrategies)
 	}
-	if local.Lookup("preset") != nil {
-		_ = c.RegisterFlagCompletionFunc("preset", completePresets)
-	}
 }
 
-// registerSessionArgs completes session ids for `undo` and `sessions` and the
-// configured roots for `roots remove`.
+// registerSessionArgs completes session ids for `undo` and `sessions`, the
+// presets for `sweep` and the configured roots for `roots remove`.
 func registerSessionArgs(root *cobra.Command, a *app) {
 	sessionIDs := func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
@@ -79,6 +76,14 @@ func registerSessionArgs(root *cobra.Command, a *app) {
 	for _, path := range [][]string{{"undo"}, {"sessions"}} {
 		if c, _, err := root.Find(path); err == nil && c != root {
 			c.ValidArgsFunction = sessionIDs
+		}
+	}
+	if c, _, err := root.Find([]string{"sweep"}); err == nil && c != root {
+		c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) > 0 {
+				return nil, completionDirective
+			}
+			return completePresets(cmd, args, toComplete)
 		}
 	}
 	if c, _, err := root.Find([]string{"roots", "remove"}); err == nil && c.Name() == "remove" {
@@ -154,8 +159,8 @@ func completeProgressModes(_ *cobra.Command, _ []string, toComplete string) ([]s
 	return filterPrefix(progressModes, toComplete, descriptions), completionDirective
 }
 
-// presetNames is the single place the --preset completion gets its values
-// from.
+// presetNames is the single place the completion of the sweep preset
+// argument gets its values from.
 func presetNames() []string { return presets.Names() }
 
 // completePresets offers the sweep presets with their one-line summaries.
@@ -234,7 +239,7 @@ func (a *app) completeSessionIDs(toComplete string) []string {
 }
 
 // sessionSummary is the description shown next to a session id, e.g.
-// "2026-09-29 22:45 sweep --apply, 3 applied, 1.0 MiB".
+// "2026-09-29 22:45 sweep --yes, 3 applied, 1.0 MiB".
 func sessionSummary(m *session.Manifest) string {
 	c := m.Counts()
 	// The command line is user data; a tab or newline in it would corrupt the

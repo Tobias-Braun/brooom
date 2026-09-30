@@ -37,8 +37,8 @@ func newCleanCmd(a *app) *cobra.Command {
 		Short: "Act on a reviewed findings file (from --format json)",
 		Example: `  brooom scan --format json > findings.json
   brooom clean --from findings.json
-  brooom clean --from findings.json --id 8f2a41c7 --apply
-  brooom scan --format json | brooom clean --from - --apply --yes`,
+  brooom clean --from findings.json --id 8f2a41c7 --dry-run
+  brooom scan --format json | brooom clean --from - --yes`,
 		Long: `Apply the suggested actions of a findings file produced with
 'brooom scan --format json'. Edit or filter the file (or pass --id) to choose
 what gets cleaned. Every finding is re-validated before anything is done.
@@ -61,9 +61,10 @@ A finding without a suggested action stays untouched, even with --force: scan
 again with --force (export with 'brooom scan --force --format json') to get
 an action for findings blocked by an overridable risk flag.
 
-Use '--from -' to read the file from stdin. Without --apply this is a dry run.
-Stdin is then the findings, so there is no terminal to confirm on: --apply
-needs --yes (or use a file, which keeps the interactive confirmation).
+The plan is shown and confirmed once before anything is done; --dry-run stops
+after the plan and --yes skips the question. Use '--from -' to read the file
+from stdin. Stdin is then the findings, so there is no terminal to confirm on:
+pass --yes or --dry-run (or use a file, which keeps the confirmation).
 
 The file may be UTF-8 (with or without a byte order mark) or UTF-16 with a
 byte order mark, so 'brooom scan --format json > findings.json' also works in
@@ -77,6 +78,7 @@ Windows PowerShell 5.1, which writes UTF-16.`,
 	cmd.Flags().StringSliceVar(&opts.ids, "id", nil, "only act on these finding IDs (repeatable, comma-separated)")
 	cmd.Flags().BoolVar(&opts.user, "user", false, "also accept findings in user-level tool locations")
 	addApplyFlags(cmd, &af)
+	addForceFlag(cmd, &af)
 	return cmd
 }
 
@@ -163,7 +165,7 @@ func (a *app) runVetted(ctx context.Context, cmd *cobra.Command, sc *cleanScope,
 	result, err := a.runExecutor(ctx, cmd, execInput{
 		cfg: sc.cfg, git: sc.git, guard: sc.guard, findings: v.accepted,
 	}, af, strategy)
-	return mapExecutorError(result, err, af.apply)
+	return mapExecutorError(result, err, af.apply())
 }
 
 // readFindingsSource loads the report from a file or, for "-", from stdin.

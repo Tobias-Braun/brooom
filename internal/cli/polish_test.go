@@ -147,7 +147,7 @@ func TestScanOnlyFlagsRejectedElsewhere(t *testing.T) {
 
 func TestScanFlagsStillAcceptedWhereUsed(t *testing.T) {
 	root := newRootCmd(&app{})
-	for _, path := range [][]string{{"scan"}, {"sweep"}, {"branches"}, {"worktrees"}, {"logs"}, {"artifacts"}, {"ai"}, {"clean"}, {"git", "purge"}} {
+	for _, path := range [][]string{{"scan"}, {"sweep"}, {"clean"}, {"git", "purge"}} {
 		cmd, _, err := root.Find(path)
 		if err != nil {
 			t.Fatal(err)
@@ -188,8 +188,8 @@ func TestUpdateCheckAllowedHonoursConfigFormatOnlyForFindings(t *testing.T) {
 		want bool
 	}{
 		{[]string{"scan"}, false},
-		{[]string{"sweep"}, false},
-		{[]string{"branches", "--apply"}, true},
+		{[]string{"sweep", "--dry-run"}, false},
+		{[]string{"sweep"}, true},
 		{[]string{"sessions"}, true},
 		{[]string{"sessions", "-f", "json"}, false},
 	}

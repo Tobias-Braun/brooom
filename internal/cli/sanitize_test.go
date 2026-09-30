@@ -130,7 +130,7 @@ func TestEveryHumanOutputSanitized(t *testing.T) {
 		f.session(id, purgeClock.Add(-60*24*time.Hour), f.write(hostile+"/f.txt", "x"))
 		ageQuarantine(t, f, id, purgeClock.Add(-60*24*time.Hour))
 
-		for _, args := range [][]string{{"undo", id}, {"undo", id, "--apply", "--yes"}, {"undo", id}, {"purge"}, {"purge", "--apply", "--yes"}} {
+		for _, args := range [][]string{{"undo", id}, {"undo", id, "--yes"}, {"undo", id}, {"purge"}, {"purge", "--yes"}} {
 			_, out, errOut := runApp(t, "", false, purgeClock, args...)
 			requireSanitized(t, strings.Join(args, " "), out+errOut)
 		}
@@ -149,7 +149,7 @@ func TestEveryHumanOutputSanitized(t *testing.T) {
 		report := writeReportFile(t, trashFinding(f.repo.Dir, dir), bad)
 		for _, args := range [][]string{
 			{"clean", "--from", report},
-			{"clean", "--from", report, "--apply", "--yes"},
+			{"clean", "--from", report, "--yes"},
 		} {
 			_, out, errOut := runApp(t, "", false, time.Time{}, append(args, quarantine...)...)
 			requireSanitized(t, strings.Join(args, " "), out+errOut)

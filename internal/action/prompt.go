@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/output"
 )
@@ -42,10 +43,9 @@ func Confirm(in io.Reader, out io.Writer, prompt string) bool {
 
 // answer values returned by ask.
 const (
-	ansYes   = 'y'
-	ansNo    = 'n'
-	ansIndiv = 'i'
-	ansQuit  = 'q'
+	ansYes  = 'y'
+	ansNo   = 'n'
+	ansQuit = 'q'
 )
 
 // ask prints the prompt and reads answers until one is valid. Answers are
@@ -74,7 +74,7 @@ func (c *confirmer) ask(prompt, allowed string) rune {
 
 // matchAnswer accepts the letter or the full word ("y" or "yes").
 func matchAnswer(a, allowed string) rune {
-	words := map[rune]string{ansYes: "yes", ansNo: "no", ansIndiv: "individually", ansQuit: "quit"}
+	words := map[rune]string{ansYes: "yes", ansNo: "no", ansQuit: "quit"}
 	for _, r := range allowed {
 		if a == string(r) || a == words[r] {
 			return r
@@ -83,44 +83,23 @@ func matchAnswer(a, allowed string) rune {
 	return 0
 }
 
-// confirm walks the plan and sets Item.Confirmed. It returns false when the
-// user quit (or input ended); in that case nothing is confirmed at all, so a
-// quit halfway through changes nothing.
+// confirm asks one question for the whole plan, which was printed right
+// above it, and sets Item.Confirmed on every item for a yes. Anything else
+// (no, an empty answer, end of input) confirms nothing, so the default is
+// always to change nothing. Permanent deletions are named in the question
+// itself: the plan header says so too, but the question is the last thing
+// read before answering.
 func (c *confirmer) confirm(p *Plan) bool {
-	for gi := range p.Groups {
-		g := &p.Groups[gi]
-		prompt := fmt.Sprintf("%s / %s: apply %s (%s)? [y]es/[n]o/[i]ndividually/[q]uit ",
-			output.Sanitize(g.Detector), g.Label(), plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
-		switch c.ask(prompt, "yniq") {
-		case ansYes:
-			for i := range g.Items {
-				g.Items[i].Confirmed = true
-			}
-		case ansIndiv:
-			if !c.confirmItems(g) {
-				p.clearConfirmed()
-				return false
-			}
-		case ansQuit:
-			p.clearConfirmed()
-			return false
-		}
+	what := fmt.Sprintf("%s (%s)", plural(p.itemCount(), "item"), output.FormatSize(p.ReclaimableBytes()))
+	if n := p.permanentCount(); n > 0 {
+		what += fmt.Sprintf(", %d of them deleted permanently", n)
 	}
-	return true
-}
-
-// confirmItems asks per item; false means quit.
-func (c *confirmer) confirmItems(g *Group) bool {
-	for i := range g.Items {
-		it := &g.Items[i]
-		prompt := fmt.Sprintf("  %s? [y]es/[n]o/[q]uit ", itemLine(it.Step))
-		switch c.ask(prompt, "ynq") {
-		case ansYes:
-			it.Confirmed = true
-		case ansQuit:
-			return false
-		}
+	prompt := "Proceed with " + what + "? [y/N] "
+	if c.ask(prompt, "yn") != ansYes {
+		p.clearConfirmed()
+		return false
 	}
+	p.setConfirmed(true)
 	return true
 }
 
@@ -136,6 +115,27 @@ func itemLine(s Step) string {
 }
 
 func (p *Plan) clearConfirmed() { p.setConfirmed(false) }
+
+// permanentCount is the number of items removed with the delete strategy,
+// which no undo can bring back.
+func (p *Plan) permanentCount() int {
+	n := 0
+	for _, g := range p.Groups {
+		if g.Strategy == config.StrategyDelete {
+			n += len(g.Items)
+		}
+	}
+	return n
+}
+
+// itemCount is the number of planned items over all groups.
+func (p *Plan) itemCount() int {
+	n := 0
+	for _, g := range p.Groups {
+		n += len(g.Items)
+	}
+	return n
+}
 
 func (p *Plan) setConfirmed(v bool) {
 	for gi := range p.Groups {

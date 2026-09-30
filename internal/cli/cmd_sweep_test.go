@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/detect"
@@ -74,7 +75,7 @@ func TestSweepDryRunChangesNothing(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	for _, want := range []string{"feat/merged", "feat/squash", "$ git branch -d", "re-run 'brooom sweep'"} {
+	for _, want := range []string{"feat/merged", "feat/squash", "$ git branch -d", "re-run without --dry-run"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -87,15 +88,14 @@ func TestSweepDryRunChangesNothing(t *testing.T) {
 	}
 }
 
-// TestSweepAppliesWithoutConfirmation pins the default: sweep acts right away
-// (stdin is empty and not a terminal, so any prompt would fail), records a
-// session for undo, and prints a summary that ends with the reclaimed size and
-// carries no per-item plan or git command.
-func TestSweepAppliesWithoutConfirmation(t *testing.T) {
+// TestSweepYesPrintsTheBriefSummary: with --yes nobody reads a plan, so sweep
+// acts right away, records a session for undo and prints a summary that ends
+// with the reclaimed size and carries no per-item plan or git command.
+func TestSweepYesPrintsTheBriefSummary(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 
-	code, out, errOut := brooom(t, "", append([]string{"sweep"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", append([]string{"sweep", "--yes"}, quarantine...)...)
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -120,12 +120,28 @@ func TestSweepAppliesWithoutConfirmation(t *testing.T) {
 	}
 }
 
-// TestSweepVerboseShowsThePlan: --verbose lists the items (and their commands)
-// before applying, then still ends with the summary.
-func TestSweepVerboseShowsThePlan(t *testing.T) {
+// TestSweepConfirmedShowsPlanThenBriefSummary: a confirmed sweep shows the
+// plan the question refers to and still ends with the one-line summary.
+func TestSweepConfirmedShowsPlanThenBriefSummary(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "--verbose"}, quarantine...)...)
+	code, out, errOut := runApp(t, "y\n", true, time.Time{}, append([]string{"sweep"}, quarantine...)...)
+	if code != ExitOK {
+		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
+	}
+	for _, want := range []string{"feat/merged", "Proceed with 2 items", "2 merged branches removed. 0 B reclaimed"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestSweepVerboseShowsTheFullSummary: --verbose keeps the plan and the
+// multi-line summary.
+func TestSweepVerboseShowsTheFullSummary(t *testing.T) {
+	f := newCleanupFixture(t, nil)
+	f.mergedAndSquashed()
+	code, out, errOut := brooom(t, "", append([]string{"sweep", "--yes", "--verbose"}, quarantine...)...)
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -139,11 +155,12 @@ func TestSweepVerboseShowsThePlan(t *testing.T) {
 	}
 }
 
-// TestSweepQuietPrintsOnlyFailures: a successful quiet sweep is silent.
+// TestSweepQuietPrintsOnlyFailures: a successful quiet sweep with --yes is
+// silent.
 func TestSweepQuietPrintsOnlyFailures(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "-q"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", append([]string{"sweep", "-q", "--yes"}, quarantine...)...)
 	if code != ExitOK || out != "" {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -160,31 +177,17 @@ func TestSweepNothingToClean(t *testing.T) {
 	}
 }
 
-// TestSweepDeprecatedApplyFlagsStillWork keeps existing scripts running, and
-// rejects the contradiction of --apply with --dry-run.
-func TestSweepDeprecatedApplyFlagsStillWork(t *testing.T) {
-	f := newCleanupFixture(t, nil)
-	f.mergedAndSquashed()
-
-	code, _, errOut := brooom(t, "", "sweep", "--apply", "--dry-run")
-	if code != ExitUsage || !strings.Contains(errOut, "--dry-run") {
-		t.Fatalf("code %d, want %d; stderr %q", code, ExitUsage, errOut)
-	}
-	if !f.hasBranch("feat/merged") {
-		t.Fatal("a rejected invocation changed something")
-	}
-
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "--apply", "--yes"}, quarantine...)...)
-	if code != ExitOK {
-		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
-	}
-	if f.hasBranch("feat/merged") {
-		t.Error("--apply --yes did not apply")
+// TestSweepHasNoApplyFlag: acting is the default, so --apply is gone.
+func TestSweepHasNoApplyFlag(t *testing.T) {
+	newCleanupFixture(t, nil)
+	code, _, errOut := brooom(t, "", "sweep", "--apply")
+	if code != ExitUsage || !strings.Contains(errOut, "--apply") {
+		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestSweepPresetSelection(t *testing.T) {
-	standardCfg := map[string]any{"sweep": map[string]any{"preset": "standard"}}
+	tidyCfg := map[string]any{"sweep": map[string]any{"preset": "tidy"}}
 	tests := []struct {
 		name     string
 		cfg      map[string]any
@@ -192,20 +195,19 @@ func TestSweepPresetSelection(t *testing.T) {
 		want     []string // detectors that must be scanned
 		wantNone []string // detectors that must not be scanned
 	}{
-		{"no flag, no config uses safe", nil, nil,
-			[]string{config.DetectorMergedBranch, config.DetectorWorktrees}, []string{config.DetectorStaleBranch, config.DetectorGitBloat}},
-		{"config default", standardCfg, nil,
-			[]string{config.DetectorMergedBranch, config.DetectorStaleBranch, config.DetectorAIArtifacts}, []string{config.DetectorGitBloat}},
-		{"flag overrides config", standardCfg, []string{"--preset", "safe"},
-			[]string{config.DetectorMergedBranch}, []string{config.DetectorStaleBranch}},
-		{"flag selects aggressive", nil, []string{"-p", "aggressive"},
-			[]string{config.DetectorStaleBranch, config.DetectorGitBloat, config.DetectorLargeUntracked}, nil},
+		{"no argument, no config uses everything", nil, nil,
+			[]string{config.DetectorMergedBranch, config.DetectorWorktrees, config.DetectorGitBloat, config.DetectorBuildArtifacts},
+			[]string{config.DetectorStaleBranch, config.DetectorLargeUntracked}},
+		{"config default", tidyCfg, nil,
+			[]string{config.DetectorLogs}, []string{config.DetectorMergedBranch}},
+		{"argument overrides config", tidyCfg, []string{"after-agents"},
+			[]string{config.DetectorMergedBranch, config.DetectorAIArtifacts}, []string{config.DetectorLogs}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newCleanupFixture(t, tt.cfg)
 			f.mergedAndSquashed()
-			code, _, errOut := brooom(t, "", append([]string{"sweep", "--verbose"}, tt.args...)...)
+			code, _, errOut := brooom(t, "", append([]string{"sweep", "--dry-run", "--verbose"}, tt.args...)...)
 			if code != ExitOK {
 				t.Fatalf("code %d, stderr %q", code, errOut)
 			}
@@ -224,32 +226,31 @@ func TestSweepPresetSelection(t *testing.T) {
 	}
 }
 
-func TestSweepUnknownPreset(t *testing.T) {
-	f := newCleanupFixture(t, nil)
-	f.mergedAndSquashed()
-	code, _, errOut := brooom(t, "", "sweep", "--preset", "reckless")
-	if code != ExitUsage {
-		t.Fatalf("code %d, want %d; stderr %q", code, ExitUsage, errOut)
-	}
-	for _, want := range []string{"reckless", "safe", "standard", "aggressive"} {
-		if !strings.Contains(errOut, want) {
-			t.Errorf("error does not name %q: %q", want, errOut)
-		}
+func TestSweepInvalidConfigPresetIsRejected(t *testing.T) {
+	newCleanupFixture(t, map[string]any{"sweep": map[string]any{"preset": "reckless"}})
+	code, _, errOut := brooom(t, "", "sweep", "--dry-run")
+	if code == ExitOK || !strings.Contains(errOut, "sweep.preset") {
+		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
-func TestSweepInvalidConfigPresetIsRejected(t *testing.T) {
-	newCleanupFixture(t, map[string]any{"sweep": map[string]any{"preset": "reckless"}})
-	code, _, errOut := brooom(t, "", "sweep")
-	if code == ExitOK || !strings.Contains(errOut, "sweep.preset") {
+// TestSweepLegacyConfigPresetStillLoads: `config init` wrote "safe" into every
+// config file, which must keep working.
+func TestSweepLegacyConfigPresetStillLoads(t *testing.T) {
+	newCleanupFixture(t, map[string]any{"sweep": map[string]any{"preset": "safe"}})
+	code, _, errOut := brooom(t, "", "sweep", "--dry-run", "--verbose")
+	if code != ExitOK || !strings.Contains(errOut, `running "everything"`) {
 		t.Errorf("code %d, stderr %q", code, errOut)
+	}
+	if !slices.Contains(scannedDetectors(errOut), config.DetectorGitBloat) {
+		t.Errorf("legacy safe did not run everything: %v", scannedDetectors(errOut))
 	}
 }
 
 func TestSweepDetectorNarrowsPreset(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, _, errOut := brooom(t, "", "sweep", "--preset", "standard", "--detector", "merged-branch", "--verbose")
+	code, _, errOut := brooom(t, "", "sweep", "--detector", "merged-branch", "--dry-run", "--verbose")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -258,32 +259,17 @@ func TestSweepDetectorNarrowsPreset(t *testing.T) {
 	}
 }
 
-func TestSweepDetectorOutsidePresetIsUsageError(t *testing.T) {
+func TestSweepUnknownDetectorIsUsageError(t *testing.T) {
 	newCleanupFixture(t, nil)
-	tests := []struct {
-		args    []string
-		include string
-	}{
-		{[]string{"--detector", "stale-branch"}, "standard preset includes it"},
-		{[]string{"--detector", "git-bloat"}, "aggressive preset includes it"},
-		{[]string{"--preset", "standard", "--detector", "large-untracked"}, "aggressive preset includes it"},
-	}
-	for _, tt := range tests {
-		code, _, errOut := brooom(t, "", append([]string{"sweep"}, tt.args...)...)
-		if code != ExitUsage || !strings.Contains(errOut, tt.include) {
-			t.Errorf("%v: code %d, stderr %q", tt.args, code, errOut)
-		}
-	}
-	code, _, errOut := brooom(t, "", "sweep", "--detector", "no-such-detector")
-	if code != ExitUsage || !strings.Contains(errOut, "unknown detector") {
-		t.Errorf("typo: code %d, stderr %q", code, errOut)
+	code, _, errOut := brooom(t, "", "sweep", "--detector", "no-such-detector", "--dry-run")
+	if code != ExitUsage || !strings.Contains(errOut, `unknown detector "no-such-detector"`) {
+		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 // TestSweepPresetDetectorsAreAllRegistered pins the assumption behind #238:
 // every detector a preset names is linked into the binary, so sweep needs no
-// "not available in this build" path. A preset naming a detector that does not
-// exist fails here instead of being skipped quietly at run time.
+// "not available in this build" path.
 func TestSweepPresetDetectorsAreAllRegistered(t *testing.T) {
 	for _, n := range presets.Names() {
 		p, _ := presets.Get(n)
@@ -295,20 +281,9 @@ func TestSweepPresetDetectorsAreAllRegistered(t *testing.T) {
 	}
 }
 
-// TestSweepUnknownDetectorIsUsageError covers what replaced the unavailable
-// branch: a --detector that no detector carries is a typo and exits 2.
-func TestSweepUnknownDetectorIsUsageError(t *testing.T) {
-	newCleanupFixture(t, nil)
-	code, _, errOut := brooom(t, "", "sweep", "--preset", "aggressive", "--detector", "no-such-detector")
-	if code != ExitUsage || !strings.Contains(errOut, `unknown detector "no-such-detector"`) {
-		t.Errorf("code %d, stderr %q", code, errOut)
-	}
-}
-
 // TestSweepBlockedFindingsAreNeverPlanned builds a merged branch that is
 // checked out in a dirty worktree and an old branch with unpushed commits, then
-// sweeps with the widest preset. Neither may be touched, with or without
-// confirmation.
+// sweeps with the widest preset. Neither may be touched.
 func TestSweepBlockedFindingsAreNeverPlanned(t *testing.T) {
 	cfg := map[string]any{"detectors": map[string]any{
 		"stale-branch": map[string]any{"enabled": true, "min_age_days": 1, "include_unpushed": true},
@@ -321,7 +296,7 @@ func TestSweepBlockedFindingsAreNeverPlanned(t *testing.T) {
 	f.publish()
 	testutil.WriteFile(t, wt, "scratch.txt", "uncommitted\n")
 
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "--preset", "aggressive", "--apply", "--yes"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", append([]string{"sweep", "everything", "--yes"}, quarantine...)...)
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -333,6 +308,33 @@ func TestSweepBlockedFindingsAreNeverPlanned(t *testing.T) {
 	}
 	if !f.hasBranch("feat/dirty") {
 		t.Errorf("the branch of the dirty worktree was deleted: %v\n%s", f.branches(), out)
+	}
+}
+
+// TestSweepFloorsBuildArtifactsOfActiveProjects: everything plans build
+// artifacts only at high confidence, so node_modules of a project that is
+// still being worked on (medium) stays.
+func TestSweepFloorsBuildArtifactsOfActiveProjects(t *testing.T) {
+	f := newCleanupFixture(t, nil)
+	testutil.WriteFile(t, f.repo.Dir, "package.json", "{}\n")
+	testutil.WriteFile(t, filepath.Join(f.repo.Dir, "node_modules", "x"), "index.js", "x\n")
+	_, out, errOut := brooom(t, "", "scan", "-d", "build-artifacts", "--format", "json")
+	var report findings.Report
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("scan: %v\n%s\n%s", err, out, errOut)
+	}
+	if len(report.Findings) == 0 || report.Findings[0].Confidence == findings.ConfidenceHigh {
+		t.Skipf("fixture does not produce a medium build artifact finding: %+v", report.Findings)
+	}
+	code, out, errOut := brooom(t, "", "sweep", "-d", "build-artifacts", "--format", "json")
+	if code != ExitOK {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) != 0 {
+		t.Errorf("everything kept a medium build artifact: %+v", report.Findings)
 	}
 }
 
@@ -351,17 +353,16 @@ func TestSweepMachineFormatFiltersConfidence(t *testing.T) {
 		t.Fatal("no findings in the report")
 	}
 	for _, fi := range report.Findings {
-		if fi.Confidence.Rank() < findings.ConfidenceHigh.Rank() {
-			t.Errorf("%s has confidence %s below the safe floor", fi.ID, fi.Confidence)
+		if fi.Confidence.Rank() < findings.ConfidenceMedium.Rank() {
+			t.Errorf("%s has confidence %s below the preset floor", fi.ID, fi.Confidence)
 		}
 	}
-	code, _, _ = brooom(t, "", "sweep", "--format", "json", "--apply", "--yes")
-	if code != ExitUsage {
-		t.Errorf("machine format with --apply: code %d, want %d", code, ExitUsage)
+	if !f.hasBranch("feat/merged") {
+		t.Error("a machine-format sweep acted")
 	}
 }
 
-func TestScanOptionsConfidenceFilter(t *testing.T) {
+func TestScanOptionsKeepFilter(t *testing.T) {
 	mk := func(c findings.Confidence, flags ...findings.RiskFlag) findings.Finding {
 		return findings.Finding{ID: string(c), Confidence: c, RiskFlags: flags}
 	}
@@ -372,53 +373,47 @@ func TestScanOptionsConfidenceFilter(t *testing.T) {
 		mk(findings.ConfidenceHigh, findings.RiskWorktreeDirty),
 		mk(""),
 	}
-	tests := []struct {
-		floor findings.Confidence
-		want  int
-	}{
-		{"", 5},
-		{findings.ConfidenceLow, 4},
-		{findings.ConfidenceMedium, 3},
-		{findings.ConfidenceHigh, 2},
+	floor := func(c findings.Confidence) func(findings.Finding) bool {
+		return func(f findings.Finding) bool { return f.Confidence.Rank() >= c.Rank() }
 	}
-	for _, tt := range tests {
-		got := scanOptions{minConfidence: tt.floor}.filter(in)
-		if len(got) != tt.want {
-			t.Errorf("floor %q kept %d, want %d", tt.floor, len(got), tt.want)
-		}
+	if got := (scanOptions{}).filter(in); len(got) != 5 {
+		t.Errorf("no filter kept %d, want 5", len(got))
+	}
+	if got := (scanOptions{keep: floor(findings.ConfidenceHigh)}).filter(in); len(got) != 2 {
+		t.Errorf("high floor kept %d, want 2", len(got))
 	}
 
 	// A blocked finding of sufficient confidence stays so the executor can
 	// report it as blocked; the filter never hides blocking flags.
-	kept := scanOptions{minConfidence: findings.ConfidenceHigh}.filter(in)
+	kept := scanOptions{keep: floor(findings.ConfidenceHigh)}.filter(in)
 	if !slices.ContainsFunc(kept, func(f findings.Finding) bool { return len(f.RiskFlags) > 0 }) {
 		t.Error("the blocked finding was dropped by the confidence filter")
 	}
 
 	var streamed []string
-	cb := scanOptions{minConfidence: findings.ConfidenceMedium}.filterStream(func(f findings.Finding) { streamed = append(streamed, f.ID) })
+	cb := scanOptions{keep: floor(findings.ConfidenceMedium)}.filterStream(func(f findings.Finding) { streamed = append(streamed, f.ID) })
 	for _, f := range in {
 		cb(f)
 	}
 	if want := []string{"high", "medium", "high"}; !slices.Equal(streamed, want) {
 		t.Errorf("streamed %v, want %v", streamed, want)
 	}
-	if (scanOptions{minConfidence: findings.ConfidenceMedium}).filterStream(nil) != nil {
+	if (scanOptions{keep: floor(findings.ConfidenceMedium)}).filterStream(nil) != nil {
 		t.Error("a nil callback must stay nil")
 	}
 }
 
 // TestSweepOverlayReachesTheScanConfig checks that the overlay shapes the
 // config the scan uses without rewriting the config file, and that it sits
-// below .brooom.json: ForTarget still tightens the preset-lowered value.
+// below .brooom.json.
 func TestSweepOverlayReachesTheScanConfig(t *testing.T) {
 	home := isolate(t)
-	path := writeConfig(t, home, map[string]any{"thresholds": map[string]any{"min_age_days": 30}})
+	path := writeConfig(t, home, map[string]any{"detectors": map[string]any{"git-bloat": map[string]any{"reflog_expire": "365.days.ago"}}})
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := presets.Get(presets.Aggressive)
+	p, err := presets.Get(presets.Everything)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,8 +422,8 @@ func TestSweepOverlayReachesTheScanConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := req.cfg.Thresholds.MinAgeDays; got != presets.AggressiveAges.MinAgeDays {
-		t.Errorf("overlay not applied: min_age_days %d", got)
+	if got := req.cfg.Detectors.GitBloat.ReflogExpire; got != presets.Expiry {
+		t.Errorf("overlay not applied: reflog_expire %q", got)
 	}
 	after, _ := os.ReadFile(path)
 	if string(before) != string(after) {
@@ -442,7 +437,7 @@ func TestSweepOverlayReachesTheScanConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if eff.Thresholds.MinAgeDays != 21 {
-		t.Errorf(".brooom.json did not tighten the preset value: %d", eff.Thresholds.MinAgeDays)
+		t.Errorf(".brooom.json did not tighten: %d", eff.Thresholds.MinAgeDays)
 	}
 }
 
@@ -469,26 +464,6 @@ func TestSweepHelpIsGeneratedFromPresets(t *testing.T) {
 		for _, d := range p.Detectors {
 			if !strings.Contains(out, d) {
 				t.Errorf("help of %s lacks detector %s", name, d)
-			}
-		}
-	}
-	if !strings.Contains(out, "safe, standard, aggressive") {
-		t.Errorf("flag usage does not list the presets:\n%s", out)
-	}
-}
-
-// TestSweepEmptyPresetIsUsageError pins that an explicitly empty --preset is
-// not silently replaced by the default or by sweep.preset.
-func TestSweepEmptyPresetIsUsageError(t *testing.T) {
-	for _, value := range []string{"", "  "} {
-		newCleanupFixture(t, map[string]any{"sweep": map[string]any{"preset": "aggressive"}})
-		code, _, errOut := brooom(t, "", "sweep", "--preset", value)
-		if code != ExitUsage {
-			t.Fatalf("--preset %q: code %d, want %d; stderr %q", value, code, ExitUsage, errOut)
-		}
-		for _, want := range []string{"safe", "standard", "aggressive"} {
-			if !strings.Contains(errOut, want) {
-				t.Errorf("--preset %q: error does not name %q: %q", value, want, errOut)
 			}
 		}
 	}

@@ -43,9 +43,8 @@ type scanRequest struct {
 }
 
 // scanResult is everything a caller needs after a scan. The guard and the
-// configuration are returned, not discarded, so the action executor of the
-// shortcut commands can act on the findings within exactly the scope that
-// was scanned.
+// configuration are returned, not discarded, so the action executor of sweep
+// can act on the findings within exactly the scope that was scanned.
 type scanResult struct {
 	Report  *findings.Report
 	Config  *config.Config
@@ -144,7 +143,7 @@ func resolveFormat(flagValue, configValue string) (string, error) {
 	return name, nil
 }
 
-// resolveActingFormat is resolveFormat for a run that acts (--apply, purge
+// resolveActingFormat is resolveFormat for a run that acts (no --dry-run, purge
 // operations). Its plan and confirmation text are human output, so a machine
 // format that only came from the config's output.format (the user never passed
 // --format) must not block the run: it falls back to the default human format.
@@ -161,7 +160,7 @@ func resolveActingFormat(flagValue, configValue string) (string, error) {
 }
 
 // selectDetectors resolves the detectors of a scan from the --detector flag
-// and the preset of a shortcut command. Both must name registered detectors;
+// and the detectors of a sweep preset. Both must name registered detectors;
 // when both are set the selection is their intersection, and an empty
 // intersection is a usage error. With neither set, every registered
 // detector is a candidate.
@@ -268,7 +267,7 @@ func (a *app) execute(ctx context.Context, req *scanRequest, onFinding func(find
 
 	found, runErrs, stats := a.runDetectors(ctx, env, targets, req, effective, req.opts.filterStream(onFinding))
 	if kept := req.opts.filter(found); len(kept) != len(found) {
-		a.progressf("dropped %d finding(s) below minimum confidence %s", len(found)-len(kept), req.opts.minConfidence)
+		a.progressf("dropped %d finding(s) below the preset's confidence floor", len(found)-len(kept))
 		found = kept
 	}
 	// Whatever renders the results next writes to the terminal too.

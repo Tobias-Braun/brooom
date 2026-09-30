@@ -14,8 +14,7 @@ import (
 // --root and -d mean anything and all of them read --format. `undo` builds a
 // scope too but has no detectors and no report, see scopeOnlyCommands.
 var scopeCommands = map[string]bool{
-	"brooom": true, "brooom scan": true, "brooom sweep": true, "brooom branches": true,
-	"brooom worktrees": true, "brooom logs": true, "brooom artifacts": true, "brooom ai": true,
+	"brooom": true, "brooom scan": true, "brooom sweep": true,
 	"brooom clean": true, "brooom git purge": true,
 }
 
@@ -92,7 +91,7 @@ func rejectIgnoredScanFlags(cmd *cobra.Command) error {
 
 // listSelectorFlags are the list flags that narrow what a command acts on.
 // Empty input must never fall back to "everything": a script with
-// `--id "$SELECTED" --apply --yes` and an unset variable would otherwise act
+// `--id "$SELECTED" --yes` and an unset variable would otherwise act
 // on all findings.
 var listSelectorFlags = []string{"id", "root", "detector"}
 
