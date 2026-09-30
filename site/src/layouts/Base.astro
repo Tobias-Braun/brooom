@@ -14,7 +14,7 @@ const {
 
 // Absolute URLs (canonical, Open Graph) are derived from the configured
 // `site` and `base`, so they follow the deployment automatically.
-const site = Astro.site ?? new URL('https://tobias-braun.github.io');
+const site = Astro.site ?? new URL('http://localhost:4321');
 const canonical = new URL(withBase(), site).href;
 const ogImage = new URL(withBase('og.png'), site).href;
 const ogAlt = 'Brooom: sweep your workspace clean, fast, so your agent fleet can run again.';

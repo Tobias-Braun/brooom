@@ -131,7 +131,6 @@ Output formats: `table` (default), `tree`, `json`, `ndjson`, `plain`,
 
 ## Documentation
 
-- [Website](https://tobias-braun.github.io/brooom/)
 - [Product specification](docs/SPEC.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Findings schema](docs/findings.md)

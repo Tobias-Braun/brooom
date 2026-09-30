@@ -43,11 +43,15 @@ function pruneUnusedScripts() {
   };
 }
 
-// The site is served from a GitHub project page, so every URL lives below
-// /brooom. With a custom domain only `site` and `base` would change.
+// The site is served at the root of its own origin by the site image (see
+// site/Dockerfile). The origin only matters for absolute URLs (canonical, Open
+// Graph) and comes from SITE_URL, which the release workflow fills from the
+// repository variable of the same name; local builds use the dev server origin.
+const siteURL = process.env.SITE_URL || 'http://localhost:4321';
+
 export default defineConfig({
-  site: 'https://tobias-braun.github.io',
-  base: '/brooom',
+  site: siteURL,
+  base: '/',
   output: 'static',
   // Vue powers only the three interactive islands (terminal demo, install
   // tabs, copy buttons); every other section is static HTML.

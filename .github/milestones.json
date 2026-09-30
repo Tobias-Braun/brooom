@@ -29,7 +29,7 @@
   },
   {
     "title": "M8 Landing page",
-    "description": "Astro site with Vue islands in /site, deployed to GitHub Pages."
+    "description": "Astro site with Vue islands in /site, published as a container image to ghcr.io."
   },
   {
     "title": "M9 Hardening",

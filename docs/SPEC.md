@@ -246,7 +246,8 @@ Both must be pure clients of the same core and API the CLI uses.
 
 ## Landing page
 
-Astro site with Vue islands (`/site`, deployed via GitHub Pages). Astro
+Astro site with Vue islands (`/site`, published as a container image to
+ghcr.io and deployed by the maintainer's infrastructure). Astro
 renders the static content; Vue components only for the interactive parts
 (animated terminal demo of `brooom sweep`, install command tabs per package
 manager, copy-to-clipboard). Theme: Brooom as a fast broom that sweeps your
