@@ -94,8 +94,11 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          # All tags are needed to find the highest released version.
+          # All tags are needed to find the highest released version. The
+          # token is not kept in .git/config: the tag is created through the
+          # API below instead of git push.
           fetch-depth: 0
+          persist-credentials: false
       - name: Next version
         id: version
         env:
@@ -137,12 +140,16 @@ jobs:
             --tag "$IMAGE:sha-${GITHUB_SHA::7}" \
             --tag "$IMAGE:latest" \
             site
+      - name: Log out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io
       - name: Tag the release
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git tag "site-v$VERSION" "$GITHUB_SHA"
-          git push origin "site-v$VERSION"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/site-v$VERSION" -f sha="$GITHUB_SHA" > /dev/null
           {
             echo "### Site $VERSION"
             echo
