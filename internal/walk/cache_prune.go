@@ -24,6 +24,17 @@ const (
 	// tmpMaxAge keeps the temp file of a write that may still be running.
 	tmpMaxAge = time.Hour
 
+	// blobGlob and blobTmpGlob match the per-repository blob scan caches of
+	// the gitbloat detector and the temp files of its atomic writes. They
+	// live next to the size caches but are owned by that detector, so this
+	// package only knows their names and size cap.
+	blobGlob    = "gitbloat-blobs-*.json"
+	blobTmpGlob = "gitbloat-blobs-*.tmp"
+	// BlobCacheMaxBytes is the largest blob cache file the detector reads;
+	// a bigger file can never hit again and is stale. gitbloat uses this
+	// value as its read cap so both sides cannot drift apart.
+	BlobCacheMaxBytes = 1 << 20
+
 	// verdictSubdir is where gitx stores squash verdicts. Their key contains
 	// the base sha, so every new base commit orphans them; they are pruned by
 	// age like the size caches.
@@ -59,7 +70,9 @@ type PruneOptions struct {
 // ListStaleCache lists cache files below dir that are safe to delete: not
 // used for MaxAge (mtime, see sizer.persist), pointing at a root that no
 // longer exists (CheckRoots), unreadable or larger than a cache file can be,
-// and temp files of interrupted writes. Only regular files with the names
+// and temp files of interrupted writes. The gitbloat blob caches are covered
+// by age, size and temp rules only: their file name is a hash of the
+// repository path, so there is no root to check. Only regular files with the names
 // Brooom itself writes are considered; symlinks and anything else in dir are
 // left alone. A missing dir is not an error.
 func ListStaleCache(dir string, o PruneOptions) ([]StaleCacheFile, error) {
@@ -69,20 +82,28 @@ func ListStaleCache(dir string, o PruneOptions) ([]StaleCacheFile, error) {
 	if o.Now.IsZero() {
 		o.Now = time.Now()
 	}
-	out, err := staleByGlob(dir, cacheGlob, tmpGlob, o)
+	out, err := staleByGlob(dir, cacheGlob, tmpGlob, maxCacheBytes, o)
 	if err != nil {
 		return nil, err
 	}
+	// Blob caches never need a root check: age alone decides.
+	bo := o
+	bo.CheckRoots = false
+	blobs, err := staleByGlob(dir, blobGlob, blobTmpGlob, BlobCacheMaxBytes, bo)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, blobs...)
 	// Verdict files are tiny and never need a root check: age alone decides.
 	vo := o
 	vo.CheckRoots = false
-	verdicts, err := staleByGlob(filepath.Join(dir, verdictSubdir), verdictGlob, verdictTmpGlob, vo)
+	verdicts, err := staleByGlob(filepath.Join(dir, verdictSubdir), verdictGlob, verdictTmpGlob, maxCacheBytes, vo)
 	return append(out, verdicts...), err
 }
 
 // staleByGlob classifies the files of dir matching the cache glob and the
-// temp file glob.
-func staleByGlob(dir, cache, tmp string, o PruneOptions) ([]StaleCacheFile, error) {
+// temp file glob; cache files above maxBytes are stale.
+func staleByGlob(dir, cache, tmp string, maxBytes int64, o PruneOptions) ([]StaleCacheFile, error) {
 	var out []StaleCacheFile
 	for _, g := range []string{cache, tmp} {
 		matches, err := filepath.Glob(filepath.Join(dir, g))
@@ -90,7 +111,7 @@ func staleByGlob(dir, cache, tmp string, o PruneOptions) ([]StaleCacheFile, erro
 			return nil, err
 		}
 		for _, m := range matches {
-			if f, ok := staleReason(m, g == tmp, o); ok {
+			if f, ok := staleReason(m, g == tmp, maxBytes, o); ok {
 				out = append(out, f)
 			}
 		}
@@ -99,7 +120,7 @@ func staleByGlob(dir, cache, tmp string, o PruneOptions) ([]StaleCacheFile, erro
 }
 
 // staleReason classifies one candidate file.
-func staleReason(path string, isTmp bool, o PruneOptions) (StaleCacheFile, bool) {
+func staleReason(path string, isTmp bool, maxBytes int64, o PruneOptions) (StaleCacheFile, bool) {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.Mode().IsRegular() {
 		return StaleCacheFile{}, false
@@ -113,7 +134,7 @@ func staleReason(path string, isTmp bool, o PruneOptions) (StaleCacheFile, bool)
 	case age > o.MaxAge:
 		f.Reason = "unused for " + strconv.Itoa(int(age.Hours()/24)) + " days"
 		return f, true
-	case fi.Size() > maxCacheBytes:
+	case fi.Size() > maxBytes:
 		f.Reason = "unreadable or oversized"
 		return f, true
 	case o.CheckRoots:

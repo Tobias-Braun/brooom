@@ -11,6 +11,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 // blobCacheVersion is bumped when the cached layout changes; files of another
@@ -18,8 +21,9 @@ import (
 const blobCacheVersion = 1
 
 // maxBlobCacheBytes caps the size of a cache file that is read, so a broken
-// or hostile file can never exhaust memory.
-const maxBlobCacheBytes = 1 << 20
+// or hostile file can never exhaust memory. walk.ListStaleCache uses the same
+// cap to list oversized files for purging.
+const maxBlobCacheBytes = walk.BlobCacheMaxBytes
 
 // blobCacheDoc is the on-disk document, one per repository (common git dir).
 type blobCacheDoc struct {
@@ -133,6 +137,11 @@ func loadBlobCache(file, key string, min int64) (blobScan, bool) {
 			return blobScan{}, false
 		}
 	}
+	// The mtime is the "last used" stamp of the age-based purge; without it
+	// a cache that keeps hitting would be listed as unused after 30 days.
+	// Best effort: the cache is served either way.
+	now := time.Now()
+	_ = os.Chtimes(file, now, now)
 	return blobScan{blobs: doc.Blobs, total: doc.Total}, true
 }
 

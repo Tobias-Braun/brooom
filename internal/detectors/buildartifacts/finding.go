@@ -55,7 +55,7 @@ func (s *scan) size(ctx context.Context, c candidate, p string) (walk.DirSummary
 	if c.link {
 		return walk.DirSummary{NewestModTime: c.linkModTime}, true
 	}
-	sum, err := walk.DirSize(ctx, p, walk.Options{CacheDir: s.env.CacheDir, Fresh: true})
+	sum, err := walk.DirSize(ctx, p, walk.Options{Fresh: true})
 	return sum, err == nil
 }
 

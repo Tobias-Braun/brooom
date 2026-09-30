@@ -80,13 +80,12 @@ type Env struct {
 	// flags, but may suggest actions for blocked findings (e.g. -D for
 	// unmerged branches).
 	Force bool
-	// CacheDir is the directory of the directory-size cache, or empty when
-	// caching is disabled (cfg.Scan.Cache false). The scan pipeline sets it
-	// to config.ResolveDirs().Cache. Detectors pass
-	// walk.Options{CacheDir: env.CacheDir, Fresh: ...} to walk.DirSize and
-	// set Fresh to true whenever NewestModTime feeds an age threshold,
-	// recently_modified or LastModified of paths that may be modified in
-	// place (logs, transcripts, caches, ignored data): a cached
+	// CacheDir is the directory of the scan caches, or empty when caching
+	// is disabled (cfg.Scan.Cache false). The scan pipeline sets it to
+	// config.ResolveDirs().Cache. A Fresh walk.DirSize ignores it, so
+	// detectors whose NewestModTime feeds an age threshold,
+	// recently_modified or LastModified (all of them today) call
+	// walk.DirSize with Fresh: true and no CacheDir. A cached
 	// NewestModTime is only a lower-bound hint, cached sizes are fine for
 	// sizing and ranking.
 	CacheDir string

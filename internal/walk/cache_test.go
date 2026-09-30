@@ -243,13 +243,33 @@ func TestFreshSeesInPlaceAppends(t *testing.T) {
 		t.Errorf("fresh newest %v should reflect the append (warmup %v)", fresh.NewestModTime, warmup.NewestModTime)
 	}
 
-	reads := countReads(t)
-	after := mustSize(t, root, opts)
-	if !after.NewestModTime.Equal(fresh.NewestModTime) {
-		t.Errorf("cache was not refreshed by Fresh: %v != %v", after.NewestModTime, fresh.NewestModTime)
+}
+
+// TestFreshLeavesCacheAlone: a Fresh call neither reads nor writes the cache.
+// Every production caller is Fresh, so writing here rewrote megabytes of
+// records on each scan that no later scan could use.
+func TestFreshLeavesCacheAlone(t *testing.T) {
+	root, opts := cachedTree(t)
+	fresh := Options{CacheDir: opts.CacheDir, Fresh: true}
+
+	mustSize(t, root, fresh)
+	if entries, _ := os.ReadDir(opts.CacheDir); len(entries) != 0 {
+		t.Errorf("Fresh wrote cache files: %v", entries)
 	}
-	if n := reads.Load(); n != 0 {
-		t.Errorf("post-refresh warm run read %d directories", n)
+
+	mustSize(t, root, opts)
+	file := cacheFilePath(opts.CacheDir, root)
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(file, old, old); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(file)
+	writeFile(t, filepath.Join(root, "a", "new"), 7000)
+	mustSize(t, root, fresh)
+	after, _ := os.ReadFile(file)
+	fi, _ := os.Stat(file)
+	if string(before) != string(after) || !fi.ModTime().Equal(old) {
+		t.Errorf("Fresh modified an existing cache file (mtime %v)", fi.ModTime())
 	}
 }
 

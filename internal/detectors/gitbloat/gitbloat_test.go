@@ -815,3 +815,33 @@ func TestParseBlobLine(t *testing.T) {
 		}
 	}
 }
+
+// TestBlobCacheHitRefreshesMtime: purge treats the mtime as the last-used
+// stamp, so a cache that keeps hitting must never age out.
+func TestBlobCacheHitRefreshesMtime(t *testing.T) {
+	r := largeBlobRepo(t)
+	f := newFixture(t, tune{loose: 5, blob: 4096}, r.Dir)
+	f.env.CacheDir = testutil.ResolvedTempDir(t)
+	if _, err := f.run(t, New(), repoTarget(r.Dir)); err != nil {
+		t.Fatal(err)
+	}
+	files, _ := filepath.Glob(filepath.Join(f.env.CacheDir, "gitbloat-blobs-*.json"))
+	if len(files) != 1 {
+		t.Fatalf("want one blob cache file, got %v", files)
+	}
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	if err := os.Chtimes(files[0], old, old); err != nil {
+		t.Fatal(err)
+	}
+	f.rescan()
+	if _, err := f.run(t, New(), repoTarget(r.Dir)); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(fi.ModTime()) > time.Hour {
+		t.Errorf("cache hit left mtime at %v", fi.ModTime())
+	}
+}

@@ -47,7 +47,7 @@ func reflogDirs(commonDir string) []string {
 func measureReflogs(ctx context.Context, env *detect.Env, commonDir string) (reflogUsage, error) {
 	var u reflogUsage
 	for _, dir := range reflogDirs(commonDir) {
-		sum, err := walk.DirSize(ctx, dir, walk.Options{CacheDir: env.CacheDir, Fresh: true})
+		sum, err := walk.DirSize(ctx, dir, walk.Options{Fresh: true})
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}

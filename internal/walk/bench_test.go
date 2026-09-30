@@ -54,8 +54,7 @@ func BenchmarkDirSizeCold100k(b *testing.B) {
 	cache := b.TempDir()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		// Fresh ignores the records, so every iteration is a cold read
-		// (and still writes the cache).
+		// Fresh ignores the cache, so every iteration is a cold read.
 		if _, err := DirSize(context.Background(), root, Options{CacheDir: cache, Fresh: true}); err != nil {
 			b.Fatal(err)
 		}

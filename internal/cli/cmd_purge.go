@@ -75,7 +75,7 @@ func (a *app) runPurge(cmd *cobra.Command, apply, yes bool) error {
 		what := "them"
 		if len(listing.Expired) == 0 {
 			// Only caches are listed; do not talk about sessions.
-			what = "the stale cache files"
+			what = "the stale scan cache files"
 		}
 		fmt.Fprintf(a.io.Out, "dry run: nothing was deleted; re-run '%s' to delete %s permanently\n", a.applyCommand(cmd), what)
 		return nil
@@ -84,7 +84,7 @@ func (a *app) runPurge(cmd *cobra.Command, apply, yes bool) error {
 		if !a.canPrompt() {
 			return usageError{action.ErrConfirmationRequired}
 		}
-		prompt := fmt.Sprintf("Permanently delete %d quarantined session(s) and %d stale cache file(s)? [y/N] ",
+		prompt := fmt.Sprintf("Permanently delete %d quarantined session(s) and %d stale scan cache file(s)? [y/N] ",
 			len(listing.Expired), len(staleCache))
 		if !action.Confirm(a.io.In, a.io.Out, prompt) {
 			fmt.Fprintln(a.io.Out, "aborted: nothing was deleted")
@@ -116,7 +116,7 @@ func (a *app) printStaleCache(stale []walk.StaleCacheFile) {
 		total += f.SizeBytes
 		fmt.Fprintf(a.io.Out, "  %s  %s  (%s)\n", filepath.Base(f.Path), output.FormatSize(f.SizeBytes), f.Reason)
 	}
-	fmt.Fprintf(a.io.Out, "total: %d cache file(s), %s\n", len(stale), output.FormatSize(total))
+	fmt.Fprintf(a.io.Out, "total: %d scan cache file(s), %s\n", len(stale), output.FormatSize(total))
 }
 
 // applyCachePrune deletes the listed cache files and reports the result.
@@ -129,9 +129,9 @@ func (a *app) applyCachePrune(stale []walk.StaleCacheFile) error {
 	for _, f := range removed {
 		freed += f.SizeBytes
 	}
-	fmt.Fprintf(a.io.Out, "removed %d cache file(s), freed %s\n", len(removed), output.FormatSize(freed))
+	fmt.Fprintf(a.io.Out, "removed %d scan cache file(s), freed %s\n", len(removed), output.FormatSize(freed))
 	if err != nil {
-		return fmt.Errorf("some cache files could not be deleted: %w", err)
+		return fmt.Errorf("some scan cache files could not be deleted: %w", err)
 	}
 	return nil
 }
