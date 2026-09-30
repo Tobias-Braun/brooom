@@ -244,6 +244,8 @@ again with --force (export with 'brooom scan --force --format json') to get
 an action for findings blocked by an overridable risk flag.
 
 Use '--from -' to read the file from stdin. Without --apply this is a dry run.
+Stdin is then the findings, so there is no terminal to confirm on: --apply
+needs --yes (or use a file, which keeps the interactive confirmation).
 ```
 
 **Examples**
@@ -252,7 +254,7 @@ Use '--from -' to read the file from stdin. Without --apply this is a dry run.
 brooom scan --format json > findings.json
 brooom clean --from findings.json
 brooom clean --from findings.json --id 8f2a41c7 --apply
-brooom scan --format json | brooom clean --from - --apply
+brooom scan --format json | brooom clean --from - --apply --yes
 ```
 
 **Flags**

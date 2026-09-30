@@ -99,8 +99,10 @@ func hintCommands(text string) []string {
 	var out []string
 	for _, re := range []*regexp.Regexp{backtick, quoted} {
 		for _, m := range re.FindAllStringSubmatch(text, -1) {
-			for _, part := range strings.Split(m[1], "|") {
-				out = append(out, strings.TrimSpace(part))
+			for _, pipe := range strings.Split(m[1], "|") {
+				for _, part := range strings.Split(pipe, "&&") {
+					out = append(out, strings.TrimSpace(part))
+				}
 			}
 		}
 	}
@@ -170,7 +172,7 @@ func TestScanApplyHints(t *testing.T) {
 			if tt.want != "" && got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
-			if tt.want == "" && (!strings.Contains(got, "brooom scan --detector "+findings.Quote("git-bloat,logs")+" --format json | brooom clean --from - --apply")) {
+			if tt.want == "" && (!strings.Contains(got, "brooom scan --detector "+findings.Quote("git-bloat,logs")+" --format json > brooom-findings.json && brooom clean --from brooom-findings.json --apply")) {
 				t.Errorf("got %q", got)
 			}
 			for _, c := range hintCommands("`" + got + "`") {
