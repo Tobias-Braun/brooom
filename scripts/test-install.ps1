@@ -160,7 +160,7 @@ Get-Content -Raw '$installer' | Invoke-Expression
 if (`$ErrorActionPreference -ne 'Continue') { `$leaks += 'ErrorActionPreference' }
 if (`$ProgressPreference -ne 'Continue') { `$leaks += 'ProgressPreference' }
 `$leaks += @(Get-Variable | ForEach-Object Name | Where-Object { `$vars -notcontains `$_ -and @('_', '?', 'args', 'input', 'PSItem') -notcontains `$_ })
-if (Get-Command Get-Arch, Get-LatestTag, Install-Binary -ErrorAction SilentlyContinue) { `$leaks += 'functions' }
+`$leaks += @(Get-ChildItem Function: | Where-Object { @('Get-Arch', 'Get-LatestTag', 'Install-Binary') -contains `$_.Name } | ForEach-Object { 'function:' + `$_.Name })
 if (`$leaks) { Write-Host ('LEAK: ' + (`$leaks -join ',')); exit 3 }
 "@
   $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirI }) $probe
