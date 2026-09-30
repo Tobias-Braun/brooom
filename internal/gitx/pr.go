@@ -103,5 +103,6 @@ func execGH(ctx context.Context, dir string, env []string, args ...string) ([]by
 	// A grandchild (gh spawns helpers) may hold the output pipe past the
 	// deadline; WaitDelay force-closes it so the timeout is real.
 	cmd.WaitDelay = waitDelay
+	ownProcessGroup(cmd)
 	return cmd.Output()
 }

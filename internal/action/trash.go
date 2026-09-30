@@ -169,6 +169,10 @@ func checkTracked(ctx context.Context, env *Env, path string) (bool, error) {
 	}
 	out, err := env.Git.Run(ctx, root, "ls-files", "-z", "--", ":(literal)"+path)
 	if err != nil {
+		if ctx.Err() != nil {
+			// Ctrl-C killed git: that is no reason to advise --force.
+			return false, fmt.Errorf("list tracked files: %w", ctx.Err())
+		}
 		return unknownTracked(env, fmt.Sprintf("cannot list tracked files: %v", err))
 	}
 	if strings.Trim(out, "\x00 \n") == "" {
@@ -230,6 +234,9 @@ func proveNoUntracked(ctx context.Context, env *Env, path string) error {
 	}
 	out, err := env.Git.Run(ctx, root, "ls-files", "-z", "--others", "--exclude-standard", "--", path)
 	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("list untracked files: %w", ctx.Err())
+		}
 		return skipf(refuse, "a path git cannot inspect (cannot show that it holds no untracked files)")
 	}
 	if strings.Trim(out, "\x00 \n") != "" {

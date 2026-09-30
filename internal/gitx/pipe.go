@@ -84,6 +84,7 @@ func pipeLimitInput(ctx context.Context, r Runner, dir string, stdin io.Reader, 
 		// A killed git can leave a child holding a pipe; without a delay Wait
 		// would block until that child exits too.
 		c.WaitDelay = waitDelay
+		ownProcessGroup(c)
 	}
 	// A nil interface leaves Stdin on the null device, as required.
 	p.c1.Stdin = stdin
