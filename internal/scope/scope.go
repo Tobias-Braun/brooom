@@ -38,10 +38,6 @@ var ErrOutsideScope = errors.New("path is outside the allowed scope")
 // exists.
 var ErrNotInRepo = errors.New("not inside a git repository")
 
-// errNotImplemented marks skeleton functions that are implemented by the
-// milestone issues. It is never returned by a released binary.
-var errNotImplemented = errors.New("scope: not implemented yet")
-
 // TargetKind says what kind of folder a target is.
 type TargetKind string
 
@@ -67,26 +63,4 @@ type Target struct {
 	Scope findings.Scope
 	// Tool is set for TargetUser: the catalog tool the location belongs to.
 	Tool string
-}
-
-// DiscoverOptions controls workspace discovery.
-type DiscoverOptions struct {
-	// MaxDepth limits how deep below a root discovery descends (0 = default).
-	MaxDepth int
-	// Exclude lists glob patterns (matched against the path relative to the
-	// root, with forward slashes) of directories to skip.
-	Exclude []string
-	// DescendIntoRepos makes discovery continue below a found repository to
-	// find nested repositories. Off by default because it costs a full walk
-	// of every repository.
-	DescendIntoRepos bool
-}
-
-// Discover walks each root recursively and returns every git repository and
-// every non-git project folder inside it as targets (scope = the root). By
-// default it does not descend into a repository once found, never descends
-// into a project folder's known-huge directories (node_modules, .venv,
-// target, ...) and never follows directory symlinks.
-func Discover(roots []string, opts DiscoverOptions) ([]Target, error) {
-	return nil, errNotImplemented
 }
