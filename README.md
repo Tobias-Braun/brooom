@@ -91,6 +91,22 @@ brooom scan -w -f json      # all workspace roots, machine-readable
 brooom undo                 # restore the last session
 ```
 
+### Sweep presets
+
+`brooom sweep [--preset safe|standard|aggressive]` runs a fixed detector set
+with a minimum confidence and a few tuned thresholds. The preset is chosen by
+`--preset`, else by `sweep.preset` in the config, else `safe`. It is always a
+dry run unless you pass `--apply`, blocking risk flags still block, and
+`.brooom.json` can still tighten what a preset lowers. `--detector` narrows the
+set. The definitions live in `internal/presets`; `brooom sweep --help` prints
+them.
+
+| Preset | Detectors | Min. confidence | Notes |
+| --- | --- | --- | --- |
+| `safe` | merged-branch, worktrees, log-and-runtime-files, build-artifacts | high | prunable and merged clean worktrees only, OS junk and old logs, build artifacts of inactive projects |
+| `standard` | safe + stale-branch, ai-artifacts | medium | project-level AI artifacts only, all log and cache categories |
+| `aggressive` | standard + large-untracked, git-bloat | medium | lowers age thresholds (never above your own values), includes ignored files, gc/reflog expire/prune with `90.days.ago` |
+
 Output formats: `table` (default), `tree`, `json`, `ndjson`, `plain`,
 `summary`.
 

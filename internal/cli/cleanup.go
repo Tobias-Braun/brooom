@@ -32,6 +32,15 @@ type cleanupSelection struct {
 	userLocations bool
 	// label names the command in messages, e.g. "branches".
 	label string
+	// configOverlay is applied to the loaded configuration before the
+	// per-root and per-repo layers (see scanOptions.configOverlay).
+	configOverlay func(*config.Config)
+	// minConfidence drops findings below it before planning.
+	minConfidence findings.Confidence
+	// skipUnavailable skips selected detectors that are not linked into this
+	// build (with a verbose note) instead of failing. Detectors named
+	// explicitly with --detector still fail: the user asked for them.
+	skipUnavailable bool
 }
 
 // machineFormats print parseable output only. They show findings in a dry
@@ -64,7 +73,13 @@ func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags
 	if err != nil {
 		return err
 	}
-	opts := scanOptions{detectors: names, userLocations: sel.userLocations, force: af.force}
+	opts := scanOptions{
+		detectors:     names,
+		userLocations: sel.userLocations,
+		force:         af.force,
+		configOverlay: sel.configOverlay,
+		minConfidence: sel.minConfidence,
+	}
 	switch {
 	case len(names) == 0:
 		return a.nothingSelected(cfg, format)
@@ -99,7 +114,13 @@ func (a *app) nothingSelected(cfg *config.Config, format string) error {
 // note.
 func (a *app) resolveSelection(cfg *config.Config, sel cleanupSelection) ([]string, error) {
 	names := slices.Sorted(slices.Values(sel.detectors))
-	flagged, err := validateDetectorNames(a.flags.detectors)
+	validate := validateDetectorNames
+	if sel.skipUnavailable {
+		// Known-but-unregistered names must survive to availableDetectors,
+		// which reports them as "not available in this build" (exit 1).
+		validate = validateKnownDetectorNames
+	}
+	flagged, err := validate(a.flags.detectors)
 	if err != nil {
 		return nil, err
 	}
@@ -110,10 +131,55 @@ func (a *app) resolveSelection(cfg *config.Config, sel cleanupSelection) ([]stri
 				strings.Join(flagged, ","), sel.label, strings.Join(sel.detectors, ","))}
 		}
 	}
-	if err := requireRegistered(names); err != nil {
+	names, err = a.availableDetectors(names, flagged, sel.skipUnavailable)
+	if err != nil {
 		return nil, err
 	}
 	return a.enabledDetectors(cfg, names), nil
+}
+
+// availableDetectors checks that the selected detectors are linked into this
+// build. Without skip that is required for all of them. With skip, only the
+// explicitly requested (flagged) ones are required and the rest is dropped
+// with a verbose note.
+func (a *app) availableDetectors(names, flagged []string, skip bool) ([]string, error) {
+	if !skip {
+		return names, requireRegistered(names)
+	}
+	var out []string
+	for _, n := range names {
+		if _, ok := detect.Get(n); ok {
+			out = append(out, n)
+			continue
+		}
+		if slices.Contains(flagged, n) {
+			return nil, requireRegistered([]string{n})
+		}
+		a.progressf("skipping detector %s: not available in this build", n)
+	}
+	return out, nil
+}
+
+// validateKnownDetectorNames is validateDetectorNames against the names Brooom
+// knows (config.DetectorNames) instead of the registry, so a detector whose
+// milestone has not landed is a different error than a typo.
+func validateKnownDetectorNames(names []string) ([]string, error) {
+	known := config.DetectorNames()
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[n] {
+			continue
+		}
+		if !slices.Contains(known, n) {
+			return nil, usageError{fmt.Errorf("unknown detector %q (available: %s)", n, strings.Join(known, ", "))}
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 // enabledDetectors drops the detectors switched off in the global config and

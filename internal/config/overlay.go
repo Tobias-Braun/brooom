@@ -318,6 +318,11 @@ func cloneRoots(in []Root) []Root {
 	return out
 }
 
+// Clone returns a deep copy of the configuration including the fields that
+// are never serialised. Callers that adjust a loaded configuration for one
+// run (sweep presets) work on a clone so the loaded value stays untouched.
+func (c *Config) Clone() *Config { return c.clone() }
+
 // clone returns a deep copy including the json:"-" fields, so overlays never
 // alias slices, maps or pointers of the receiver.
 func (c *Config) clone() *Config {

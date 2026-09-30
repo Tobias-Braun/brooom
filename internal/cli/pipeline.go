@@ -81,6 +81,9 @@ func (a *app) newScanRequest(opts scanOptions) (*scanRequest, error) {
 	if err != nil {
 		return nil, err
 	}
+	if opts.configOverlay != nil {
+		opts.configOverlay(cfg)
+	}
 	if opts.userLocations {
 		cfg.Detectors.AIArtifacts.UserLocations = true
 	}
@@ -229,7 +232,11 @@ func (a *app) execute(ctx context.Context, req *scanRequest, onFinding func(find
 	a.progressf("config: %s", req.cfgPath)
 	a.progressf("scanning %d target(s) with %d detector(s)", len(targets), len(req.detectors))
 
-	found, runErrs, stats := a.runDetectors(ctx, env, targets, req, effective, onFinding)
+	found, runErrs, stats := a.runDetectors(ctx, env, targets, req, effective, req.opts.filterStream(onFinding))
+	if kept := req.opts.filter(found); len(kept) != len(found) {
+		a.progressf("dropped %d finding(s) below minimum confidence %s", len(found)-len(kept), req.opts.minConfidence)
+		found = kept
+	}
 	a.logDetectorStats(req.detectors, found, stats)
 	sort.SliceStable(runErrs, func(i, j int) bool {
 		x, y := runErrs[i], runErrs[j]
