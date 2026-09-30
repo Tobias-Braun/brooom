@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,22 +14,13 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/testutil"
 )
 
-// hangingScript installs an executable named name in a fresh PATH directory.
+// hangingScript installs a fake executable named name in a fresh directory.
 // It starts a background grandchild that inherits stdout and stderr and
 // outlives the deadline, then hangs itself: the situation in which
 // exec.Cmd.Wait blocks on the pipe long after the context ended.
 func hangingScript(t *testing.T, name string) string {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a POSIX shell script as the fake binary")
-	}
-	dir := t.TempDir()
-	path := filepath.Join(dir, name)
-	script := "#!/bin/sh\nsleep 20 &\nsleep 20\n"
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return fakeBinary(t, name, "hang-grandchild")
 }
 
 // TestExecRunnerHonoursDeadlineWithPipeHolder used to block for the whole
@@ -45,6 +36,38 @@ func TestExecRunnerHonoursDeadlineWithPipeHolder(t *testing.T) {
 	}
 	if d := time.Since(start); d > 8*time.Second {
 		t.Errorf("Run blocked for %v past a 500ms deadline", d)
+	}
+}
+
+// TestSilentProducerIsKilledWhileCopyIsStuck: the kill timer of a silent
+// producer used to start only after the copy goroutine ended, and where
+// closing the pipe does not interrupt a blocked Read (Windows) that never
+// happened before the deadline. The stuck read is simulated here with a
+// closer that does nothing; the fake sleeps 30 s, so a wait past the kill
+// delay (2 s) shows the timer was not running.
+func TestSilentProducerIsKilledWhileCopyIsStuck(t *testing.T) {
+	c1 := exec.Command(fakeBinary(t, "git", "sleep"))
+	pr, err := c1.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c1.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() { done <- gitx.FinishProducerStuckRead(c1, pr) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("a producer killed for outliving the consumer is noise, got %v", err)
+		}
+		if d := time.Since(start); d > 15*time.Second {
+			t.Errorf("producer outlived the consumer by %v", d)
+		}
+	case <-time.After(20 * time.Second):
+		_ = c1.Process.Kill()
+		t.Fatal("finishProducer blocked on the copy goroutine; the kill timer never ran")
 	}
 }
 

@@ -1,6 +1,9 @@
 package gitx
 
-import "io"
+import (
+	"io"
+	"os/exec"
+)
 
 // SamePathOS exposes samePathOS so tests can exercise the Windows and macOS
 // comparison rules on any host OS.
@@ -18,6 +21,23 @@ func SetDiffLimit(r *Repo, n int64) { r.diffLimit = n }
 
 // SafeDirectoryCommand exposes the per-OS quoted safe.directory hint.
 var SafeDirectoryCommand = safeDirectoryCommand
+
+// FinishProducerStuckRead runs the producer wait-up of a pipeline whose copy
+// goroutine sits in a Read that closing the pipe cannot interrupt (what a
+// Windows pipe may do): pr is read here and the no-op closer stands in for
+// the close that would not help. c1 must be started with pr as its stdout.
+func FinishProducerStuckRead(c1 *exec.Cmd, pr io.Reader) error {
+	p := &pipeline{c1: c1, copyDone: make(chan struct{})}
+	go func() {
+		defer close(p.copyDone)
+		_, _ = io.Copy(io.Discard, pr)
+	}()
+	return p.finishProducer(noopCloser{})
+}
+
+type noopCloser struct{}
+
+func (noopCloser) Close() error { return nil }
 
 // StrippedOS exposes the env filter with the OS as a parameter so the Windows
 // case-insensitive rule is testable on any host.

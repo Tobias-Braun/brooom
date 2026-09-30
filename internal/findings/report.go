@@ -37,6 +37,12 @@ type Report struct {
 	Errors []ScanError `json:"errors,omitempty"`
 }
 
+// SkipPrefix starts the Message of a ScanError that reports a whole path as
+// skipped (no detector involved). The engine writes it and `brooom git purge`
+// reads it to avoid warning twice; sharing the constant keeps the two from
+// drifting apart.
+const SkipPrefix = "skipped: "
+
 // ScanError is a non-fatal problem encountered during a scan.
 type ScanError struct {
 	Detector string `json:"detector,omitempty"`

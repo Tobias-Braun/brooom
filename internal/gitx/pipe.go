@@ -202,15 +202,20 @@ func (p *pipeline) startBoth(pr io.Closer) error {
 // would otherwise wait on a slow or silent producer until the deadline, and
 // with it the consumer's Wait. A silent producer never sees SIGPIPE, so it is
 // killed if it outlives the consumer by waitDelay; its status is then noise.
+//
+// The timer starts before the wait on the copy goroutine: on Windows closing
+// the pipe may not interrupt a Read that is blocked on a silent producer, so
+// waiting first would leave the kill unarmed until the deadline. Killing the
+// producer closes its end of the pipe, which ends that Read.
 func (p *pipeline) finishProducer(pr io.Closer) error {
-	_ = pr.Close()
-	if p.copyDone != nil {
-		<-p.copyDone
-	}
 	timer := time.AfterFunc(waitDelay, func() {
 		p.producerEnded.Store(true)
 		_ = p.c1.Process.Kill()
 	})
+	_ = pr.Close()
+	if p.copyDone != nil {
+		<-p.copyDone
+	}
 	err := p.c1.Wait()
 	timer.Stop()
 	if p.producerEnded.Load() {

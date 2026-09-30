@@ -53,6 +53,10 @@ func quoteArg(s, goos string) string {
 	switch {
 	case bare:
 		return s
+	case goos == "windows" && strings.Contains(s, "%"):
+		// cmd.exe expands %VAR% even inside double quotes; PowerShell single
+		// quotes keep the word literal (same dialect as findings.QuoteFor).
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 	case goos == "windows":
 		return `"` + s + `"`
 	}
@@ -62,7 +66,15 @@ func quoteArg(s, goos string) string {
 // bareArgRune reports whether r needs no quoting in a shell word.
 func bareArgRune(r rune, goos string) bool {
 	alnum := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
-	return alnum || strings.ContainsRune("/._-:+@%", r) || goos == "windows" && r == '\\'
+	extra := "/._-:+@"
+	if goos == "windows" {
+		// A backslash separates path elements; '%' stays out because cmd.exe
+		// expands %VAR% (see quoteArg), while POSIX shells leave it alone.
+		extra += `\`
+	} else {
+		extra += "%"
+	}
+	return alnum || strings.ContainsRune(extra, r)
 }
 
 // Is makes errors.Is(err, ErrUnsafeRepo) true.

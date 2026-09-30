@@ -59,8 +59,12 @@ func TestOpenPRBranches(t *testing.T) {
 		{
 			name:    "timeout even when the runner ignores the context",
 			timeout: 20 * time.Millisecond,
-			gh: func(_ context.Context, _ string, _ []string, _ ...string) ([]byte, error) {
-				time.Sleep(60 * time.Millisecond)
+			// The stub answers successfully, but only once the deadline has
+			// passed (it waits for it instead of sleeping a guessed time), so
+			// the outcome does not depend on scheduling: a late answer must
+			// still count as a timeout.
+			gh: func(ctx context.Context, _ string, _ []string, _ ...string) ([]byte, error) {
+				<-ctx.Done()
 				return []byte(`[{"headRefName":"late"}]`), nil
 			},
 		},

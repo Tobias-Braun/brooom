@@ -69,7 +69,21 @@ func gcStashNote(n int) string {
 }
 
 func gcCommand(m *maintCtx) string {
-	return "git -C " + m.repo.Dir + " " + strings.Join(gcArgs(m.date), " ")
+	return maintCommand(m.repo.Dir, gcArgs(m.date))
+}
+
+// maintCommand renders the pasteable `git -C dir args...` of a maintenance
+// step. Every word goes through findings.Quote: the repository path may hold
+// spaces or shell metacharacters and the date may be an approxidate such as
+// "2 weeks ago", and the option token (`--prune=<date>`) has to stay one word.
+// Apply runs argv without a shell, so this is display only.
+func maintCommand(dir string, args []string) string {
+	words := make([]string, 0, len(args)+3)
+	words = append(words, "git", "-C", findings.Quote(dir))
+	for _, a := range args {
+		words = append(words, findings.Quote(a))
+	}
+	return strings.Join(words, " ")
 }
 
 // gcArgs is the gc invocation with the stash reflog protected: gc runs
@@ -121,7 +135,7 @@ func (gitPrune) Plan(ctx context.Context, env *Env, f findings.Finding) (Step, e
 		Finding: f,
 		Description: fmt.Sprintf("git prune in %s: delete %s older than %s for good (NOT restorable)",
 			filepath.Base(m.repo.Dir), describeUnreachable(u), m.date),
-		Command: "git -C " + m.repo.Dir + " prune --expire=" + m.date,
+		Command: maintCommand(m.repo.Dir, []string{"prune", "--expire=" + m.date}),
 	}, nil
 }
 
@@ -186,7 +200,7 @@ func (gitReflogExpire) Plan(ctx context.Context, env *Env, f findings.Finding) (
 		Finding: f,
 		Description: fmt.Sprintf("git reflog expire in %s: remove %s older than %s (NOT restorable)%s",
 			filepath.Base(m.repo.Dir), reflogCount(n), m.date, stashKept(stashes)),
-		Command: "git -C " + m.repo.Dir + " " + strings.Join(gitx.ReflogExpireArgs(m.date, false), " "),
+		Command: maintCommand(m.repo.Dir, gitx.ReflogExpireArgs(m.date, false)),
 	}, nil
 }
 

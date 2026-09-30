@@ -15,8 +15,8 @@ import (
 func TestSkipOpenErrorDoesNotRepeatReportedPaths(t *testing.T) {
 	unsafe := &gitx.UnsafeRepoError{Dir: "/w/r", Stderr: "dubious ownership"}
 	scanned := []findings.ScanError{
-		{Path: "/w/r", Message: "skipped: " + unsafe.Error()},
-		{Detector: "git-bloat", Path: "/w/other", Message: "skipped: not a scan-level skip"},
+		{Path: "/w/r", Message: findings.SkipPrefix + unsafe.Error()},
+		{Detector: "git-bloat", Path: "/w/other", Message: findings.SkipPrefix + "not a scan-level skip"},
 	}
 	reported := reportedSkips(scanned)
 	var warn bytes.Buffer
