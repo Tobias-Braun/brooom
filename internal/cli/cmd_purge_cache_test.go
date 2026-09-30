@@ -18,7 +18,7 @@ func staleCacheFile(t *testing.T, f *undoFixture) string {
 	}
 	gone := filepath.Join(t.TempDir(), "vanished-root")
 	path := filepath.Join(dir, "dirsize-v1-0123456789abcdef.json")
-	body := `{"version":3,"root":` + jsonString(gone) + `,"dirs":{}}`
+	body := `{"version":4,"root":` + jsonString(gone) + `,"dirs":{}}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
