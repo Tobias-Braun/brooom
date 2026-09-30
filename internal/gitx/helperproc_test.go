@@ -23,6 +23,9 @@ import (
 // fake. Nothing else creates it, so it also tells the real test run apart.
 const fakeModeSuffix = ".mode"
 
+// fakeStopSuffix names the file whose existence ends a lingering grandchild.
+const fakeStopSuffix = ".stop"
+
 // fakeModeEnv overrides the sidecar file; the fake uses it to start a
 // grandchild that only sleeps.
 const fakeModeEnv = "BROOOM_GITX_FAKE_MODE"
@@ -39,11 +42,12 @@ func TestMain(m *testing.M) {
 
 // fakeModes maps a mode to its behaviour; the result is the exit status.
 var fakeModes = map[string]func() int{
-	"sleep":           func() int { time.Sleep(30 * time.Second); return 0 },
-	"sleep-then-done": fakeSleepThenDone,
-	"silent-producer": fakeSilentProducer,
-	"hang-grandchild": fakeHangGrandchild,
-	"gh-env":          fakeGHEnv,
+	"sleep":               func() int { time.Sleep(30 * time.Second); return 0 },
+	"sleep-then-done":     fakeSleepThenDone,
+	"sleep-until-stopped": fakeSleepUntilStopped,
+	"silent-producer":     fakeSilentProducer,
+	"hang-grandchild":     fakeHangGrandchild,
+	"gh-env":              fakeGHEnv,
 }
 
 // runFake plays the behaviour named by mode and returns the exit status.
@@ -75,12 +79,30 @@ func fakeSilentProducer() int {
 // lives.
 func fakeHangGrandchild() int {
 	child := exec.Command(os.Args[0])
-	child.Env = append(os.Environ(), fakeModeEnv+"=sleep")
+	child.Env = append(os.Environ(), fakeModeEnv+"=sleep-until-stopped")
+	// Do not inherit the working directory: on Windows a live process pins its
+	// cwd and the test's temporary directory could not be removed.
+	child.Dir = os.TempDir()
 	child.Stdout, child.Stderr = os.Stdout, os.Stderr
 	if err := child.Start(); err != nil {
 		return 2
 	}
 	time.Sleep(30 * time.Second)
+	return 0
+}
+
+// fakeSleepUntilStopped sleeps like the plain "sleep" mode but returns as soon
+// as the stop file next to the executable appears, so the test cleanup can end
+// the grandchild and free the files (on Windows a running executable and its
+// directory cannot be deleted).
+func fakeSleepUntilStopped() int {
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(os.Args[0] + fakeStopSuffix); err == nil {
+			return 0
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	return 0
 }
 
@@ -112,6 +134,14 @@ func fakeBinary(t *testing.T, name, mode string) string {
 	}
 	if err := os.WriteFile(path+fakeModeSuffix, []byte(mode), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if mode == "hang-grandchild" {
+		// Runs before the TempDir removal (cleanups are LIFO): tell the
+		// grandchild to exit and give it a moment to release the directory.
+		t.Cleanup(func() {
+			_ = os.WriteFile(path+fakeStopSuffix, nil, 0o644)
+			time.Sleep(500 * time.Millisecond)
+		})
 	}
 	return path
 }
