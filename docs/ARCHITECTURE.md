@@ -217,6 +217,32 @@ missing on disk. `git worktree prune` cannot be limited to one entry, so Apply
 compares the list before and after, fails if anything non-prunable vanished
 and names every removed entry in the hint. It is not undoable.
 
+#### `brooom clean --from` (`internal/cli/cmd_clean.go`, `clean_scope.go`, `clean_vet.go`)
+
+A findings file is untrusted input. `findings.ReadReport` only checks the
+envelope (size cap 256 MiB, one JSON value, `schema_version` 1..current;
+unknown fields are tolerated). Everything else comes from the invocation: the
+scope is rebuilt like a scan (`buildTargets`: the repository around the working
+directory, or the configured roots with `--workspaces`/`--root`), never from the
+report's `scopes` or a finding's `scope` (a note in `--verbose` only).
+
+Three guards are built: `project` (repo or roots), `user` (the
+`detect.TargetSource` locations, only with `--user`) and their union, which the
+actions receive. A finding claiming `scope.type` `user` must resolve in `user`,
+all others in `project`, so a finding cannot pick the wider guard. Trash
+findings resolve with `ResolveParent`, all others with `Resolve`; a trash
+finding whose path is a symlink now, without the `symlink` risk flag, is refused
+(directory swapped for a link after the scan). Git findings (by kind or action)
+also need their repository (`Path`, or `Meta["repo"]` for worktree findings) to
+be a repository of the scope, and a `Ref` that neither starts with `-` nor
+contains control characters. Refused findings are listed and counted and make
+the command exit 1 after the accepted ones were processed; findings selected
+away with `--id` are never evaluated. Findings without an action (also with
+`--force`) are skipped with a re-scan hint, an unknown action type is refused,
+a known but unimplemented one is skipped. Risk flags, sizes and ages from the
+file are not trusted: the executor's `Plan` re-validates everything. Execution
+is `runExecutor`, shared with the shortcut commands.
+
 ### Trash (`internal/trash`)
 
 `Remove(path) (Record, error)` / `Restore(Record)`. Never follows symlinks.

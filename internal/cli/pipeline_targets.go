@@ -22,7 +22,7 @@ import (
 // Messages of the usage errors of target selection. They say how to fix the
 // invocation because these are the errors a new user meets first.
 var (
-	errNotInRepo = errors.New("not inside a git repository; run it inside a repo, use --workspaces, or configure roots with `brooom roots add <path>`")
+	errNotInRepo = fmt.Errorf("%w; run it inside a repo, use --workspaces, or configure roots with `brooom roots add <path>`", scope.ErrNotInRepo)
 	errNoRoots   = errors.New("no workspace roots available for --workspaces; add one with `brooom roots add <path>`")
 )
 

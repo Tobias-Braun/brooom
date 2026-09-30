@@ -16,7 +16,9 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/findings"
+	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/output"
+	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/session"
 )
 
@@ -156,35 +158,54 @@ func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, st
 	if err != nil {
 		return err
 	}
+	result, err := a.runExecutor(ctx, cmd, execInput{
+		cfg: res.Config, git: res.Env.Git, guard: res.Guard, findings: res.Report.Findings,
+	}, af, strategy)
+	return mapExecutorError(result, err, af.apply)
+}
+
+// execInput is what the executor needs from whoever produced the findings: a
+// scan (shortcut commands) or a validated findings file (`clean --from`). The
+// guard is always the one the findings were validated against, so actions
+// cannot act outside that scope.
+type execInput struct {
+	cfg      *config.Config
+	git      gitx.Runner
+	guard    *scope.Guard
+	findings []findings.Finding
+}
+
+// runExecutor plans and, with --apply, executes the findings through the
+// shared executor: confirmation, session manifest and summary are identical
+// for every command.
+func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput, af applyFlags, strategy config.TrashStrategy) (*action.Result, error) {
 	dirs, err := config.ResolveDirs()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	id := session.NewID(time.Now())
-	resolver := newTrasherResolver(res.Config, strategy, dirs, id, a.io.Err)
+	resolver := newTrasherResolver(in.cfg, strategy, dirs, id, a.io.Err)
 	exec := action.NewExecutor(action.Options{
 		Apply:     af.apply,
 		Yes:       af.yes,
 		Force:     af.force,
 		IO:        action.IO{In: a.io.In, Out: a.io.Out, Err: a.io.Err},
 		Store:     &session.Store{Dir: dirs.Sessions},
-		Env:       buildActionEnv(res, af, resolver),
+		Env:       buildActionEnv(in, af, resolver),
 		Command:   a.commandLine(),
 		SessionID: id,
 		RerunHint: rerunHint(cmd),
 	})
-	result, err := exec.Run(ctx, res.Report.Findings)
-	return mapExecutorError(result, err, af.apply)
+	return exec.Run(ctx, in.findings)
 }
 
-// buildActionEnv assembles the action environment from the scan: the same
-// guard and configuration the detectors saw, so actions cannot act outside the
-// scanned scope.
-func buildActionEnv(res *scanResult, af applyFlags, r *trasherResolver) *action.Env {
+// buildActionEnv assembles the action environment: the same guard and
+// configuration the findings were produced or validated with.
+func buildActionEnv(in execInput, af applyFlags, r *trasherResolver) *action.Env {
 	return &action.Env{
-		Config:     res.Config,
-		Git:        res.Env.Git,
-		Guard:      res.Guard,
+		Config:     in.cfg,
+		Git:        in.git,
+		Guard:      in.guard,
 		Trasher:    r.forDetector,
 		TrasherFor: r.forStrategy,
 		Force:      af.force,
