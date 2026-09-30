@@ -12,9 +12,6 @@ type RiskFlag string
 const (
 	// RiskUnpushedCommits: the branch has commits that exist on no remote.
 	RiskUnpushedCommits RiskFlag = "unpushed_commits"
-	// RiskUncommittedChanges: the path contains modified or untracked files
-	// that are not ignored.
-	RiskUncommittedChanges RiskFlag = "uncommitted_changes"
 	// RiskFileOpen: a process currently has the file (or a file below the
 	// directory) open, e.g. a log still being written.
 	RiskFileOpen RiskFlag = "file_open_by_process"
@@ -55,16 +52,15 @@ const (
 
 // blockingRisks are the flags that prevent an action unless forced.
 var blockingRisks = map[RiskFlag]bool{
-	RiskUnpushedCommits:    true,
-	RiskUncommittedChanges: true,
-	RiskFileOpen:           true,
-	RiskWorktreeDirty:      true,
-	RiskWorktreeLocked:     true,
-	RiskWorktreeOperation:  true,
-	RiskHasOpenPR:          true,
-	RiskCurrentBranch:      true,
-	RiskProtectedBranch:    true,
-	RiskTrackedFiles:       true,
+	RiskUnpushedCommits:   true,
+	RiskFileOpen:          true,
+	RiskWorktreeDirty:     true,
+	RiskWorktreeLocked:    true,
+	RiskWorktreeOperation: true,
+	RiskHasOpenPR:         true,
+	RiskCurrentBranch:     true,
+	RiskProtectedBranch:   true,
+	RiskTrackedFiles:      true,
 }
 
 // neverOverridable are blocking flags that --force does not override: acting
@@ -108,7 +104,7 @@ func Actionable(flags []RiskFlag, force bool) bool {
 // documentation, validation and completions.
 func AllRiskFlags() []RiskFlag {
 	return []RiskFlag{
-		RiskUnpushedCommits, RiskUncommittedChanges, RiskFileOpen,
+		RiskUnpushedCommits, RiskFileOpen,
 		RiskWorktreeDirty, RiskWorktreeLocked, RiskWorktreeOperation, RiskHasOpenPR,
 		RiskCurrentBranch, RiskProtectedBranch, RiskTrackedFiles,
 		RiskRecentlyModified, RiskGitignored, RiskNeverPushed,

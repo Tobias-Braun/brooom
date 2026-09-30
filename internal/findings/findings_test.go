@@ -99,6 +99,20 @@ func TestBlockingFlags(t *testing.T) {
 	}
 }
 
+// TestRetiredRiskFlag guards the removal of uncommitted_changes: it was
+// documented as blocking but no detector ever set it, so it must not be
+// advertised as a known flag again unless a detector emits it.
+func TestRetiredRiskFlag(t *testing.T) {
+	for _, r := range AllRiskFlags() {
+		if r == "uncommitted_changes" {
+			t.Errorf("%s is listed although no detector emits it", r)
+		}
+	}
+	if RiskFlag("uncommitted_changes").Blocking() {
+		t.Error("a retired flag must not pretend to block")
+	}
+}
+
 func TestNewReportSortsAndNeverNil(t *testing.T) {
 	r := NewReport("dev", time.Unix(0, 0), nil, nil, nil)
 	if r.Findings == nil {

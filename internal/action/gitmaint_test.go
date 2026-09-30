@@ -382,7 +382,7 @@ func TestMaintenanceRefusals(t *testing.T) {
 		{"outside scope", func(f *findings.Finding) { f.Path = outside }, "outside the allowed scope"},
 		{"not a root", func(f *findings.Finding) { f.Path = sub }, "not the root"},
 		{"wrong type", func(f *findings.Finding) { f.SuggestedAction.Type = findings.ActionTrash }, "not git-prune"},
-		{"blocking flag", func(f *findings.Finding) { f.RiskFlags = []findings.RiskFlag{findings.RiskUncommittedChanges} }, "blocked by risk flag"},
+		{"blocking flag", func(f *findings.Finding) { f.RiskFlags = []findings.RiskFlag{findings.RiskWorktreeDirty} }, "blocked by risk flag"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

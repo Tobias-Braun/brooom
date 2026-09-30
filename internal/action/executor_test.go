@@ -244,7 +244,7 @@ func TestPlanEnvForceIsHonouredAndNotMutated(t *testing.T) {
 	fx := newFixture(t, func(o *Options) { o.Force = true; o.Env = &Env{} })
 	fx.fake(findings.ActionTrash)
 	f := find("d", findings.ActionTrash, fx.path("a"), "", 1)
-	f.RiskFlags = []findings.RiskFlag{findings.RiskUncommittedChanges}
+	f.RiskFlags = []findings.RiskFlag{findings.RiskWorktreeDirty}
 	e := NewExecutor(fx.opts)
 	if p := e.Plan(context.Background(), []findings.Finding{f}); len(p.Groups) != 1 {
 		t.Fatalf("force not applied: %+v", p)

@@ -462,6 +462,23 @@ func TestDirtyWorktrees(t *testing.T) {
 	}
 }
 
+// TestHiddenEditsMarkWorktreeDirty: skip-worktree and assume-unchanged edits
+// are invisible to `git status` but are uncommitted work all the same.
+func TestHiddenEditsMarkWorktreeDirty(t *testing.T) {
+	for _, flag := range []string{"--skip-worktree", "--assume-unchanged"} {
+		t.Run(flag, func(t *testing.T) {
+			repo := testutil.NewRepo(t)
+			wt := repo.AddWorktree("hidden", "feat-hidden")
+			repo.Git("-C", wt, "update-index", flag, "README.md")
+			testutil.WriteFile(t, wt, "README.md", "local override\n")
+			f := one(t, wtHarness(t, repo, wt).detect())
+			if f.SuggestedAction.Type != findings.ActionNone || !f.HasRisk(findings.RiskWorktreeDirty) {
+				t.Errorf("action %q, flags %v", f.SuggestedAction.Type, f.RiskFlags)
+			}
+		})
+	}
+}
+
 func TestUpstreamGone(t *testing.T) {
 	tests := []struct {
 		name       string

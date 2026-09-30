@@ -176,8 +176,8 @@ func checkUntrackedSafety(t *testing.T, f findings.Finding) {
 	if f.Meta["user_data_risk"] != "untracked" {
 		t.Errorf("meta = %v, want user_data_risk=untracked", f.Meta)
 	}
-	// uncommitted_changes would block the suggestion, see the package doc.
-	if f.Blocked() || f.HasRisk(findings.RiskUncommittedChanges) || f.HasRisk(findings.RiskGitignored) || f.HasRisk(findings.RiskRecentlyModified) {
+	// A blocking flag would turn the suggestion into none, see the package doc.
+	if f.Blocked() || f.HasRisk(findings.RiskGitignored) || f.HasRisk(findings.RiskRecentlyModified) {
 		t.Errorf("unexpected risk flags: %v", f.RiskFlags)
 	}
 }

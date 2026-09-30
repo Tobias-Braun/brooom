@@ -52,7 +52,6 @@
             "type": "string",
             "enum": [
               "unpushed_commits",
-              "uncommitted_changes",
               "file_open_by_process",
               "worktree_dirty",
               "worktree_locked",

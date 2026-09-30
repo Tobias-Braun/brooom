@@ -578,7 +578,7 @@ func TestCleanUserScopeFindings(t *testing.T) {
 func TestCleanForceNeverUpgradesActionNone(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	blockedDir, blockedFile := junkDir(t, f.repo.Dir, "blocked")
-	none := trashFinding(f.repo.Dir, blockedDir, findings.RiskUncommittedChanges)
+	none := trashFinding(f.repo.Dir, blockedDir, findings.RiskWorktreeDirty)
 	none.SuggestedAction = findings.SuggestedAction{Type: findings.ActionNone, Reason: "uncommitted changes"}
 
 	code, out, errOut := clean(t, "", "--from", writeReportFile(t, none), "--force", "--apply", "--yes")
@@ -596,10 +596,10 @@ func TestCleanForceNeverUpgradesActionNone(t *testing.T) {
 func TestCleanForceLiftsOverridableFlags(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	dir, file := junkDir(t, f.repo.Dir, "risky")
-	path := writeReportFile(t, trashFinding(f.repo.Dir, dir, findings.RiskUncommittedChanges))
+	path := writeReportFile(t, trashFinding(f.repo.Dir, dir, findings.RiskWorktreeDirty))
 
 	code, out, errOut := clean(t, "", "--from", path, "--apply", "--yes")
-	if code != ExitOK || !exists(file) || !strings.Contains(out, "uncommitted_changes") {
+	if code != ExitOK || !exists(file) || !strings.Contains(out, "worktree_dirty") {
 		t.Fatalf("without --force: code %d, file exists %v\nstdout %q\nstderr %q", code, exists(file), out, errOut)
 	}
 	code, out, errOut = clean(t, "", "--from", path, "--force", "--apply", "--yes")

@@ -10,22 +10,21 @@ import (
 // are lowercase, at most 10 characters and unique; a test walks
 // findings.AllRiskFlags so a new flag cannot be forgotten.
 var riskLabels = map[findings.RiskFlag]string{
-	findings.RiskUnpushedCommits:    "unpushed",
-	findings.RiskUncommittedChanges: "changes",
-	findings.RiskFileOpen:           "open",
-	findings.RiskWorktreeDirty:      "dirty",
-	findings.RiskWorktreeLocked:     "locked",
-	findings.RiskWorktreeOperation:  "operation",
-	findings.RiskHasOpenPR:          "open-pr",
-	findings.RiskCurrentBranch:      "current",
-	findings.RiskProtectedBranch:    "protected",
-	findings.RiskTrackedFiles:       "tracked",
-	findings.RiskRecentlyModified:   "recent",
-	findings.RiskGitignored:         "ignored",
-	findings.RiskNeverPushed:        "no-remote",
-	findings.RiskUpstreamGone:       "gone",
-	findings.RiskSymlink:            "symlink",
-	findings.RiskOutsideRepo:        "outside",
+	findings.RiskUnpushedCommits:   "unpushed",
+	findings.RiskFileOpen:          "open",
+	findings.RiskWorktreeDirty:     "dirty",
+	findings.RiskWorktreeLocked:    "locked",
+	findings.RiskWorktreeOperation: "operation",
+	findings.RiskHasOpenPR:         "open-pr",
+	findings.RiskCurrentBranch:     "current",
+	findings.RiskProtectedBranch:   "protected",
+	findings.RiskTrackedFiles:      "tracked",
+	findings.RiskRecentlyModified:  "recent",
+	findings.RiskGitignored:        "ignored",
+	findings.RiskNeverPushed:       "no-remote",
+	findings.RiskUpstreamGone:      "gone",
+	findings.RiskSymlink:           "symlink",
+	findings.RiskOutsideRepo:       "outside",
 }
 
 // ShortRiskFlags joins the short labels of flags with ",". Unknown flags fall
