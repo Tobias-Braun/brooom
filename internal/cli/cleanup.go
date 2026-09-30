@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -317,9 +318,19 @@ func (a *app) commandLine() string {
 }
 
 // quoteArg quotes an argument that contains whitespace, quotes or is empty.
+// On Windows the backslash is the path separator, not an escape character, so
+// it neither triggers quoting nor gets doubled: a pasted `C:\tmp\f.json` must
+// stay a valid path in cmd and PowerShell.
 func quoteArg(s string) string {
-	if s != "" && !strings.ContainsAny(s, " \t\n\"'\\") {
+	special := " \t\n\"'\\"
+	if runtime.GOOS == "windows" {
+		special = " \t\n\"'"
+	}
+	if s != "" && !strings.ContainsAny(s, special) {
 		return s
+	}
+	if runtime.GOOS == "windows" {
+		return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
 	}
 	return strconv.Quote(s)
 }
