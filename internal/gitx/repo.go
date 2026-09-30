@@ -72,6 +72,8 @@ type Repo struct {
 	patchIDs       memo[patchKey, patchSet]
 	merged         memo[mergeKey, MergeResult]
 	prs            memo[struct{}, PRInfo]
+	objectStats    memo[struct{}, ObjectStats]
+	extra          memo[string, any]
 }
 
 // cached runs f through m when the handle memoizes, otherwise directly.

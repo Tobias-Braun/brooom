@@ -55,7 +55,7 @@ packages and the same findings schema.
 | `internal/config` | Config types, `Default()`, load/save/validate, per-root overrides, tighten-only `.brooom.json`, `~/.brooom` layout (`BROOOM_HOME` overrides). |
 | `internal/scope` | Repo detection, workspace discovery (`[]Target`), `Guard` path validation (symlinks, `..`, case-insensitive filesystems, Windows drive letters/UNC). |
 | `internal/walk` | Parallel walker with skip lists, `DirSize` with mtime-invalidated cache in `~/.brooom/cache`. |
-| `internal/gitx` | Read-only-safe git runner (`GIT_OPTIONAL_LOCKS=0`, C locale, no prompts) and git helpers behind a per-repo `Repo` handle (branches and upstreams, base detection, merge detection incl. squash/rebase via patch-id, remote containment, worktrees, dirty check, open PRs via `gh`); `Cache` shares memoized handles per scan (`detect.Env.Repos`), uncached `Open` is for actions. Count-objects helpers are added later. |
+| `internal/gitx` | Read-only-safe git runner (`GIT_OPTIONAL_LOCKS=0`, C locale, no prompts) and git helpers behind a per-repo `Repo` handle (branches and upstreams, base detection, merge detection incl. squash/rebase via patch-id, remote containment, worktrees, dirty check, open PRs via `gh`); `Cache` shares memoized handles per scan (`detect.Env.Repos`), uncached `Open` is for actions. |
 | `internal/findings` | **The findings schema** (see [findings.md](findings.md)): `Finding`, `Report`, IDs, risk flags, totals. Stable contract. |
 | `internal/detect` | `Detector` interface, registry, `Env`, parallel `Run` engine. |
 | `internal/detectors/<name>` | One package per detector, self-registering via `init()`. `internal/detectors/all` blank-imports them. |
@@ -106,6 +106,33 @@ their paths in the guard. It only declares locations and never detects.
 Detector names (config keys, `--detector` values): `stale-branch`,
 `merged-branch`, `worktrees`, `git-bloat`, `large-untracked`,
 `ai-artifacts`, `log-and-runtime-files`, `build-artifacts`.
+
+### git-bloat (`internal/detectors/gitbloat`)
+
+Reports `git-loose-objects` (loose count above `loose_objects_threshold`),
+`git-packs` (pack count above `pack_count_threshold`), `git-reflog` (size of
+`<common-dir>/logs` plus `worktrees/*/logs` above `reflog_threshold_bytes`) and
+`git-large-blob` (history blobs of at least `large_blob_bytes`, 0 disables the
+scan).
+
+- Savings are documented estimates, labelled `estimated_savings` in evidence:
+  50% of the loose size (gc packs with delta compression), 10% of the pack
+  size. The reflog size is an `upper_bound`, because the size of entries older
+  than `reflog_expire` is not knowable without expiring. Exact values are
+  measured by the action with `count-objects` before and after.
+- Loose objects and packs are cleaned by `git gc --prune=<prune_expire>`. That
+  also expires reflog entries per `gc.reflogExpire` and
+  `gc.reflogExpireUnreachable` (defaults 90/30 days); the finding's reason says
+  so. `git prune` is not a separate finding.
+- Large blobs have no action: removing them means rewriting history
+  (`git filter-repo`), which Brooom does not do. At most the 20 largest per
+  repository are reported (evidence `truncated`), with `size_bytes` 0. The scan
+  pipes `rev-list --objects --all` into `cat-file --batch-check` (`gitx.Pipe`)
+  and is bounded by a 20 s deadline per repository; on timeout the blob
+  findings are dropped and everything else is still reported.
+- All findings sit on the repository's main worktree and measurements are
+  memoized per common dir (`gitx.Repo.Memo`), so every linked worktree target
+  yields the same IDs and does not rescan.
 
 ### Actions (`internal/action`)
 
