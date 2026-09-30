@@ -439,38 +439,59 @@ func (ev *removeEval) applyTrashed(ctx context.Context, env *Env, en session.Ent
 }
 
 // deregister drops the registration of the (now missing) worktree directory.
-// `git worktree remove` on a missing path is what Brooom relies on, but git
+func (ev *removeEval) deregister(ctx context.Context, env *Env) error {
+	return deregisterMissing(ctx, env, ev.repo, ev.path, false)
+}
+
+// deregisterMissing drops the registration of the worktree at path, whose
+// directory is gone. `git worktree remove` on a missing path is what Brooom
+// relies on (with force, which git needs for a missing directory in some
+// releases, but never the second --force that would lift a lock), but git
 // only learned to accept it in later releases than MinGitVersion, so a git
 // failure is not final: the fallback deletes the one administrative directory
 // <common>/worktrees/<id> whose gitdir file names this worktree. It refuses
-// when the entry is locked (a lock taken meanwhile), cannot be found or is
-// still listed afterwards, and never touches other registrations.
-func (ev *removeEval) deregister(ctx context.Context, env *Env) error {
-	_, gitErr := env.Git.Run(ctx, ev.repo.Dir, "worktree", "remove", "--", ev.path)
+// when the entry is locked, cannot be found or is still listed afterwards, and
+// never touches other registrations. remove-worktree and prune-worktrees share
+// it.
+//
+// The fallback's os.RemoveAll needs no scope.Guard: the directory is not a
+// user path but git's own metadata, found only by listing
+// <common>/worktrees of a repository that openRepoDir already resolved
+// through the guard, and WorktreeAdminDir returns only entries directly below
+// it. Known race: the lock check and the RemoveAll are not atomic, so a lock
+// taken in between is not honoured. The window is a few microseconds, git's
+// own remove has the same one, and the entry can be re-added, so it is
+// accepted rather than papered over.
+func deregisterMissing(ctx context.Context, env *Env, repo *gitx.Repo, path string, force bool) error {
+	args := []string{"worktree", "remove"}
+	if force {
+		args = append(args, "--force")
+	}
+	_, gitErr := env.Git.Run(ctx, repo.Dir, append(args, "--", path)...)
 	if gitErr == nil {
 		return nil
 	}
-	admin, ok := gitx.WorktreeAdminDir(ev.repo.Common, ev.path)
+	admin, ok := gitx.WorktreeAdminDir(repo.Common, path)
 	if !ok {
-		return fmt.Errorf("git worktree remove %s: %w (no administrative directory found for a fallback)", ev.path, gitErr)
+		return fmt.Errorf("git worktree remove %s: %w (no administrative directory found for a fallback)", path, gitErr)
 	}
 	if _, err := os.Lstat(filepath.Join(admin, "locked")); err == nil {
-		return fmt.Errorf("git worktree remove %s: %w (and the registration is locked)", ev.path, gitErr)
+		return fmt.Errorf("git worktree remove %s: %w (and the registration is locked)", path, gitErr)
 	}
 	if err := os.RemoveAll(admin); err != nil {
-		return fmt.Errorf("git worktree remove %s: %w (fallback failed: %w)", ev.path, gitErr, err)
+		return fmt.Errorf("git worktree remove %s: %w (fallback failed: %w)", path, gitErr, err)
 	}
-	// A fresh handle: the one in ev caches its worktree list.
-	repo, err := gitx.Open(ctx, env.Git, ev.repo.Dir)
+	// A fresh handle: the one in repo may cache its worktree list.
+	fresh, err := gitx.Open(ctx, env.Git, repo.Dir)
 	if err != nil {
-		return fmt.Errorf("worktree: reopen %s after the fallback: %w", ev.repo.Dir, err)
+		return fmt.Errorf("worktree: reopen %s after the fallback: %w", repo.Dir, err)
 	}
-	list, err := repo.ListWorktrees(ctx)
+	list, err := fresh.ListWorktrees(ctx)
 	if err != nil {
-		return fmt.Errorf("worktree: list worktrees of %s after the fallback: %w", ev.repo.Dir, err)
+		return fmt.Errorf("worktree: list worktrees of %s after the fallback: %w", repo.Dir, err)
 	}
-	if _, still := findWorktree(list, ev.path); still {
-		return fmt.Errorf("worktree: %s is still registered after the fallback", ev.path)
+	if _, still := findWorktree(list, path); still {
+		return fmt.Errorf("worktree: %s is still registered after the fallback", path)
 	}
 	return nil
 }

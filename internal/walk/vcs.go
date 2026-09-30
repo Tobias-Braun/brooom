@@ -12,6 +12,11 @@ import (
 // somebody's repository and must never be treated as disposable clutter.
 var vcsNames = []string{".git", ".hg", ".jj", ".svn"}
 
+// VCSNames returns a copy of the VCS metadata entry names (.git, .hg, .jj,
+// .svn) for callers that must probe for each of them, for example to find a
+// sibling of a path that is an alias of one.
+func VCSNames() []string { return append([]string(nil), vcsNames...) }
+
 // IsVCSName reports whether an entry name is VCS metadata (.git, .hg, .jj or
 // .svn). The comparison folds case on Windows and macOS, whose default
 // filesystems do, so ".Git" cannot slip through there.
