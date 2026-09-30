@@ -28,7 +28,7 @@ func (pruneWorktrees) Type() findings.ActionType { return findings.ActionPruneWo
 // The path is matched as recorded, without resolving it: the directory is
 // missing, and pruning only edits the repository's git directory.
 func evaluatePrune(ctx context.Context, env *Env, f findings.Finding) (*gitx.Repo, error) {
-	repo, err := openRepo(ctx, env, f)
+	repo, err := openWorktreeRepo(ctx, env, f)
 	if err != nil {
 		return nil, err
 	}

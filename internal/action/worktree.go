@@ -36,11 +36,11 @@ func init() {
 	Register(pruneWorktrees{})
 }
 
-// openRepo resolves the repository named by Meta["repo"] (the main worktree;
+// openWorktreeRepo resolves the repository named by Meta["repo"] (the main worktree;
 // the finding Path is the linked worktree) through the guard and opens it
 // without memoization: actions must see the state of the moment, never a
 // scan-time cache. Git only ever runs in the returned resolved directory.
-func openRepo(ctx context.Context, env *Env, f findings.Finding) (*gitx.Repo, error) {
+func openWorktreeRepo(ctx context.Context, env *Env, f findings.Finding) (*gitx.Repo, error) {
 	if env.Guard == nil {
 		return nil, errors.New("worktree: no scope guard configured")
 	}
@@ -54,7 +54,7 @@ func openRepo(ctx context.Context, env *Env, f findings.Finding) (*gitx.Repo, er
 	return openRepoDir(ctx, env, dir)
 }
 
-// openRepoDir is openRepo for a directory that is already known, which is
+// openRepoDir is openWorktreeRepo for a directory that is already known, which is
 // what undo has (the repository comes from the manifest, not a finding).
 func openRepoDir(ctx context.Context, env *Env, dir string) (*gitx.Repo, error) {
 	resolved, err := env.Guard.Resolve(dir)
@@ -114,7 +114,7 @@ type removeEval struct {
 // lock, existence, drift since the scan, dirtiness, risk flags. The lock and
 // the permanent-deletion refusals ignore --force.
 func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeEval, error) {
-	repo, err := openRepo(ctx, env, f)
+	repo, err := openWorktreeRepo(ctx, env, f)
 	if err != nil {
 		return nil, err
 	}
