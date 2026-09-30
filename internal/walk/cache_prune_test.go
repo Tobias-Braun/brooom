@@ -1,6 +1,7 @@
 package walk
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,14 +100,19 @@ func TestChangedOrRemovedDirectoryRewritesCache(t *testing.T) {
 			root, opts := cachedTree(t)
 			mustSize(t, root, opts)
 			file := cacheFilePath(opts.CacheDir, root)
-			before, _ := os.Stat(file)
-			tt.change(t, root)
-			mustSize(t, root, opts)
-			after, err := os.Stat(file)
+			// Compare contents, not file identity: Windows may hand the
+			// replaced file the same file index, so SameFile is unreliable.
+			before, err := os.ReadFile(file)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if os.SameFile(before, after) {
+			tt.change(t, root)
+			mustSize(t, root, opts)
+			after, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Equal(before, after) {
 				t.Error("changed tree did not rewrite the cache")
 			}
 			if got := mustSize(t, root, opts); got != uncached(t, root) {
