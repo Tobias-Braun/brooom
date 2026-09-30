@@ -146,7 +146,8 @@ try {
   }
 
   Write-Host '== PATH hint is usable with iex'
-  if ($result.Output -notmatch [regex]::Escape('& ([scriptblock]::Create((irm ')) -or $result.Output -notmatch '-AddToPath') { Fail "expected a scriptblock based -AddToPath hint: $($result.Output)" }
+  if ($result.Output -notmatch [regex]::Escape('& ([scriptblock]::Create((irm ')) { Fail "expected a scriptblock based -AddToPath hint: $($result.Output)" }
+  if ($result.Output -notmatch '-AddToPath') { Fail "expected the -AddToPath hint: $($result.Output)" }
 
   Write-Host '== iex leaves the caller session untouched'
   $dirI = Join-Path $work 'install-iex'
