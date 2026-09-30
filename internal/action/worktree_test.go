@@ -866,7 +866,7 @@ func TestPruneWorktreesRemovesOnlyMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if step.Command != "git worktree prune" {
+	if !strings.HasPrefix(step.Command, "git worktree remove --force -- ") {
 		t.Errorf("command = %q", step.Command)
 	}
 	en, err := act.Apply(context.Background(), fx.env, step)
@@ -948,40 +948,89 @@ func TestPruneWorktreesSkips(t *testing.T) {
 	}
 }
 
-// TestPruneWorktreesSecondStepSkipped mirrors the executor: it re-plans
-// before every step, and the first prune removes all missing entries.
-func TestPruneWorktreesSecondStepSkipped(t *testing.T) {
+// TestPruneWorktreesDeclinedEntryKeepsRegistration is the regression test for
+// the unscoped `git worktree prune`: the user confirms one of two missing
+// worktrees, so only that registration may go and the declined one (whose
+// admin dir holds the staged index and HEAD) must stay intact.
+func TestPruneWorktreesDeclinedEntryKeepsRegistration(t *testing.T) {
 	fx := newWTFixture(t)
-	f1 := fx.missingWorktree("one", "one")
-	f2 := fx.missingWorktree("two", "two")
+	confirmed := fx.missingWorktree("one", "one")
+	declined := fx.missingWorktree("two", "two")
 	act := pruneWorktrees{}
 
-	en, err := fx.apply(act, f1)
+	en, err := fx.apply(act, confirmed)
 	if err != nil || en.Status != session.StatusApplied {
-		t.Fatalf("first: %+v, %v", en, err)
+		t.Fatalf("confirmed: %+v, %v", en, err)
 	}
-	if !strings.Contains(en.RecoveryHint, f1.Path) || !strings.Contains(en.RecoveryHint, f2.Path) {
-		t.Errorf("hint should name both pruned entries: %q", en.RecoveryHint)
+	if fx.registered(confirmed.Path) {
+		t.Error("confirmed worktree is still registered")
 	}
-	_, err = fx.plan(act, f2)
-	wantSkip(t, err, "not prunable any more")
+	if !fx.registered(declined.Path) {
+		t.Fatal("declined worktree registration was pruned as well")
+	}
+	if strings.Contains(en.RecoveryHint, declined.Path) {
+		t.Errorf("hint names the untouched entry: %q", en.RecoveryHint)
+	}
+	// The declined one is still prunable and can be confirmed later.
+	if _, err := fx.plan(act, declined); err != nil {
+		t.Errorf("declined entry no longer plannable: %v", err)
+	}
+}
+
+func TestPruneWorktreesDetachedHint(t *testing.T) {
+	fx := newWTFixture(t)
+	p := fx.add("det", "")
+	f := fx.finding(p, findings.ActionPruneWorktrees)
+	if err := os.RemoveAll(p); err != nil {
+		t.Fatal(err)
+	}
+	en, err := fx.apply(pruneWorktrees{}, f)
+	if err != nil || en.Status != session.StatusApplied {
+		t.Fatalf("entry = %+v, err = %v", en, err)
+	}
+	wantContains(t, en.RecoveryHint, "unreachable", "git branch rescue "+f.Meta["head"])
+	if en.Undo[undoHead] != f.Meta["head"] || en.Undo[undoWT] != p || en.Restorable {
+		t.Errorf("manifest data: undo %v restorable %v", en.Undo, en.Restorable)
+	}
+}
+
+// TestPruneWorktreesRefusesUniqueDetachedCommits guards findings that were
+// not produced by the current detector (clean --from, older reports): a
+// detached HEAD held by no ref would become unreachable with its admin dir.
+func TestPruneWorktreesRefusesUniqueDetachedCommits(t *testing.T) {
+	fx := newWTFixture(t)
+	p := fx.add("det", "")
+	fx.gitOut(p, "-c", "user.name=t", "-c", "user.email=t@e", "-c", "commit.gpgsign=false",
+		"commit", "--allow-empty", "-q", "-m", "unique")
+	f := fx.finding(p, findings.ActionPruneWorktrees)
+	if err := os.RemoveAll(p); err != nil {
+		t.Fatal(err)
+	}
+	_, err := fx.plan(pruneWorktrees{}, f)
+	wantSkip(t, err, "held by no branch or tag")
+	wantContains(t, skipReason(err), "git worktree repair")
+	en, err := pruneWorktrees{}.Apply(context.Background(), fx.env, Step{Finding: f})
+	if err != nil || en.Status != session.StatusSkipped || !fx.registered(p) {
+		t.Errorf("Apply = %+v, %v; registered %v", en, err, fx.registered(p))
+	}
 }
 
 func TestPruneWorktreesVerifyRefusesUnexpectedRemoval(t *testing.T) {
 	live := gitx.Worktree{Path: filepath.FromSlash("/r/live")}
 	gone := gitx.Worktree{Path: filepath.FromSlash("/r/gone"), Prunable: true}
-	locked := gitx.Worktree{Path: filepath.FromSlash("/r/locked"), Prunable: true, Locked: true}
+	other := gitx.Worktree{Path: filepath.FromSlash("/r/other"), Prunable: true}
 
-	if _, err := verifyPruned([]gitx.Worktree{live, gone}, []gitx.Worktree{live}, gone.Path); err != nil {
+	if err := verifyPruned([]gitx.Worktree{live, gone, other}, []gitx.Worktree{live, other}, gone.Path); err != nil {
 		t.Errorf("expected success: %v", err)
 	}
-	if _, err := verifyPruned([]gitx.Worktree{live, gone}, []gitx.Worktree{}, gone.Path); err == nil {
+	if err := verifyPruned([]gitx.Worktree{live, gone}, []gitx.Worktree{}, gone.Path); err == nil {
 		t.Error("removal of a non-prunable entry must fail")
 	}
-	if _, err := verifyPruned([]gitx.Worktree{gone, locked}, []gitx.Worktree{}, gone.Path); err == nil {
-		t.Error("removal of a locked entry must fail")
+	// Even a prunable sibling must survive: it was not the target.
+	if err := verifyPruned([]gitx.Worktree{gone, other}, []gitx.Worktree{}, gone.Path); err == nil {
+		t.Error("removal of another prunable entry must fail")
 	}
-	if _, err := verifyPruned([]gitx.Worktree{gone}, []gitx.Worktree{gone}, gone.Path); err == nil {
+	if err := verifyPruned([]gitx.Worktree{gone}, []gitx.Worktree{gone}, gone.Path); err == nil {
 		t.Error("a target that is still registered must fail")
 	}
 }

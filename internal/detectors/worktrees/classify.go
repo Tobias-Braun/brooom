@@ -83,7 +83,8 @@ func (s *scan) examine(ctx context.Context, e *entry) (findings.Finding, bool, e
 // wins so each worktree is reported once, under its strongest reason.
 func (s *scan) classify(ctx context.Context, e *entry) (verdict, bool, error) {
 	if e.missing {
-		return s.missingVerdict(e), true, nil
+		v, err := s.missingVerdict(ctx, e)
+		return v, err == nil, err
 	}
 	for _, r := range []rule{s.mergedRule, s.detachedRule, s.upstreamGoneRule, s.staleRule} {
 		v, ok, err := r(ctx, e)
@@ -95,18 +96,43 @@ func (s *scan) classify(ctx context.Context, e *entry) (verdict, bool, error) {
 }
 
 // missingVerdict covers worktrees whose directory is gone: only git metadata
-// remains, which `git worktree prune` removes without touching any file.
-func (s *scan) missingVerdict(e *entry) verdict {
+// remains, which the prune action removes without touching any file. That
+// metadata is not harmless for a detached HEAD, though: HEAD and its reflog
+// live in the admin dir, so a commit held by no ref would become unreachable.
+// Such a worktree (and one whose containment is unknown) gets no action; the
+// directory may only be unmounted or moved, which `git worktree repair` fixes.
+func (s *scan) missingVerdict(ctx context.Context, e *entry) (verdict, error) {
 	msg := "worktree directory is missing: " + e.wt.Path
 	if e.wt.PruneReason != "" {
 		msg += " (" + e.wt.PruneReason + ")"
 	}
-	return verdict{
+	v := verdict{
 		conf:     findings.ConfidenceHigh,
 		action:   findings.ActionPruneWorktrees,
 		reason:   "the directory is gone; pruning only removes git metadata",
 		evidence: []findings.Evidence{{Code: evMissing, Message: msg, Value: e.wt.Path}},
 	}
+	if !e.wt.Detached {
+		return v, nil
+	}
+	where := ""
+	if e.wt.Head != "" {
+		var err error
+		if where, err = s.containedIn(ctx, e.wt.Head); err != nil {
+			return verdict{}, err
+		}
+	}
+	if where != "" {
+		return v, nil
+	}
+	v.conf, v.action = findings.ConfidenceLow, findings.ActionNone
+	v.reason = "detached HEAD commits are not known to exist anywhere else and pruning would make them unreachable; " +
+		"if the directory was moved or unmounted, run git worktree repair <new path>"
+	v.evidence = append(v.evidence, findings.Evidence{
+		Code: evHeadUnpushed, Message: "detached HEAD commits are not contained in the base or any remote", Value: e.wt.Head,
+	})
+	v.risks = []findings.RiskFlag{findings.RiskUnpushedCommits}
+	return v, nil
 }
 
 func (s *scan) removeVerdict(conf findings.Confidence, reason string, ev findings.Evidence) verdict {
