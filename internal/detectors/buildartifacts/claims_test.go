@@ -155,8 +155,12 @@ func snapshot(t *testing.T, dir string) []string {
 	var out []string
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err == nil {
-			fi, _ := d.Info()
-			out = append(out, p+"|"+fi.ModTime().String())
+			entry := p
+			if d.Type().IsRegular() {
+				fi, _ := d.Info()
+				entry += "|" + fi.ModTime().String()
+			}
+			out = append(out, entry)
 		}
 		return err
 	})
