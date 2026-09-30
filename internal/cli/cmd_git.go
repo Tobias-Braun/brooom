@@ -161,7 +161,7 @@ func (a *app) purgeSetup(pf purgeFlags, af applyFlags) (config.TrashStrategy, er
 	if err != nil {
 		return "", err
 	}
-	format, err := resolveFormat(a.flags.format, cfg.Output.Format)
+	format, err := resolveActingFormat(a.flags.format, cfg.Output.Format)
 	if err != nil {
 		return "", err
 	}

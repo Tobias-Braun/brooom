@@ -316,6 +316,9 @@ func (trashAction) Apply(ctx context.Context, env *Env, s Step) (session.Entry, 
 	if err != nil {
 		return failedTrash(en, err)
 	}
+	if tr.Strategy() == config.StrategyDelete && env.BeforeDelete != nil {
+		env.BeforeDelete()
+	}
 	rec, err := tr.Remove(ctx, path)
 	if err != nil {
 		return removeFailed(en, path, rec, err)

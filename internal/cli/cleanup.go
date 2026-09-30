@@ -57,7 +57,11 @@ func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags
 	if err != nil {
 		return err
 	}
-	format, err := resolveFormat(a.flags.format, cfg.Output.Format)
+	resolve := resolveFormat
+	if af.apply {
+		resolve = resolveActingFormat
+	}
+	format, err := resolve(a.flags.format, cfg.Output.Format)
 	if err != nil {
 		return err
 	}
@@ -260,7 +264,7 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 		Env:       buildActionEnv(in, af, resolver),
 		Command:   a.commandLine(),
 		SessionID: id,
-		RerunHint: rerunHint(cmd),
+		RerunHint: a.rerunHint(cmd),
 	})
 	return exec.Run(ctx, in.findings)
 }
@@ -276,12 +280,13 @@ func buildActionEnv(in execInput, af applyFlags, r *trasherResolver) *action.Env
 // resolved scope).
 func newActionEnv(cfg *config.Config, git gitx.Runner, guard *scope.Guard, af applyFlags, r *trasherResolver) *action.Env {
 	return &action.Env{
-		Config:     cfg,
-		Git:        git,
-		Guard:      guard,
-		Trasher:    r.forDetector,
-		TrasherFor: r.forStrategy,
-		Force:      af.force,
+		Config:       cfg,
+		Git:          git,
+		Guard:        guard,
+		Trasher:      r.forDetector,
+		BeforeDelete: r.beforeDelete,
+		TrasherFor:   r.forStrategy,
+		Force:        af.force,
 	}
 }
 
@@ -317,25 +322,4 @@ func quoteArg(s string) string {
 		return s
 	}
 	return strconv.Quote(s)
-}
-
-// applyCommand is the command that executes what a dry run of cmd showed.
-func applyCommand(cmd *cobra.Command) string {
-	return cmd.CommandPath() + " --apply"
-}
-
-// rerunHint completes the executor's "dry run: nothing was changed; ... to
-// execute" line.
-func rerunHint(cmd *cobra.Command) string {
-	return "re-run '" + applyCommand(cmd) + "'"
-}
-
-// applyHint is the single wording of "nothing was changed, here is how to act
-// on it". Commands that cannot apply themselves (scan and the bare command)
-// point at the sweep and the specific commands instead.
-func applyHint(cmd *cobra.Command) string {
-	if cmd.Flags().Lookup("apply") == nil {
-		return "nothing was changed; run `brooom sweep --apply` or a specific command such as `brooom branches --apply`"
-	}
-	return "nothing was changed; run `" + applyCommand(cmd) + "` or `brooom sweep`"
 }

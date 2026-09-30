@@ -17,7 +17,7 @@ import (
 const (
 	reasonUserNotEnabled = "user location not enabled for this run (pass --user)"
 	forceNoneHint        = "the file carries no suggested action; --force cannot add one. " +
-		"Scan again with `brooom <command> --force`, or export with `brooom scan --force --format json`"
+		"Export again with `brooom scan --force --format json`"
 )
 
 // verdictEntry is a finding together with why it was not accepted.

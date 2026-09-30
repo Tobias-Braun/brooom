@@ -144,6 +144,22 @@ func resolveFormat(flagValue, configValue string) (string, error) {
 	return name, nil
 }
 
+// resolveActingFormat is resolveFormat for a run that acts (--apply, purge
+// operations). Its plan and confirmation text are human output, so a machine
+// format that only came from the config's output.format (the user never passed
+// --format) must not block the run: it falls back to the default human format.
+// An explicit --format is returned as is, for the caller to refuse.
+func resolveActingFormat(flagValue, configValue string) (string, error) {
+	name, err := resolveFormat(flagValue, configValue)
+	if err != nil {
+		return "", err
+	}
+	if flagValue == "" && machineFormats[name] {
+		return defaultFormat, nil
+	}
+	return name, nil
+}
+
 // selectDetectors resolves the detectors of a scan from the --detector flag
 // and the preset of a shortcut command. Both must name registered detectors;
 // when both are set the selection is their intersection, and an empty
