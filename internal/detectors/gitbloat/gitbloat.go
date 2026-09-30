@@ -138,7 +138,9 @@ func (d *Detector) resolve(ctx context.Context, env *detect.Env, target scope.Ta
 }
 
 // skipNotRepo maps "nothing to scan" errors to nil and passes real failures
-// (cancelled context, missing git binary) on.
+// (cancelled context, missing git binary) on. A repository with dubious
+// ownership is such a failure on purpose: silently skipping it would make the
+// report look clean instead of partial, so it reaches the scan errors.
 func skipNotRepo(err error) error {
 	if errors.Is(err, gitx.ErrNotRepo) || errors.Is(err, gitx.ErrBareRepo) {
 		return nil

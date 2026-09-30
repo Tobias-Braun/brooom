@@ -98,7 +98,11 @@ func (deleteBranch) Apply(ctx context.Context, env *Env, s Step) (session.Entry,
 		return failedBranch(en, err)
 	}
 	en.Path = d.repo.Dir
-	if err := d.run(ctx, env); err != nil {
+	// Git drops branch.<name>.* together with the branch, so the tracking
+	// configuration has to be read before deleting.
+	upstream := d.readUpstream(ctx, env)
+	sha, err := d.run(ctx, env)
+	if err != nil {
 		if errors.Is(err, ErrSkipped) {
 			en.Status, en.Error = session.StatusSkipped, skipReason(err)
 			return en, nil
@@ -106,9 +110,12 @@ func (deleteBranch) Apply(ctx context.Context, env *Env, s Step) (session.Entry,
 		return failedBranch(en, err)
 	}
 	en.Status = session.StatusApplied
-	en.Undo = map[string]string{"branch": d.name, "sha": d.tip}
+	en.Undo = map[string]string{"branch": d.name, "sha": sha}
+	for k, v := range upstream {
+		en.Undo[k] = v
+	}
 	en.Restorable = true
-	en.RecoveryHint = branchRecoveryHint(d.name, d.tip)
+	en.RecoveryHint = branchRecoveryHint(d.name, sha)
 	return en, nil
 }
 
@@ -125,25 +132,129 @@ func branchRecoveryHint(name, sha string) string {
 		"than 2 weeks may be pruned by the next gc), so recover promptly.", shellQuote(name), sha)
 }
 
-// run executes the chosen flag. If git refuses -d as not fully merged (its
-// view differs from ours, or the repository changed in between) it escalates
-// to -D only through the same verification and --force rules, never blindly.
-func (d decision) run(ctx context.Context, env *Env) error {
-	_, err := env.Git.Run(ctx, d.repo.Dir, "branch", d.flag, "--", d.name)
+// run executes the chosen flag and returns the sha of the commit that was
+// actually deleted, which is what undo must restore. If git refuses -d as not
+// fully merged (its view differs from ours, or the repository changed in
+// between) it escalates to -D only through the same verification and --force
+// rules, never blindly.
+func (d decision) run(ctx context.Context, env *Env) (string, error) {
+	if d.flag == flagForce {
+		return d.deleteForced(ctx, env)
+	}
+	out, err := env.Git.Run(ctx, d.repo.Dir, "branch", d.flag, "--", d.name)
 	if err == nil {
-		return nil
+		// git ran its own merge check against the tip it deleted; its report
+		// is the truth even when the branch moved after our re-validation.
+		return d.expandDeleted(ctx, env, deletedSHA(out)), nil
 	}
 	var gerr *gitx.Error
-	if d.flag != flagSafe || !errors.As(err, &gerr) || !strings.Contains(gerr.Stderr, notFullyMerged) {
-		return fmt.Errorf("delete branch %q: %w", d.name, err)
+	if !errors.As(err, &gerr) || !strings.Contains(gerr.Stderr, notFullyMerged) {
+		return "", fmt.Errorf("delete branch %q: %w", d.name, err)
 	}
 	if _, ok := d.verifiedWhy(ctx); !ok && !env.Force {
-		return skipf("not fully merged; re-run with --force to delete with -D")
+		return "", skipf("not fully merged; re-run with --force to delete with -D")
 	}
-	if _, err := env.Git.Run(ctx, d.repo.Dir, "branch", flagForce, "--", d.name); err != nil {
-		return fmt.Errorf("delete branch %q: %w", d.name, err)
+	return d.deleteForced(ctx, env)
+}
+
+// deletedSHAPattern matches the "(was <sha>)" part of git's "Deleted branch"
+// message.
+var deletedSHAPattern = regexp.MustCompile(`\(was ([0-9a-fA-F]{7,64})\)`)
+
+// deletedSHA extracts the commit git reports as deleted, or "" if the output
+// has none.
+func deletedSHA(out string) string {
+	m := deletedSHAPattern.FindStringSubmatch(out)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// expandDeleted turns the abbreviated sha git printed into the full one (the
+// commit still exists as an unreachable object). Without a usable report the
+// re-validated tip is the best knowledge; an abbreviation is kept if it cannot
+// be expanded, since undo accepts it.
+func (d decision) expandDeleted(ctx context.Context, env *Env, short string) string {
+	if short == "" {
+		return d.tip
+	}
+	full, err := env.Git.Run(ctx, d.repo.Dir, "rev-parse", "--verify", "--quiet", short+"^{commit}")
+	if err != nil {
+		return short
+	}
+	return full
+}
+
+// deleteForced deletes the branch ref only if it still points to the verified
+// tip (compare-and-swap through `git update-ref -d <ref> <old>`). `git branch
+// -D` deletes whatever the ref points to at that moment, so a commit made or a
+// fetch landed after re-validation (the merge check above ran on the old tip)
+// would be destroyed. A moved ref is a skip, not a failure. update-ref does not
+// know about checked-out branches, so that check is repeated right before.
+func (d decision) deleteForced(ctx context.Context, env *Env) (string, error) {
+	ref := "refs/heads/" + d.name
+	if err := d.checkNotCheckedOut(ctx, ref); err != nil {
+		return "", err
+	}
+	if _, err := env.Git.Run(ctx, d.repo.Dir, "update-ref", "-d", ref, d.tip); err != nil {
+		cur, rerr := env.Git.Run(ctx, d.repo.Dir, "rev-parse", "--verify", "--quiet", ref)
+		if rerr != nil || cur != d.tip {
+			return "", skipf("branch moved during apply")
+		}
+		return "", fmt.Errorf("delete branch %q: %w", d.name, err)
+	}
+	// update-ref leaves branch.<name>.* behind, which git branch -D removes;
+	// a stale section would attach to an unrelated branch of the same name.
+	// It is best effort: the branch itself is already gone.
+	_, _ = env.Git.Run(ctx, d.repo.Dir, "config", "--local", "--remove-section", "branch."+d.name)
+	return d.tip, nil
+}
+
+// checkNotCheckedOut refuses a ref that a worktree has checked out now.
+func (d decision) checkNotCheckedOut(ctx context.Context, ref string) error {
+	wts, err := d.repo.ListWorktrees(ctx)
+	if err != nil {
+		return fmt.Errorf("delete branch %q: list worktrees: %w", d.name, err)
+	}
+	for _, w := range wts {
+		if w.BranchRef == ref {
+			return skipf("branch is checked out in %s", w.Path)
+		}
 	}
 	return nil
+}
+
+// Manifest keys of the tracking configuration recorded on deletion.
+const (
+	undoUpstreamRemote = "upstream_remote"
+	undoUpstreamMerge  = "upstream_merge"
+)
+
+// remoteName and mergeRef are the shapes of recorded tracking values. They
+// exclude options, URLs, whitespace and control characters; the merge ref is
+// additionally checked by git (check-ref-format) on undo.
+var (
+	remoteName = regexp.MustCompile(`^[A-Za-z0-9_.][A-Za-z0-9_./-]*$`)
+	mergeRef   = regexp.MustCompile(`^refs/heads/[A-Za-z0-9_./+@#%=,-]+$`)
+)
+
+// readUpstream returns the branch.<name>.remote/merge configuration to record
+// for undo, or nil when the branch tracks nothing or the values are not
+// something undo would accept.
+func (d decision) readUpstream(ctx context.Context, env *Env) map[string]string {
+	get := func(key string) string {
+		out, err := env.Git.Run(ctx, d.repo.Dir, "config", "--local", "--get", "branch."+d.name+"."+key)
+		if err != nil {
+			return ""
+		}
+		return out
+	}
+	remote, merge := get("remote"), get("merge")
+	if !remoteName.MatchString(remote) || !mergeRef.MatchString(merge) {
+		return nil
+	}
+	return map[string]string{undoUpstreamRemote: remote, undoUpstreamMerge: merge}
 }
 
 // evaluate validates in a fixed order (cheap static checks first, then the
@@ -224,6 +335,9 @@ func openRepo(ctx context.Context, env *Env, f findings.Finding) (*gitx.Repo, er
 		return nil, skipf("repository outside allowed roots or unresolvable: %v", err)
 	}
 	repo, err := gitx.Open(ctx, env.Git, path)
+	if errors.Is(err, gitx.ErrUnsafeRepo) {
+		return nil, skipf("skipped: %v", err)
+	}
 	if err != nil {
 		return nil, skipf("%s is not a git repository", path)
 	}
@@ -400,12 +514,9 @@ func (d decision) mergedWhy(ctx context.Context, base gitx.Base) (string, bool) 
 // existing branch at the same commit counts as done, one elsewhere is an
 // error, and a garbage-collected commit cannot be restored.
 func (deleteBranch) Undo(ctx context.Context, env *Env, e session.Entry) error {
-	name, sha := e.Undo["branch"], e.Undo["sha"]
-	if err := staticNameCheck(name); err != nil || name == "" {
-		return fmt.Errorf("undo delete-branch: invalid branch name %q in manifest", name)
-	}
-	if !commitSHA.MatchString(sha) {
-		return fmt.Errorf("undo delete-branch: invalid commit %q in manifest", sha)
+	name, sha, up, err := checkUndoEntry(e.Undo)
+	if err != nil {
+		return fmt.Errorf("undo delete-branch: %w", err)
 	}
 	if env.Guard == nil || env.Git == nil {
 		return errors.New("undo delete-branch: no scope guard or git runner configured")
@@ -428,11 +539,83 @@ func (deleteBranch) Undo(ctx context.Context, env *Env, e session.Entry) error {
 	if err := checkRefFormat(ctx, env, repo.Dir, name); err != nil {
 		return fmt.Errorf("undo delete-branch: %w", err)
 	}
-	return restoreBranch(ctx, env, repo.Dir, name, sha)
+	if err := checkMergeRef(ctx, env, repo.Dir, up); err != nil {
+		return fmt.Errorf("undo delete-branch: %w", err)
+	}
+	return restoreBranch(ctx, env, repo.Dir, name, sha, up)
 }
 
-// restoreBranch creates the branch once the name is known to be free.
-func restoreBranch(ctx context.Context, env *Env, dir, name, sha string) error {
+// checkUndoEntry statically validates everything undo takes from the manifest,
+// which is never trusted, before git is asked anything.
+func checkUndoEntry(undo map[string]string) (name, sha string, up upstream, err error) {
+	name, sha = undo["branch"], undo["sha"]
+	if err := staticNameCheck(name); err != nil || name == "" {
+		return "", "", upstream{}, fmt.Errorf("invalid branch name %q in manifest", name)
+	}
+	if !commitSHA.MatchString(sha) {
+		return "", "", upstream{}, fmt.Errorf("invalid commit %q in manifest", sha)
+	}
+	up, err = upstreamFromEntry(undo)
+	return name, sha, up, err
+}
+
+// upstream is the tracking configuration of a deleted branch.
+type upstream struct{ remote, merge string }
+
+// upstreamFromEntry reads and statically validates the recorded tracking
+// configuration; the manifest is not trusted. Entries written before it was
+// recorded have none, which is fine, but one key without the other is not.
+func upstreamFromEntry(undo map[string]string) (upstream, error) {
+	remote, merge := undo[undoUpstreamRemote], undo[undoUpstreamMerge]
+	if remote == "" && merge == "" {
+		return upstream{}, nil
+	}
+	if !remoteName.MatchString(remote) || !mergeRef.MatchString(merge) {
+		return upstream{}, fmt.Errorf("invalid upstream %q %q in manifest", remote, merge)
+	}
+	return upstream{remote, merge}, nil
+}
+
+// checkMergeRef lets git judge the recorded merge ref (for example "..").
+func checkMergeRef(ctx context.Context, env *Env, dir string, up upstream) error {
+	if up == (upstream{}) {
+		return nil
+	}
+	if _, err := env.Git.Run(ctx, dir, "check-ref-format", up.merge); err != nil {
+		return fmt.Errorf("invalid upstream ref %q in manifest", up.merge)
+	}
+	return nil
+}
+
+// restoreUpstream puts the tracking configuration back on a branch that undo
+// just created. `git branch --set-upstream-to` is preferred because git
+// validates it, but it needs the remote-tracking ref; without it (remote
+// branch deleted meanwhile) the two config keys are written directly, which
+// is exactly what the branch had before.
+func restoreUpstream(ctx context.Context, env *Env, dir, name string, up upstream) error {
+	if up == (upstream{}) {
+		return nil
+	}
+	short := strings.TrimPrefix(up.merge, "refs/heads/")
+	if up.remote != "." {
+		remoteRef := "refs/remotes/" + up.remote + "/" + short
+		if _, err := env.Git.Run(ctx, dir, "rev-parse", "--verify", "--quiet", remoteRef); err == nil {
+			if _, err := env.Git.Run(ctx, dir, "branch", "--set-upstream-to="+up.remote+"/"+short, name); err == nil {
+				return nil
+			}
+		}
+	}
+	for _, kv := range [][2]string{{"remote", up.remote}, {"merge", up.merge}} {
+		if _, err := env.Git.Run(ctx, dir, "config", "--local", "branch."+name+"."+kv[0], kv[1]); err != nil {
+			return fmt.Errorf("undo delete-branch: %s restored, but its upstream could not be: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// restoreBranch creates the branch once the name is known to be free and, only
+// then, restores its tracking configuration.
+func restoreBranch(ctx context.Context, env *Env, dir, name, sha string, up upstream) error {
 	full, err := env.Git.Run(ctx, dir, "rev-parse", "--verify", "--quiet", sha+"^{commit}")
 	if err != nil {
 		return fmt.Errorf("commit %s no longer exists (garbage-collected); cannot restore", sha)
@@ -451,5 +634,5 @@ func restoreBranch(ctx context.Context, env *Env, dir, name, sha string) error {
 	if _, err := env.Git.Run(ctx, dir, "branch", "--", name, full); err != nil {
 		return fmt.Errorf("undo delete-branch: recreate %s: %w", name, err)
 	}
-	return nil
+	return restoreUpstream(ctx, env, dir, name, up)
 }

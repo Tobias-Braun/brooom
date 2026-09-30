@@ -12,7 +12,7 @@ import (
 func GitDir(ctx context.Context, r Runner, dir string) (string, error) {
 	out, err := r.Run(ctx, dir, "rev-parse", "--absolute-git-dir")
 	if err != nil {
-		return "", mapNotRepo(err)
+		return "", mapNotRepo(dir, err)
 	}
 	return NormalizePath(out), nil
 }

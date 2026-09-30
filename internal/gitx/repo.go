@@ -3,6 +3,7 @@ package gitx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,7 +15,35 @@ var (
 	// ErrBareRepo is returned for bare repositories, which have no working
 	// tree and therefore nothing Brooom sweeps.
 	ErrBareRepo = errors.New("gitx: bare repository")
+	// ErrUnsafeRepo matches (errors.Is) the *UnsafeRepoError returned for a
+	// repository git refuses to touch because another user owns it ("dubious
+	// ownership", typical on WSL, exFAT or network drives and in containers).
+	ErrUnsafeRepo = errors.New("gitx: repository has dubious ownership")
 )
+
+// UnsafeRepoError is a repository that git refuses because of dubious
+// ownership. It keeps git's own stderr and names the command that would make
+// git trust the directory; Brooom never runs it, changing git's trust
+// settings is the user's decision.
+type UnsafeRepoError struct {
+	// Dir is the directory git was asked about.
+	Dir string
+	// Stderr is git's message, trimmed.
+	Stderr string
+}
+
+func (e *UnsafeRepoError) Error() string {
+	return fmt.Sprintf("dubious ownership in %s (git: %s); to trust it run: git config --global --add safe.directory %s",
+		e.Dir, oneLine(e.Stderr), e.Dir)
+}
+
+// Is makes errors.Is(err, ErrUnsafeRepo) true.
+func (e *UnsafeRepoError) Is(target error) bool { return target == ErrUnsafeRepo }
+
+// oneLine folds git's multi-line message into one line for a report.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
 
 // memo caches the result of one computation per key. Concurrent callers of
 // the same key block on a single execution (per-key sync.Once), so expensive
@@ -112,14 +141,14 @@ func (r *Repo) run(ctx context.Context, args ...string) (string, error) {
 func TopLevel(ctx context.Context, r Runner, dir string) (string, error) {
 	bare, err := r.Run(ctx, dir, "rev-parse", "--is-bare-repository")
 	if err != nil {
-		return "", mapNotRepo(err)
+		return "", mapNotRepo(dir, err)
 	}
 	if bare == "true" {
 		return "", ErrBareRepo
 	}
 	out, err := r.Run(ctx, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return "", mapNotRepo(err)
+		return "", mapNotRepo(dir, err)
 	}
 	return NormalizePath(out), nil
 }
@@ -129,7 +158,7 @@ func TopLevel(ctx context.Context, r Runner, dir string) (string, error) {
 func CommonDir(ctx context.Context, r Runner, dir string) (string, error) {
 	out, err := r.Run(ctx, dir, "rev-parse", "--git-common-dir")
 	if err != nil {
-		return "", mapNotRepo(err)
+		return "", mapNotRepo(dir, err)
 	}
 	p := filepath.FromSlash(out)
 	if !filepath.IsAbs(p) {
@@ -175,11 +204,21 @@ func NormalizePath(p string) string {
 	return p
 }
 
-// mapNotRepo turns git's "not a repository" failures into ErrNotRepo and
-// passes other errors (cancelled context, missing binary) through.
-func mapNotRepo(err error) error {
+// mapNotRepo classifies a failed repository probe by git's stderr, because the
+// exit status is 128 for every fatal error. Only "not a git repository" is
+// ErrNotRepo; dubious ownership becomes an *UnsafeRepoError so callers can
+// report it instead of silently treating the directory as no repository.
+// Everything else (permissions, corrupt repository, cancelled context,
+// missing binary) passes through with git's stderr intact.
+func mapNotRepo(dir string, err error) error {
 	var gerr *Error
-	if errors.As(err, &gerr) {
+	if !errors.As(err, &gerr) {
+		return err
+	}
+	switch {
+	case strings.Contains(gerr.Stderr, "dubious ownership"):
+		return &UnsafeRepoError{Dir: dir, Stderr: strings.TrimSpace(gerr.Stderr)}
+	case strings.Contains(gerr.Stderr, "not a git repository"):
 		return ErrNotRepo
 	}
 	return err
