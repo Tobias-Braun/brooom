@@ -243,6 +243,22 @@ func (r *Repo) matchBranch(ctx context.Context, set map[string]struct{}, mb, tip
 			return MergeResult{Merged: true, Method: MethodSquash}, nil
 		}
 	}
+	return r.matchCommits(ctx, set, mb, tip)
+}
+
+// matchCommits is the rebase check: every non-merge commit of the branch has
+// an equal patch id on base. It refuses branches containing merge commits,
+// because the per-commit comparison skips them: whatever a merge commit adds
+// or resolves would go unchecked and be lost with the branch. Such a branch
+// can only match through its net diff (the squash check).
+func (r *Repo) matchCommits(ctx context.Context, set map[string]struct{}, mb, tip string) (MergeResult, error) {
+	merges, err := r.run(ctx, "rev-list", "--merges", "--max-count=1", mb+".."+tip)
+	if err != nil {
+		return MergeResult{}, err
+	}
+	if strings.TrimSpace(merges) != "" {
+		return MergeResult{}, nil
+	}
 	logArgs := append([]string{"log", "-p", "--no-merges"}, diffFlags...)
 	logArgs = append(logArgs, mb+".."+tip)
 	perCommit, tooBig, err := r.diffPatchIDs(ctx, logArgs)
@@ -266,9 +282,17 @@ func (r *Repo) matchBranch(ctx context.Context, set map[string]struct{}, mb, tip
 // patchPair is one line of `git patch-id` output.
 type patchPair struct{ id, commit string }
 
+// limit returns the diff byte cap in force for r.
+func (r *Repo) limit() int64 {
+	if r.diffLimit > 0 {
+		return r.diffLimit
+	}
+	return maxDiffBytes
+}
+
 // diffPatchIDs runs a diff-producing git command and pipes its output through
 // `git patch-id --stable`, returning the patch ids in order. tooBig reports
-// that the diff exceeded maxDiffBytes. A patch-id failure is an error, which
+// that the diff exceeded the cap. A patch-id failure is an error, which
 // callers treat as unknown.
 func (r *Repo) diffPatchIDs(ctx context.Context, args []string) (ids []string, tooBig bool, err error) {
 	pairs, tooBig, err := r.diffPatchPairs(ctx, nil, args)
@@ -279,9 +303,16 @@ func (r *Repo) diffPatchIDs(ctx context.Context, args []string) (ids []string, t
 }
 
 // diffPatchPairs is diffPatchIDs keeping the commit id next to each patch id.
-// A non-nil stdin is fed to the diff command (revisions for `log --stdin`),
-// which needs a runner with input support.
+// A non-nil stdin is fed to the diff command (revisions for `log --stdin`).
+//
+// With a real git runner the producer is streamed into patch-id (PipeLimit),
+// so memory stays bounded and both processes are killed at the cap instead of
+// buffering a multi-hundred-megabyte diff first. Other runners (test fakes)
+// buffer the diff and feed it through RunInput, which needs input support.
 func (r *Repo) diffPatchPairs(ctx context.Context, stdin io.Reader, args []string) (pairs []patchPair, tooBig bool, err error) {
+	if _, ok := r.Runner.(*ExecRunner); ok {
+		return r.streamPatchPairs(ctx, stdin, args)
+	}
 	var diff string
 	if stdin != nil {
 		diff, err = RunInput(ctx, r.Runner, r.Dir, stdin, args...)
@@ -291,7 +322,7 @@ func (r *Repo) diffPatchPairs(ctx context.Context, stdin io.Reader, args []strin
 	if err != nil {
 		return nil, false, err
 	}
-	if len(diff) > maxDiffBytes {
+	if int64(len(diff)) > r.limit() {
 		return nil, true, nil
 	}
 	if strings.TrimSpace(diff) == "" {
@@ -302,6 +333,27 @@ func (r *Repo) diffPatchPairs(ctx context.Context, stdin io.Reader, args []strin
 		return nil, false, err
 	}
 	return parsePatchPairs(out), false, nil
+}
+
+// streamPatchPairs is the streaming variant of diffPatchPairs.
+func (r *Repo) streamPatchPairs(ctx context.Context, stdin io.Reader, args []string) ([]patchPair, bool, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		// Pipe has no default timeout of its own, unlike ExecRunner.Run.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultTimeout)
+		defer cancel()
+	}
+	var pairs []patchPair
+	err := pipeLimitInput(ctx, r.Runner, r.Dir, stdin, args, []string{"patch-id", "--stable"}, r.limit(), func(line string) {
+		pairs = append(pairs, parsePatchPairs(line)...)
+	})
+	if errors.Is(err, ErrOutputLimit) {
+		return nil, true, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return pairs, false, nil
 }
 
 // parsePatchPairs extracts "patchid commitid" from every `patch-id` output
