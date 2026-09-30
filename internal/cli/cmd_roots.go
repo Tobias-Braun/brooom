@@ -30,6 +30,7 @@ func newRootsCmd(a *app) *cobra.Command {
 must be an existing directory; filesystem roots such as / or C:\ are refused.
 Roots are edited in place in the config file: every other key is preserved.`,
 		Args: cobra.NoArgs,
+		RunE: groupRunE,
 	}
 	cmd.AddCommand(
 		&cobra.Command{

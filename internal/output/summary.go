@@ -30,7 +30,7 @@ func (summaryFormatter) Write(w io.Writer, r *findings.Report, opts Options) err
 	case opts.Quiet:
 		buf.WriteString(p.bold(totalsLine(t)) + "\n")
 	case t.Findings == 0:
-		writeNothing(&buf, p)
+		writeNothing(&buf, p, r.Errors)
 	default:
 		renderSummaryTable(&buf, p, t)
 	}

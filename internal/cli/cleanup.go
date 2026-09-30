@@ -91,7 +91,7 @@ func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags
 	case machine:
 		return a.runScan(cmd, opts)
 	}
-	return a.planAndRun(cmd, opts, af, strategy)
+	return a.planAndRun(cmd, opts, af, strategy, format)
 }
 
 // nothingSelected handles a selection whose detectors are all disabled in the
@@ -100,7 +100,9 @@ func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags
 // report so scripts keep parsing.
 func (a *app) nothingSelected(cfg *config.Config, format string) error {
 	if !machineFormats[format] {
-		fmt.Fprintln(a.io.Out, "nothing to clean")
+		if !a.flags.quiet {
+			fmt.Fprintln(a.io.Out, "nothing to clean")
+		}
 		return nil
 	}
 	formatter, err := output.Get(format)
@@ -214,8 +216,10 @@ func requireRegistered(names []string) error {
 }
 
 // planAndRun scans, then hands the findings to the executor: a dry run
-// prints the plan, --apply confirms and executes.
-func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, strategy config.TrashStrategy) error {
+// renders the report in the requested format and appends the plan, --apply
+// confirms and executes (its plan and prompts are fixed human text, so the
+// format is not used there).
+func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, strategy config.TrashStrategy, format string) error {
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
@@ -224,15 +228,36 @@ func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, st
 	if res == nil {
 		return err
 	}
-	// The plan output has no room for scan problems, so they always go to stderr.
-	a.logScanErrors(res.Report.Errors, true)
+	if af.apply {
+		// The plan output has no room for scan problems, so they go to stderr.
+		a.logScanErrors(res.Report.Errors, true)
+	} else if rerr := a.renderDryRunReport(res, format); rerr != nil {
+		return rerr
+	}
 	if err != nil {
 		return err
+	}
+	if ferr := scanFailure(res.Report); ferr != nil {
+		return ferr
 	}
 	result, err := a.runExecutor(ctx, cmd, execInput{
 		cfg: res.Config, git: res.Env.Git, guard: res.Guard, findings: res.Report.Findings,
 	}, af, strategy)
 	return mapExecutorError(result, err, af.apply)
+}
+
+// renderDryRunReport prints the scan report of a dry run with the formatter of
+// the requested format, which also carries the scan errors in-band. The
+// executor's plan follows it.
+func (a *app) renderDryRunReport(res *scanResult, format string) error {
+	formatter, err := output.Get(format)
+	if err != nil {
+		return usageError{err}
+	}
+	if !errorsInBand(format) {
+		a.logScanErrors(res.Report.Errors, true)
+	}
+	return formatter.Write(a.io.Out, res.Report, a.outputOptions(res.Config))
 }
 
 // execInput is what the executor needs from whoever produced the findings: a
@@ -258,6 +283,7 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 	resolver := newTrasherResolver(in.cfg, strategy, dirs, id, a.io.Err)
 	exec := action.NewExecutor(action.Options{
 		Apply:     af.apply,
+		Quiet:     a.flags.quiet,
 		Yes:       af.yes,
 		Force:     af.force,
 		IO:        action.IO{In: a.io.In, Out: a.io.Out, Err: a.io.Err},

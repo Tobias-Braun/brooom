@@ -38,7 +38,7 @@ func (tableFormatter) Write(w io.Writer, r *findings.Report, opts Options) error
 	switch {
 	case len(sorted) == 0:
 		if !opts.Quiet {
-			writeNothing(&buf, p)
+			writeNothing(&buf, p, r.Errors)
 		}
 	case opts.Quiet:
 		renderRows(&buf, p, newLayout(sorted, opts.Width), sorted)
@@ -58,8 +58,13 @@ func sortedCopy(fs []findings.Finding) []findings.Finding {
 	return out
 }
 
-// writeNothing prints the empty-state message, shared with the summary format.
-func writeNothing(buf *bytes.Buffer, p painter) {
+// writeNothing prints the empty-state message, shared with the summary and
+// tree formats. It stays silent when scan errors exist: an empty result of a
+// scan that failed must not read as a clean bill of health.
+func writeNothing(buf *bytes.Buffer, p painter, errs []findings.ScanError) {
+	if len(errs) > 0 {
+		return
+	}
 	buf.WriteString(p.green("Nothing to sweep.") + "\n")
 }
 

@@ -123,12 +123,15 @@ func (a *app) runScan(cmd *cobra.Command, opts scanOptions) error {
 	if res == nil {
 		return err
 	}
-	a.logScanErrors(res.Report.Errors, false)
+	a.logScanErrors(res.Report.Errors, !errorsInBand(req.format))
 	if werr := formatter.Write(a.io.Out, res.Report, renderOpts); werr != nil {
 		return werr
 	}
 	if !machineFormats[req.format] && !a.flags.quiet && res.Report.Totals.Actionable > 0 {
 		fmt.Fprintln(a.io.Out, a.applyHint(cmd))
+	}
+	if err == nil {
+		err = scanFailure(res.Report)
 	}
 	return err
 }
@@ -144,6 +147,9 @@ func (a *app) scanStreaming(ctx context.Context, req *scanRequest, sf streamingF
 	}
 	if res != nil {
 		a.logScanErrors(res.Report.Errors, true)
+		if err == nil {
+			err = scanFailure(res.Report)
+		}
 	}
 	return err
 }

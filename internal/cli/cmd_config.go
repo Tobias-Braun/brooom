@@ -29,6 +29,7 @@ func newConfigCmd(a *app) *cobra.Command {
   brooom config edit
   brooom config validate`,
 		Args: cobra.NoArgs,
+		RunE: groupRunE,
 	}
 	initCmd := &cobra.Command{
 		Use:   "init",

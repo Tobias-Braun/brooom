@@ -37,6 +37,9 @@ type Options struct {
 	Yes bool
 	// Force allows acting on findings with overridable blocking risk flags.
 	Force bool
+	// Quiet drops the plan detail, totals, hint and empty-state text of a
+	// dry run and shrinks the apply summary to what a script needs.
+	Quiet bool
 	IO    IO
 	// Store receives the session manifest (required with Apply).
 	Store *session.Store
@@ -208,12 +211,19 @@ func (e *Executor) Run(ctx context.Context, fs []findings.Finding) (*Result, err
 	}
 	res.Skipped, res.Failed = len(res.Skips), len(res.Failures)
 	out := e.opts.IO.Out
-	renderPlan(out, plan)
+	if !e.opts.Quiet {
+		renderPlan(out, plan)
+	}
 	if plan.Empty() {
-		fmt.Fprintln(out, "nothing to clean")
+		if !e.opts.Quiet {
+			fmt.Fprintln(out, "nothing to clean")
+		}
 		return res, nil
 	}
 	if !e.opts.Apply {
+		if e.opts.Quiet {
+			return res, nil
+		}
 		fmt.Fprintf(out, "dry run: nothing was changed; %s to execute\n", output.Sanitize(e.opts.RerunHint))
 		return res, nil
 	}
@@ -291,7 +301,7 @@ func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planS
 	}
 	res.ReclaimedBytes = m.ReclaimedBytes
 	res.Skipped = len(res.Skips)
-	renderSummary(e.opts.IO.Out, res, res.Skips[planSkips:])
+	renderSummary(e.opts.IO.Out, res, res.Skips[planSkips:], e.opts.Quiet)
 	return res, runErr
 }
 

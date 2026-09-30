@@ -188,13 +188,19 @@ func describeFinding(f findings.Finding) string {
 // renderSummary prints the end-of-run summary. applyPhaseSkips are the skips
 // that happened after the plan was shown (declined, re-plan, interrupted);
 // plan-time skips were already listed with the plan.
-func renderSummary(w io.Writer, r *Result, applyPhaseSkips []Skip) {
+//
+// With quiet the reclaimed size, the session line and the skip list are
+// dropped; failures, recovery hints and the undo command stay, because they
+// are the part a user must not miss.
+func renderSummary(w io.Writer, r *Result, applyPhaseSkips []Skip, quiet bool) {
 	fmt.Fprintf(w, "summary: %d applied, %d skipped, %d failed\n", r.Applied, r.Skipped, r.Failed)
-	fmt.Fprintf(w, "reclaimed: %s\n", output.FormatSize(r.ReclaimedBytes))
-	if r.SessionID != "" {
-		fmt.Fprintf(w, "session: %s\n", output.Sanitize(r.SessionID))
+	if !quiet {
+		fmt.Fprintf(w, "reclaimed: %s\n", output.FormatSize(r.ReclaimedBytes))
+		if r.SessionID != "" {
+			fmt.Fprintf(w, "session: %s\n", output.Sanitize(r.SessionID))
+		}
+		renderSkips(w, "skipped during apply", applyPhaseSkips)
 	}
-	renderSkips(w, "skipped during apply", applyPhaseSkips)
 	if len(r.Failures) > 0 {
 		fmt.Fprintf(w, "failures (%d):\n", len(r.Failures))
 		for _, f := range r.Failures {

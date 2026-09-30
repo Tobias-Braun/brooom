@@ -38,7 +38,7 @@ func (treeFormatter) Write(w io.Writer, r *findings.Report, opts Options) error 
 
 	if len(r.Findings) == 0 {
 		if !opts.Quiet {
-			writeNothing(&buf, p)
+			writeNothing(&buf, p, r.Errors)
 		}
 	} else {
 		renderTrees(&buf, p, r, opts)

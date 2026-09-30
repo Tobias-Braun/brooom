@@ -444,6 +444,27 @@ func (a *app) logScanErrors(errs []findings.ScanError, always bool) {
 	}
 }
 
+// errorsInBand reports whether the format renders Report.Errors itself. The
+// others (plain, ndjson) would hide a failed scan behind an empty stdout, so
+// their errors always go to stderr.
+func errorsInBand(format string) bool {
+	switch format {
+	case "json", "table", "tree", "summary":
+		return true
+	}
+	return false
+}
+
+// scanFailure returns the error for a scan that covered no target although
+// errors occurred (every repository skipped, unusable configuration), so
+// scripts can tell it from a clean scan. Partial failures stay non-fatal.
+func scanFailure(r *findings.Report) error {
+	if len(r.Errors) == 0 || len(r.Scopes) > 0 {
+		return nil
+	}
+	return scanFailedError{fmt.Errorf("nothing was scanned: %d scan error(s)", len(r.Errors))}
+}
+
 func formatScanError(e findings.ScanError) string {
 	var parts []string
 	if e.Detector != "" {
