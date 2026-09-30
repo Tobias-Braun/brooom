@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/updatecheck"
 )
 
@@ -112,7 +113,11 @@ func compareVersions(current, latest string) updateStatus {
 }
 
 func (a *app) printUpdateText(r updateReport, status updateStatus, install updatecheck.Install) error {
-	cur, lat := strings.TrimPrefix(r.Current, "v"), strings.TrimPrefix(r.Latest, "v")
+	// Latest and URL come from the network; the running version is local but
+	// goes through the same path. Nothing of them reaches the terminal raw.
+	cur := output.Sanitize(strings.TrimPrefix(r.Current, "v"))
+	lat := output.Sanitize(strings.TrimPrefix(r.Latest, "v"))
+	url := output.Sanitize(r.URL)
 	var line string
 	var details []string
 	switch status {
@@ -121,10 +126,10 @@ func (a *app) printUpdateText(r updateReport, status updateStatus, install updat
 	case statusAhead:
 		line = fmt.Sprintf("brooom %s is newer than the latest release (%s)", cur, lat)
 	case statusUpdate:
-		line = fmt.Sprintf("brooom %s is available (you have %s): %s", lat, cur, r.URL)
+		line = fmt.Sprintf("brooom %s is available (you have %s): %s", lat, cur, url)
 		details = append(details, "Upgrade: "+upgradeHint(install))
 	default:
-		line = fmt.Sprintf("development build (%s): no comparison possible; the latest release is %s: %s", orUnknown(cur), lat, r.URL)
+		line = fmt.Sprintf("development build (%s): no comparison possible; the latest release is %s: %s", orUnknown(cur), lat, url)
 		details = append(details, "Install it: "+upgradeHint(install))
 	}
 	fmt.Fprintln(a.io.Out, line)

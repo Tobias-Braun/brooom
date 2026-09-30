@@ -70,7 +70,7 @@ type mergeFact struct {
 
 // command is the exact git invocation for display.
 func (d decision) command() string {
-	return "git branch " + d.flag + " -- " + findings.ShellQuote(d.name)
+	return "git branch " + d.flag + " -- " + findings.Quote(d.name)
 }
 
 // Plan re-validates the finding against the live repository; see evaluate.
@@ -155,11 +155,11 @@ func failedBranch(en session.Entry, err error) (session.Entry, error) {
 func branchRecoveryHint(name, sha, keptBy string) string {
 	if keptBy != "" {
 		return fmt.Sprintf("run inside the repository: git branch %s %s. The commits are still reachable from %s, "+
-			"so git gc will not prune them.", findings.ShellQuote(name), sha, findings.ShellQuote(keptBy))
+			"so git gc will not prune them.", findings.Quote(name), sha, findings.Quote(keptBy))
 	}
 	return fmt.Sprintf("run inside the repository: git branch %s %s. Deleting a branch also deletes its reflog; "+
 		"the commits stay as unreachable objects until git gc prunes them (by default unreachable objects older "+
-		"than 2 weeks may be pruned by the next gc), so recover promptly.", findings.ShellQuote(name), sha)
+		"than 2 weeks may be pruned by the next gc), so recover promptly.", findings.Quote(name), sha)
 }
 
 // run executes the chosen flag and returns the sha of the commit that was

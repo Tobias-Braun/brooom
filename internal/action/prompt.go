@@ -160,9 +160,11 @@ func renderPlan(w io.Writer, p *Plan) {
 		for _, it := range g.Items {
 			fmt.Fprintf(w, "  %s\n", itemLine(it.Step))
 			if it.Step.Command != "" {
-				// Step.Command is deliberately not sanitized here: it is a
-				// copy-pasteable shell command whose values are quoted by findings.ShellQuote (or the PowerShell equivalent).
-				fmt.Fprintf(w, "    $ %s\n", it.Step.Command)
+				// Shell quoting keeps a command copy-pasteable but does not
+				// neutralise control characters (an ESC in a file name is
+				// still an ESC inside quotes), so the display escapes them.
+				// Sanitize leaves backslashes alone, so Windows paths stay valid.
+				fmt.Fprintf(w, "    $ %s\n", output.Sanitize(it.Step.Command))
 			}
 		}
 	}

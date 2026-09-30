@@ -607,9 +607,14 @@ func TestLogsCommandHasUserFlag(t *testing.T) {
 }
 
 func TestCommandLineQuoting(t *testing.T) {
-	a := &app{args: []string{"branches", "--config", "/tmp/my dir/c.json", ""}}
-	want := `brooom branches --config "/tmp/my dir/c.json" ""`
-	if got := a.commandLine(); got != want {
-		t.Errorf("got %q, want %q", got, want)
+	tests := []struct{ goos, want string }{
+		{"linux", `brooom branches --config '/tmp/my dir/c.json' ''`},
+		{"windows", `brooom branches --config "/tmp/my dir/c.json" ""`},
+	}
+	for _, tt := range tests {
+		a := &app{goos: tt.goos, args: []string{"branches", "--config", "/tmp/my dir/c.json", ""}}
+		if got := a.commandLine(); got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.goos, got, tt.want)
+		}
 	}
 }

@@ -99,7 +99,7 @@ func (a *app) requireExplicitConfig(path string) error {
 		return nil
 	}
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("config file not found: %s", path)
+		return fmt.Errorf("config file not found: %s", output.Sanitize(path))
 	}
 	return nil
 }

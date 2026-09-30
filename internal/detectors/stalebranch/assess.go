@@ -191,7 +191,7 @@ func (s *scan) action(b gitx.Branch, st remoteState, blocking []findings.RiskFla
 		return findings.SuggestedAction{
 			Type:    findings.ActionDeleteBranch,
 			Args:    map[string]string{"verified": "forced"},
-			Command: "git branch -D -- " + findings.ShellQuote(b.Name),
+			Command: "git branch -D -- " + findings.Quote(b.Name),
 			Reason:  "forced: " + joinFlags(blocking),
 		}
 	default:
@@ -215,7 +215,7 @@ func safeAction(b gitx.Branch, st remoteState) findings.SuggestedAction {
 	return findings.SuggestedAction{
 		Type:    findings.ActionDeleteBranch,
 		Args:    map[string]string{"verified": "in-remote"},
-		Command: "git branch " + flag + " -- " + findings.ShellQuote(b.Name),
+		Command: "git branch " + flag + " -- " + findings.Quote(b.Name),
 		Reason:  why,
 	}
 }

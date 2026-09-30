@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -217,8 +216,10 @@ func requireRegistered(names []string) error {
 
 // planAndRun scans, then hands the findings to the executor: a dry run
 // renders the report in the requested format and appends the plan, --apply
-// confirms and executes (its plan and prompts are fixed human text, so the
-// format is not used there).
+// confirms and executes. The plan and prompts are fixed human text, but an
+// explicit --format still selects how the report is shown before them: it was
+// accepted and silently ignored. Without --format an apply run stays terse and
+// prints no report.
 func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, strategy config.TrashStrategy, format string) error {
 	ctx := cmd.Context()
 	if ctx == nil {
@@ -228,11 +229,13 @@ func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, st
 	if res == nil {
 		return err
 	}
-	if af.apply {
+	if !af.apply || a.flags.format != "" {
+		if rerr := a.renderDryRunReport(res, format); rerr != nil {
+			return rerr
+		}
+	} else {
 		// The plan output has no room for scan problems, so they go to stderr.
 		a.logScanErrors(res.Report.Errors, true)
-	} else if rerr := a.renderDryRunReport(res, format); rerr != nil {
-		return rerr
 	}
 	if err != nil {
 		return err
@@ -338,25 +341,18 @@ func mapExecutorError(res *action.Result, err error, applied bool) error {
 func (a *app) commandLine() string {
 	parts := []string{"brooom"}
 	for _, arg := range a.args {
-		parts = append(parts, quoteArg(arg))
+		parts = append(parts, a.quote(arg))
 	}
 	return strings.Join(parts, " ")
 }
 
-// quoteArg quotes an argument that contains whitespace, quotes or is empty.
-// On Windows the backslash is the path separator, not an escape character, so
-// it neither triggers quoting nor gets doubled: a pasted `C:\tmp\f.json` must
-// stay a valid path in cmd and PowerShell.
-func quoteArg(s string) string {
-	special := " \t\n\"'\\"
-	if runtime.GOOS == "windows" {
-		special = " \t\n\"'"
+// quote quotes an argument for the shell of the host OS, so a suggested or
+// recorded command can be pasted back (see findings.Quote). It is one helper
+// for hints and manifests; goos only differs from the host in tests.
+func (a *app) quote(s string) string {
+	goos := a.goos
+	if goos == "" {
+		goos = runtime.GOOS
 	}
-	if s != "" && !strings.ContainsAny(s, special) {
-		return s
-	}
-	if runtime.GOOS == "windows" {
-		return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
-	}
-	return strconv.Quote(s)
+	return findings.QuoteFor(goos, s)
 }

@@ -254,8 +254,11 @@ back to allowing the removal.
 
 Resolving the trasher in `Plan` has no side effects. The one-time delete
 warning (and its `.delete-warned` marker in the Brooom home) is emitted by
-`Env.BeforeDelete`, which `Apply` calls right before the first removal with the
-delete strategy, so dry runs never consume it.
+`Env.BeforeDelete`. The executor calls it when an applied plan contains a
+trash or worktree-removal group whose trasher uses the delete strategy, before
+the confirmation prompt (`Executor.warnBeforeDelete`), so the user reads it
+before deciding; the trash action calls it again right before a removal as a
+backstop (it warns at most once per run). Dry runs never consume it.
 
 Not overridable by `--force`: steps 1, 2, 3, 4 (open files, also via the
 `file_open_by_process` flag), 7 and 8. `--force` only lifts blocking risk flags
@@ -712,8 +715,14 @@ once (`itemLine`), and omit it when it is 0 (branches, git maintenance).
 
 `Finding.SuggestedAction.Command` and `Step.Command` are display-only, but they
 are copied and pasted, so every value in them goes through
-`findings.ShellQuote` (POSIX single quotes) and names follow `--`
-(`git branch -d -- <name>`). The trash step's display command follows the host
+`findings.Quote` and names follow `--` (`git branch -d -- <name>`,
+`trash -- <path>`). `findings.Quote` is the one OS-aware helper for detectors,
+actions and the CLI hints: POSIX single quotes (`findings.ShellQuote`) on unix,
+and on Windows a bare word when safe, double quotes when neither cmd.exe nor
+PowerShell can act on the content (single quotes are a literal character in
+cmd.exe), and PowerShell single quotes for values that need `$`, `%`, quotes or
+a trailing backslash escaped. `findings.QuoteFor(goos, s)` renders either
+dialect on any OS for tests. The trash step's display command follows the host
 shell (`internal/action/display.go`): POSIX on unix, PowerShell on Windows (the
 Recycle Bin has no cmdlet, so that variant is a labelled, illustrative
 comment). A quarantine move shows the real destination pattern
@@ -735,9 +744,18 @@ is; `ndjson` is one `Finding` per line; `plain` is paths only (for branches:
 Every human-readable output (table, tree, summary, sessions, executor plans,
 prompts and summaries, undo plans, error printing) passes untrusted text
 (paths, refs, reasons, error messages) through `output.Sanitize`, which
-replaces control runes with visible escapes (`\n`, `\x1b`, ` `). Backslashes
-are left alone so Windows paths stay readable. `plain`, `json` and `ndjson` are
-machine formats and are not altered. New human output must use it too.
+replaces control runes with visible escapes (`\n`, `\x1b`, `\u2028`). Backslashes
+are left alone so Windows paths stay readable. `json` and `ndjson` are machine
+formats and are never altered, and neither is the `plain` output of findings
+(paths and refs as they are). `roots list -f plain` is the one exception: it
+sanitizes each path, because a newline inside a root path would otherwise forge
+a second entry in a format that is one path per line. New human output must
+use it too.
+
+The displayed shell command of a plan step (`Step.Command`) goes through
+`output.Sanitize` as well: shell quoting keeps a command copy-pasteable but
+does not neutralise control characters, so an ESC in a file name would still
+reach the terminal.
 
 ### Completions and the CLI reference (`internal/cli`)
 
@@ -798,6 +816,21 @@ The full key reference, merge semantics, validation rules and the
 ## Exit codes
 
 `0` success, `1` error, `2` usage error (bad flags, unknown subcommands, wrong
-argument counts), `3` nothing was scanned because of scan errors (for example
-every repository was skipped). A partial scan failure stays `0`; its errors
-are in the report (table, tree, summary, json) or on stderr (plain, ndjson).
+argument counts, `brooom help <unknown>`, flags a command ignores such as
+`undo -f` / `undo -d`; every command in the tree rejects extra arguments, pinned
+by a test that walks the tree), `3` no target was scanned because of scan
+errors (for example every repository was skipped). A partial scan failure stays
+`0`, and so does a scan in which a detector fails inside a scanned scope: the
+engine records every error a detector returns as a scan error, including
+non-fatal notes (a linked worktree outside the scope), so "every detector
+reported an error" cannot tell a failure from a note. A detector that fails
+inside a scanned scope is reported but stays `0`; its errors are in the report
+(table, tree, summary, json) or on stderr (plain, ndjson).
+
+Suggested apply commands (`applyHint`) repeat the invocation without `--apply`,
+`--yes`/`-y` (a pasted hint must not skip the confirmation) and
+`--format`/`-f` (an explicit machine format is refused with `--apply`). A
+`scan --force` hint keeps `--force` on every command it names. With `--apply`,
+an explicit `-f tree|table|summary` renders the scan report before the plan;
+without `-f` an applying run prints no report; a machine format is a usage
+error with `--apply`.

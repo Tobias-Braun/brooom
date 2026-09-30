@@ -141,7 +141,7 @@ func TestFindingShape(t *testing.T) {
 	if got.SizeBytes <= 0 || got.LastModified == nil || got.AgeDays != 100 {
 		t.Errorf("size %d last %v age %d", got.SizeBytes, got.LastModified, got.AgeDays)
 	}
-	if got.SuggestedAction.Type != findings.ActionTrash || got.SuggestedAction.Command != "trash "+findings.ShellQuote(want) || got.SuggestedAction.Reason == "" {
+	if got.SuggestedAction.Type != findings.ActionTrash || got.SuggestedAction.Command != "trash -- "+findings.Quote(want) || got.SuggestedAction.Reason == "" {
 		t.Errorf("action = %+v", got.SuggestedAction)
 	}
 	for _, code := range []string{"matches_catalog", "ecosystem", "marker", "project_inactive_days"} {

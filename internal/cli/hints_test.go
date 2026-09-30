@@ -2,38 +2,69 @@ package cli
 
 import (
 	"regexp"
-	"strconv"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/Tobias-Braun/brooom/internal/findings"
 )
 
-// shellSplit splits a suggested command line into arguments the way the
-// quoting of quoteArg needs: whitespace separates, double quotes group and
-// use Go escapes.
+// shellSplit splits a suggested command line into arguments the way the host
+// shell would: whitespace separates, single quotes are literal (POSIX closes
+// and reopens around a quote, PowerShell doubles it), double quotes group
+// without escapes, which is all findings.Quote ever emits.
 func shellSplit(t *testing.T, line string) []string {
 	t.Helper()
+	windows := runtime.GOOS == "windows"
 	var out []string
-	for line = strings.TrimSpace(line); line != ""; line = strings.TrimSpace(line) {
-		if line[0] == '"' {
-			end := 1
-			for end < len(line) && (line[end] != '"' || line[end-1] == '\\') {
-				end++
-			}
-			s, err := strconv.Unquote(line[:end+1])
-			if err != nil {
-				t.Fatalf("bad quoting in %q: %v", line, err)
-			}
-			out = append(out, s)
-			line = line[end+1:]
-			continue
+	var word strings.Builder
+	inWord := false
+	flush := func() {
+		if inWord {
+			out = append(out, word.String())
 		}
-		end := strings.IndexAny(line, " \t")
-		if end < 0 {
-			end = len(line)
-		}
-		out = append(out, line[:end])
-		line = line[end:]
+		word.Reset()
+		inWord = false
 	}
+	rs := []rune(line)
+	for i := 0; i < len(rs); i++ {
+		switch r := rs[i]; {
+		case r == ' ' || r == '\t':
+			flush()
+		case r == '\'':
+			inWord = true
+			for i++; i < len(rs); i++ {
+				if rs[i] == '\'' {
+					if windows && i+1 < len(rs) && rs[i+1] == '\'' {
+						word.WriteRune('\'')
+						i++
+						continue
+					}
+					break
+				}
+				word.WriteRune(rs[i])
+			}
+			if i >= len(rs) {
+				t.Fatalf("unterminated quote in %q", line)
+			}
+		case r == '"':
+			inWord = true
+			for i++; i < len(rs) && rs[i] != '"'; i++ {
+				word.WriteRune(rs[i])
+			}
+			if i >= len(rs) {
+				t.Fatalf("unterminated quote in %q", line)
+			}
+		case r == '\\' && !windows && i+1 < len(rs):
+			inWord = true
+			i++
+			word.WriteRune(rs[i])
+		default:
+			inWord = true
+			word.WriteRune(r)
+		}
+	}
+	flush()
 	return out
 }
 
@@ -87,7 +118,7 @@ func TestApplyCommandKeepsTheInvocation(t *testing.T) {
 		{"clean from file", []string{"clean", "--from", "f.json"}, "brooom clean --from f.json --apply"},
 		{"existing apply is not doubled", []string{"branches", "--apply", "--merged"}, "brooom branches --merged --apply"},
 		{"apply=true is replaced", []string{"branches", "--apply=false"}, "brooom branches --apply"},
-		{"spaces are quoted", []string{"clean", "--from", "my findings.json"}, `brooom clean --from "my findings.json" --apply`},
+		{"spaces are quoted", []string{"clean", "--from", "my findings.json"}, "brooom clean --from " + findings.Quote("my findings.json") + " --apply"},
 		{"global flags before the command", []string{"--config", "c.json", "-w", "logs"}, "brooom --config c.json -w logs --apply"},
 	}
 	for _, tt := range tests {

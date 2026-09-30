@@ -436,7 +436,7 @@ func checkedOutReason(worktree, outsideNote string) string {
 }
 
 func deleteAction(name, method, base string) findings.SuggestedAction {
-	q := findings.ShellQuote(name)
+	q := findings.Quote(name)
 	if method == gitx.MethodAncestor {
 		return findings.SuggestedAction{
 			Type:    findings.ActionDeleteBranch,

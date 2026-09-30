@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tobias-Braun/brooom/internal/buildinfo"
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/updatecheck"
 )
 
@@ -199,7 +200,7 @@ func (a *app) finishUpdateCheck(cmd *cobra.Command, args []string) {
 			if len(latest) > 0 && latest[0] == 'v' {
 				latest = latest[1:]
 			}
-			fmt.Fprintf(a.io.Err, "brooom %s is available, run 'brooom update-check'\n", latest)
+			fmt.Fprintf(a.io.Err, "brooom %s is available, run 'brooom update-check'\n", output.Sanitize(latest))
 		}
 	case <-timer.C:
 	}

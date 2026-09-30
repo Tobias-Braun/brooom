@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"regexp"
 	"slices"
 	"strings"
 
@@ -23,24 +24,76 @@ var shortcutDetectors = []struct {
 	{"ai", []string{config.DetectorAIArtifacts}},
 }
 
-// invocationArgs returns the arguments of this invocation without any
-// --apply, so a hint can add exactly one. Every other flag is kept: dropping
-// one (`branches --merged`, `--trash-strategy delete`, `--from file`) would
-// change what the suggested command does. Without recorded arguments (a
-// command tree that was not started through execute) the command path is the
-// best available answer.
+// invocationArgs returns the arguments of this invocation without the flags a
+// hint must not repeat. --apply is dropped so the hint can add exactly one;
+// --yes/-y is dropped because a pasted hint would otherwise skip the
+// confirmation the user never asked to skip; --format/-f is dropped because an
+// explicit machine format is rejected together with --apply, and the hint
+// executes rather than reports. Every other flag is kept: dropping one
+// (`branches --merged`, `--trash-strategy delete`, `--from file`) would change
+// what the suggested command does. Without recorded arguments (a command tree
+// that was not started through execute) the command path is the best
+// available answer.
 func (a *app) invocationArgs(cmd *cobra.Command) []string {
 	if len(a.args) == 0 {
 		return strings.Fields(cmd.CommandPath())[1:]
 	}
 	out := make([]string, 0, len(a.args))
-	for _, arg := range a.args {
-		if arg == "--apply" || strings.HasPrefix(arg, "--apply=") {
-			continue
+	for i := 0; i < len(a.args); i++ {
+		arg := a.args[i]
+		switch {
+		case arg == "--apply", strings.HasPrefix(arg, "--apply="),
+			arg == "--yes", strings.HasPrefix(arg, "--yes="),
+			strings.HasPrefix(arg, "--format="):
+		case arg == "--format":
+			i++ // its value is the next argument
+		case shortCluster.MatchString(arg):
+			kept, consumeNext := stripShortCluster(arg)
+			if kept != "" {
+				out = append(out, kept)
+			}
+			if consumeNext {
+				i++
+			}
+		default:
+			out = append(out, arg)
 		}
-		out = append(out, arg)
 	}
 	return out
+}
+
+// shortCluster matches one or more single-letter flags in one argument (`-y`,
+// `-qy`, `-fjson`).
+var shortCluster = regexp.MustCompile(`^-[a-zA-Z]+$`)
+
+// stripShortCluster removes -y and -f from a cluster of short flags and
+// returns what is left ("" when nothing is). -f takes a value: the rest of the
+// cluster when it is attached (`-fjson`), else the next argument, which the
+// caller must skip (consumeNext). -d and -p take values as well; from them on
+// the cluster is kept as is.
+func stripShortCluster(arg string) (kept string, consumeNext bool) {
+	var b strings.Builder
+	letters := arg[1:]
+	for i, r := range letters {
+		switch r {
+		case 'y':
+		case 'f':
+			return keepShort(b.String()), i == len(letters)-1
+		case 'd', 'p':
+			b.WriteString(letters[i:])
+			return keepShort(b.String()), false
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return keepShort(b.String()), false
+}
+
+func keepShort(letters string) string {
+	if letters == "" {
+		return ""
+	}
+	return "-" + letters
 }
 
 // applyCommand is the command that executes what a dry run of cmd showed: the
@@ -48,11 +101,11 @@ func (a *app) invocationArgs(cmd *cobra.Command) []string {
 // and the bare command) get the closest command that can.
 func (a *app) applyCommand(cmd *cobra.Command) string {
 	if cmd.Flags().Lookup("apply") == nil {
-		return a.scanApplyCommand()
+		return a.scanApplyCommand(cmd)
 	}
 	parts := []string{"brooom"}
 	for _, arg := range a.invocationArgs(cmd) {
-		parts = append(parts, quoteArg(arg))
+		parts = append(parts, a.quote(arg))
 	}
 	return strings.Join(append(parts, "--apply"), " ")
 }
@@ -63,17 +116,32 @@ func (a *app) applyCommand(cmd *cobra.Command) string {
 // the named detectors; for any other selection sweep could refuse or widen
 // the detectors, so the findings are piped through `clean --from -`, which
 // acts on exactly what was reported.
-func (a *app) scanApplyCommand() string {
+//
+// --force changes which findings are reported and planned, so a `scan --force`
+// hint repeats it on every command that selects or acts. The pipeline joins
+// the two commands with `|` and quotes every value with the host's dialect
+// (a.quote), which cmd.exe and PowerShell both parse the same way, so no
+// file-based variant is needed on Windows.
+func (a *app) scanApplyCommand(cmd *cobra.Command) string {
 	scopeFlags := a.scopeFlags()
 	detectors := a.detectorFlag()
+	force := forceFlag(cmd)
 	if len(detectors) == 0 {
-		return joinCommand("brooom", "sweep", scopeFlags, "--apply")
+		return joinCommand("brooom", "sweep", scopeFlags, force, "--apply")
 	}
 	if sc := shortcutFor(a.flags.detectors); sc != "" {
-		return joinCommand("brooom", sc, scopeFlags, detectors, "--apply")
+		return joinCommand("brooom", sc, scopeFlags, detectors, force, "--apply")
 	}
-	scan := joinCommand("brooom", "scan", scopeFlags, detectors, "--format json")
-	return scan + " | " + joinCommand("brooom", "clean", scopeFlags, "--from - --apply")
+	scan := joinCommand("brooom", "scan", scopeFlags, detectors, force, "--format json")
+	return scan + " | " + joinCommand("brooom", "clean", scopeFlags, "--from -", force, "--apply")
+}
+
+// forceFlag returns --force when cmd has that flag and it is set.
+func forceFlag(cmd *cobra.Command) []string {
+	if f := cmd.Flags().Lookup("force"); f != nil && f.Value.String() == "true" {
+		return []string{"--force"}
+	}
+	return nil
 }
 
 // scopeFlags are the flags that decide where the invocation scans and which
@@ -82,13 +150,13 @@ func (a *app) scanApplyCommand() string {
 func (a *app) scopeFlags() []string {
 	var out []string
 	if a.flags.configPath != "" {
-		out = append(out, "--config", quoteArg(a.flags.configPath))
+		out = append(out, "--config", a.quote(a.flags.configPath))
 	}
 	if a.flags.workspaces {
 		out = append(out, "--workspaces")
 	}
 	for _, r := range a.flags.roots {
-		out = append(out, "--root", quoteArg(r))
+		out = append(out, "--root", a.quote(r))
 	}
 	return out
 }
@@ -104,7 +172,7 @@ func (a *app) detectorFlag() []string {
 	if len(names) == 0 {
 		return nil
 	}
-	return []string{"--detector", quoteArg(strings.Join(names, ","))}
+	return []string{"--detector", a.quote(strings.Join(names, ","))}
 }
 
 // shortcutFor returns the shortcut command whose detectors include every

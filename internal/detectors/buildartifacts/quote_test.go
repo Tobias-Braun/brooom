@@ -1,6 +1,7 @@
 package buildartifacts
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/Tobias-Braun/brooom/internal/detect"
@@ -10,10 +11,14 @@ import (
 // TestActionCommandQuotesPath: the suggested trash command must keep a path
 // with spaces or shell metacharacters as one word.
 func TestActionCommandQuotesPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the expected commands use POSIX quoting; Windows quoting is covered in findings")
+	}
 	tests := map[string]string{
-		"/p/node_modules": "trash /p/node_modules",
-		"/my proj/dist":   "trash '/my proj/dist'",
-		"/p;rm/dist":      "trash '/p;rm/dist'",
+		"/p/node_modules": "trash -- /p/node_modules",
+		"/-dash/dist":     "trash -- /-dash/dist",
+		"/my proj/dist":   "trash -- '/my proj/dist'",
+		"/p;rm/dist":      "trash -- '/p;rm/dist'",
 	}
 	s := &scan{env: &detect.Env{}}
 	for path, want := range tests {
