@@ -147,7 +147,7 @@ func (a *app) purgeScan(ctx context.Context, pf purgeFlags, af applyFlags) (*sca
 	if err != nil {
 		return nil, nil, err
 	}
-	repos, err := purgeRepos(ctx, res, a.io.Err)
+	repos, err := purgeRepos(ctx, res, reportedSkips(res.Report.Errors), a.io.Err)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -253,7 +253,7 @@ type purgeRepo struct {
 // directory: linked worktrees resolve to their main worktree and are folded
 // into it, the same dedupe key as the git-bloat detector. Repositories whose
 // main worktree lies outside the guard are left out.
-func purgeRepos(ctx context.Context, res *scanResult, warn io.Writer) ([]purgeRepo, error) {
+func purgeRepos(ctx context.Context, res *scanResult, reported map[string]bool, warn io.Writer) ([]purgeRepo, error) {
 	if res.Env.Git == nil {
 		return nil, gitx.ErrGitNotFound
 	}
@@ -265,7 +265,7 @@ func purgeRepos(ctx context.Context, res *scanResult, warn io.Writer) ([]purgeRe
 		}
 		repo, err := gitx.Open(ctx, res.Env.Git, t.Path)
 		if err != nil {
-			if err := skipOpenError(warn, t.Path, err); err != nil {
+			if err := skipOpenError(warn, reported, t.Path, err); err != nil {
 				return nil, err
 			}
 			continue
@@ -287,6 +287,18 @@ func purgeRepos(ctx context.Context, res *scanResult, warn io.Writer) ([]purgeRe
 	return repos, nil
 }
 
+// reportedSkips returns the paths the scan already reported as skipped (the
+// engine's dubious-ownership entries carry a path and no detector).
+func reportedSkips(errs []findings.ScanError) map[string]bool {
+	seen := map[string]bool{}
+	for _, e := range errs {
+		if e.Detector == "" && strings.HasPrefix(e.Message, "skipped: ") {
+			seen[e.Path] = true
+		}
+	}
+	return seen
+}
+
 // purgeRepoPath picks the directory maintenance runs in. The main worktree is
 // used when the guard allows it. When it is only known as repository metadata
 // (a run from a linked worktree) the linked worktree itself stands in: it is in
@@ -306,11 +318,16 @@ func purgeRepoPath(g *scope.Guard, main, linked string) (string, bool) {
 // skipOpenError decides what a failed gitx.Open means for purge: not a
 // repository and bare ones are skipped silently, dubious ownership is skipped
 // with a visible line so it is never mistaken for a clean repository, and any
-// other error is returned.
-func skipOpenError(warn io.Writer, path string, err error) error {
+// other error is returned. Paths in reported were already printed by the scan
+// (with --gc the bloat detector hits the same dubious repository first), so
+// they are not warned about a second time.
+func skipOpenError(warn io.Writer, reported map[string]bool, path string, err error) error {
 	switch {
 	case errors.Is(err, gitx.ErrUnsafeRepo):
-		fmt.Fprintf(warn, "skipped: %s: %v\n", path, err)
+		if !reported[path] {
+			reported[path] = true
+			fmt.Fprintf(warn, "skipped: %s: %v\n", path, err)
+		}
 		return nil
 	case errors.Is(err, gitx.ErrNotRepo), errors.Is(err, gitx.ErrBareRepo):
 		return nil

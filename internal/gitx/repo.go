@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -33,8 +34,35 @@ type UnsafeRepoError struct {
 }
 
 func (e *UnsafeRepoError) Error() string {
-	return fmt.Sprintf("dubious ownership in %s (git: %s); to trust it run: git config --global --add safe.directory %s",
-		e.Dir, oneLine(e.Stderr), e.Dir)
+	return fmt.Sprintf("dubious ownership in %s (git: %s); to trust it run: %s",
+		e.Dir, oneLine(e.Stderr), safeDirectoryCommand(e.Dir, runtime.GOOS))
+}
+
+// safeDirectoryCommand is the pasteable command that trusts dir. The path is
+// quoted for the shell of goos, otherwise a directory with spaces or shell
+// metacharacters would be split into several arguments.
+func safeDirectoryCommand(dir, goos string) string {
+	return "git config --global --add safe.directory " + quoteArg(dir, goos)
+}
+
+// quoteArg quotes s as one shell word: double quotes on Windows (cmd and
+// PowerShell agree on them, and paths cannot contain a double quote there),
+// POSIX single quotes elsewhere. Words made of safe characters stay bare.
+func quoteArg(s, goos string) string {
+	bare := s != "" && strings.IndexFunc(s, func(r rune) bool { return !bareArgRune(r, goos) }) < 0
+	switch {
+	case bare:
+		return s
+	case goos == "windows":
+		return `"` + s + `"`
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// bareArgRune reports whether r needs no quoting in a shell word.
+func bareArgRune(r rune, goos string) bool {
+	alnum := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
+	return alnum || strings.ContainsRune("/._-:+@%", r) || goos == "windows" && r == '\\'
 }
 
 // Is makes errors.Is(err, ErrUnsafeRepo) true.

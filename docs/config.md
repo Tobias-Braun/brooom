@@ -51,7 +51,7 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `thresholds.recent_days` | `2` | Window for the `recently_modified` risk flag. |
 | `git.protected_branches` | `main, master, develop, dev, trunk, release/*, release-*, gh-pages` | Branch globs never suggested for deletion. Must not be empty. |
 | `git.base_branches` | `main, master, develop, trunk` | Candidate base branches for merge detection. Must not be empty. |
-| `git.use_gh` | `true` | Query open PRs through `gh` when available. This is a network call (the only one in detection), bounded by a 5 s timeout per call; after the first timeout, network error or missing `gh` the rest of the scan skips it and open-PR status is reported as unknown, which never blocks a scan. Set `false` for a fully offline run. |
+| `git.use_gh` | `true` | Query open PRs through `gh` when available. This is a network call (the only one in detection), bounded by a 5 s timeout per call; after the first timeout, network error or missing `gh` (even after earlier calls succeeded) the rest of the scan skips it and open-PR status is reported as unknown, which never blocks a scan. Set `false` for a fully offline run. `gh` runs with the same sanitized environment as git (no inherited `GIT_DIR` and similar). |
 | `detectors.stale-branch` | enabled, `min_age_days` 90, `include_unpushed` | Stale branch detector. |
 | `detectors.merged-branch` | enabled, `mode` `ancestor+squash`, `include_remote` false | `mode` is `ancestor` or `ancestor+squash`. |
 | `detectors.worktrees` | enabled, `include_stale`, `min_age_days` 30 | Worktree detector. |
@@ -196,3 +196,7 @@ repository may come from anywhere. It can only make Brooom more careful.
 - Everything else (enabling detectors, `trash`, `roots`, removing protected
   branches, ...) cannot be expressed and is rejected by strict decoding with
   the key path.
+
+## External command timeouts
+
+The timeouts are fixed, not configurable. Every git call and every `Pipe`/`PipeLimit` pipeline whose context has no deadline is bounded by 10 minutes, so a hung git (slow remote, stuck hook) cannot stall a scan; a call that hits the bound fails with `git <command> timed out after <duration>`. Maintenance actions (`git gc`, `prune`, `reflog expire`) are bounded by 6 hours instead, because repacking a very large repository legitimately takes long. `gh` is bounded by 5 seconds per call (see `git.use_gh`). A deadline on the caller's context always wins.
