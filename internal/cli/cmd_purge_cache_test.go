@@ -56,7 +56,7 @@ func TestPurgeCacheOnlyDryRunDoesNotTalkAboutSessions(t *testing.T) {
 	if strings.Contains(out, "nothing to purge") {
 		t.Errorf("header claims nothing to purge although a cache file is stale:\n%s", out)
 	}
-	want := "re-run 'brooom purge --apply' to delete the stale cache files permanently"
+	want := "re-run 'brooom purge --apply' to delete the stale scan cache files permanently"
 	if !strings.Contains(out, want) {
 		t.Errorf("output lacks %q:\n%s", want, out)
 	}
@@ -84,7 +84,7 @@ func TestPurgeApplyRemovesStaleScanCacheOnly(t *testing.T) {
 	if _, err := os.Stat(keep); err != nil {
 		t.Errorf("unrelated file in the cache dir was touched: %v", err)
 	}
-	if !strings.Contains(out, "removed 1 cache file(s)") {
+	if !strings.Contains(out, "removed 1 scan cache file(s)") {
 		t.Errorf("output:\n%s", out)
 	}
 }

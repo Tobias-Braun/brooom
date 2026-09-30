@@ -370,3 +370,49 @@ func TestDirSizeWriteOnlyPrunesAgeStaleFilesOncePerDir(t *testing.T) {
 		t.Error("the live cache must be written")
 	}
 }
+
+// TestListStaleCacheCoversGitbloatBlobCaches: the detector's per-repository
+// caches share the cache dir, so purge must list them by age, size and as
+// orphaned temp files, while leaving used, recent and foreign files alone.
+func TestListStaleCacheCoversGitbloatBlobCaches(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cache")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := writeAged(t, filepath.Join(dir, "gitbloat-blobs-aaaaaaaaaaaaaaaa.json"), "{}", 40*24*time.Hour)
+	recent := writeAged(t, filepath.Join(dir, "gitbloat-blobs-bbbbbbbbbbbbbbbb.json"), "{}", time.Hour)
+	huge := writeAged(t, filepath.Join(dir, "gitbloat-blobs-cccccccccccccccc.json"),
+		strings.Repeat("x", BlobCacheMaxBytes+1), time.Hour)
+	oldTmp := writeAged(t, filepath.Join(dir, "gitbloat-blobs-123.tmp"), "half", 3*time.Hour)
+	newTmp := writeAged(t, filepath.Join(dir, "gitbloat-blobs-456.tmp"), "half", time.Minute)
+	other := writeAged(t, filepath.Join(dir, "gitbloat-notes.json"), "mine", 90*24*time.Hour)
+
+	for _, checkRoots := range []bool{false, true} {
+		stale, err := ListStaleCache(dir, PruneOptions{CheckRoots: checkRoots})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]string{}
+		for _, f := range stale {
+			got[f.Path] = f.Reason
+		}
+		want := map[string]string{
+			old:    "unused for 40 days",
+			huge:   "unreadable or oversized",
+			oldTmp: "interrupted write",
+		}
+		if len(got) != len(want) {
+			t.Fatalf("CheckRoots=%v: stale = %v, want %v", checkRoots, got, want)
+		}
+		for p, reason := range want {
+			if got[p] != reason {
+				t.Errorf("CheckRoots=%v: %s reason = %q, want %q", checkRoots, filepath.Base(p), got[p], reason)
+			}
+		}
+		for _, keep := range []string{recent, newTmp, other} {
+			if _, bad := got[keep]; bad {
+				t.Errorf("%s must not be stale", filepath.Base(keep))
+			}
+		}
+	}
+}

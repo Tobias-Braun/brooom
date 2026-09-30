@@ -24,7 +24,7 @@ var (
 // A regular file or symlink at path yields its own size with Files = 1 and a
 // nonexistent path is an error.
 //
-// With Options.CacheDir set, per-directory records are reused when the
+// With Options.CacheDir set and Fresh unset, per-directory records are reused when the
 // directory's mtime and identity are unchanged, so an unchanged tree costs
 // one Lstat per directory and no directory read. NewestModTime from a cached
 // (non-Fresh) DirSize is a lower-bound hint. Callers that use it for age
@@ -53,11 +53,12 @@ func DirSize(ctx context.Context, path string, opts Options) (DirSummary, error)
 
 	s := &sizer{root: abs, opts: opts, start: now(), recs: map[string]*dirRecord{}}
 	var cfile string
-	if opts.CacheDir != "" {
+	// A Fresh call bypasses the cache entirely. Reading it is pointless by
+	// definition, and writing it would rewrite every record on each call
+	// (all production callers are Fresh) for a cache nobody could reuse.
+	if opts.CacheDir != "" && !opts.Fresh {
 		cfile = cacheFilePath(opts.CacheDir, abs)
-		if !opts.Fresh {
-			s.old = loadCache(cfile, abs)
-		}
+		s.old = loadCache(cfile, abs)
 	}
 	if err := runPool(ctx, opts.workers(), "", s.process); err != nil {
 		return DirSummary{}, err
@@ -85,7 +86,7 @@ func (s *sizer) persist(cfile, abs string) {
 
 // dirty reports whether the records differ from the loaded cache: some
 // directory was (re)read, or records were dropped for vanished directories.
-// Without a loaded cache (missing, unusable or Fresh) everything is new.
+// Without a loaded cache (missing or unusable) everything is new.
 func (s *sizer) dirty() bool {
 	return s.old == nil || s.rescanned > 0 || len(s.recs) != len(s.old)
 }

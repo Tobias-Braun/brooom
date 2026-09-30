@@ -67,7 +67,7 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `output.format` | `table` | `table`, `tree`, `json`, `ndjson`, `plain`, `summary`. |
 | `output.color` | `auto` | `auto`, `always`, `never`. |
 | `scan.concurrency` | `0` | Parallel walkers (0 = number of CPUs). |
-| `scan.cache` | `true` | mtime-invalidated scan cache. |
+| `scan.cache` | `true` | Enables the scan cache directory (`~/.brooom/cache`). Today only the gitbloat blob scan uses it (keyed on refs and packs). Size and age measurements of detectors always re-read the tree, because file ages must be exact. `brooom purge` removes unused cache files. |
 | `scan.skip_dirs[]` | | Plain directory names (no separators, not `.`/`..`). |
 | `scan.max_depth` | `6` | Workspace discovery depth. |
 | `agent.provider` | | `""`, `anthropic` or `openai-compatible`. |

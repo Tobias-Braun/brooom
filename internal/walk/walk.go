@@ -15,9 +15,9 @@
 //     already resolved by scope.Guard.
 //   - Unreadable directories are reported through the error callback and
 //     skipped; they never abort a walk.
-//   - Recursive directory sizes computed once and cached in a directory the
-//     caller names (Options.CacheDir, normally ~/.brooom/cache), one record
-//     per directory invalidated by that directory's mtime.
+//   - Recursive directory sizes optionally cached in a directory the caller
+//     names (Options.CacheDir, normally ~/.brooom/cache), one record per
+//     directory invalidated by that directory's mtime. Fresh calls bypass it.
 //
 // Size semantics: Entry.Size is the logical file size. Entry.Allocated and
 // DirSummary.SizeBytes are what deleting would actually free: on unix the
@@ -38,7 +38,8 @@
 // reports as a finding is re-stat'ed with Stat so findings never carry stale
 // values.
 //
-// The package performs no writes except the cache file below CacheDir.
+// The package performs no writes except the cache file below CacheDir, and
+// none at all for Fresh calls.
 package walk
 
 import (
@@ -117,7 +118,9 @@ type Options struct {
 	// config, callers pass config.ResolveDirs().Cache (via detect.Env).
 	CacheDir string
 	// Fresh makes DirSize ignore cached directory records and re-read every
-	// directory, while still refreshing the cache. NewestModTime from a
+	// directory. It neither reads nor writes the cache: callers that need
+	// exact ages get exact results without paying for a cache file they
+	// could not reuse, so they need not set CacheDir. NewestModTime from a
 	// cached (non-Fresh) DirSize is a lower-bound hint. Callers that use it
 	// for age thresholds, recently_modified or LastModified of paths whose
 	// files may be modified in place (logs, transcripts, caches, ignored

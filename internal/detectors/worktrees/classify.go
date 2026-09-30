@@ -282,7 +282,7 @@ func (s *scan) summarize(ctx context.Context, e *entry) error {
 		return nil
 	}
 	e.sizeTried = true
-	sum, err := walk.DirSize(ctx, e.path, walk.Options{CacheDir: s.env.CacheDir, Fresh: true})
+	sum, err := walk.DirSize(ctx, e.path, walk.Options{Fresh: true})
 	if err != nil {
 		return ctxErr(ctx)
 	}

@@ -253,7 +253,7 @@ func (s *scan) inspectOne(ctx context.Context, e entry) *candidate {
 			return nil
 		}
 		// Fresh, so a cached NewestModTime cannot hide a recent change.
-		sum, err := walk.DirSize(ctx, abs, walk.Options{CacheDir: s.env.CacheDir, Fresh: true})
+		sum, err := walk.DirSize(ctx, abs, walk.Options{Fresh: true})
 		if err != nil {
 			return nil
 		}

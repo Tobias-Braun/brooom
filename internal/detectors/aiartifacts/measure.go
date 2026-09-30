@@ -115,7 +115,6 @@ func (r *run) measureDir(ctx context.Context, it *item) (bool, error) {
 		return false, err
 	}
 	sum, err := walk.DirSize(ctx, it.path, walk.Options{
-		CacheDir:    r.env.CacheDir,
 		Fresh:       true,
 		Concurrency: r.cfg.Scan.Concurrency,
 	})

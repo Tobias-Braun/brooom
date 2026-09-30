@@ -20,8 +20,9 @@ packages and the same findings schema.
    branches are deleted with `git branch -d`; `-D` is used only when base ancestry, or remote containment (alone or together with a squash/rebase merge), is re-verified at apply time, or with `--force` (a squash/rebase merge of commits on no remote needs `--force`); worktrees are
    removed with `git worktree remove`; git maintenance uses conservative
    expiries. Every applied session writes a manifest for `brooom undo`.
-5. **Fast.** Parallel walking, skip lists, cached directory sizes invalidated
-   by mtime.
+5. **Fast.** Parallel walking, skip lists, a git blob scan cache keyed on refs
+   and packs, and an optional mtime-invalidated `DirSize` cache (unused by
+   detectors, which need exact ages).
 
 ## Data flow
 
@@ -54,7 +55,7 @@ packages and the same findings schema.
 | `internal/buildinfo` | Version/commit/date via ldflags, fallback to embedded VCS info. |
 | `internal/config` | Config types, `Default()`, load/save/validate, per-root overrides, tighten-only `.brooom.json`, `~/.brooom` layout (`BROOOM_HOME` overrides). |
 | `internal/scope` | Repo detection, workspace discovery (`[]Target`), `Guard` path validation (symlinks, `..`, case-insensitive filesystems, Windows drive letters/UNC). |
-| `internal/walk` | Parallel walker with skip lists, `DirSize` with mtime-invalidated cache in `~/.brooom/cache`. |
+| `internal/walk` | Parallel walker with skip lists, `DirSize`, optionally with an mtime-invalidated cache in `~/.brooom/cache` for callers that accept lower-bound ages (no detector does today). |
 | `internal/gitx` | Read-only-safe git runner (`gitx.Env`: repository-selecting `GIT_*` variables such as `GIT_DIR`/`GIT_INDEX_FILE` and inherited `GIT_CONFIG_*` are stripped, `GIT_OPTIONAL_LOCKS=0`, `GIT_NO_LAZY_FETCH=1` (git >= 2.44), `core.fsmonitor=false`, C locale, no prompts, a 10 minute default timeout for contexts without a deadline, also for `Pipe`/`PipeLimit`, 6 hours for maintenance via `gitx.WithTimeout`; a passed bound is a `*TimeoutError` that matches `context.DeadlineExceeded`; only promisor/lazy-fetch errors in `MergedInto` mean not merged, other object errors such as corruption are returned; `gh` runs with the same sanitized environment) and git helpers behind a per-repo `Repo` handle (branches and upstreams, base detection, merge detection incl. squash/rebase via patch-id, remote containment, worktrees, dirty check, open PRs via `gh`), `Pipe`/`PipeLimit` (stream one git command into another without buffering, for history scans; `PipeLimit` and `ExecRunner.MaxOutput` kill the process(es) past a byte cap and return `ErrOutputLimit`; squash detection streams `log -p`/`diff` into `patch-id` this way, capped at 64 MiB, and rebase detection never matches a branch containing merge commits, only the squash net-diff check can) and `Repo.Memo` (per-repo memoization of expensive measurements); `Cache` shares memoized handles per scan (`detect.Env.Repos`), uncached `Open` is for actions. On cached handles ancestry is answered for all branches by one `for-each-ref --merged`, patch ids are computed once per commit, and one scan-wide breaker stops calling `gh` after its first timeout or network failure, also after earlier successes; every external command has a `WaitDelay` so a grandchild holding a pipe cannot outlive a deadline. |
 | `internal/findings` | **The findings schema** (see [findings.md](findings.md)): `Finding`, `Report`, IDs, risk flags, totals. Stable contract. |
 | `internal/detect` | `Detector` interface, registry, `Env`, parallel `Run` engine. |
@@ -730,13 +731,20 @@ and `checkOpen` reads from it, with the single-path check as fallback. Without
 a deadline the budget is `procs.Budget(n)` (3 s plus 50 ms per additional path,
 at most 30 s).
 
+`DirSize` with `Fresh: true` (every detector call, since ages must be exact)
+neither reads nor writes the cache; it would otherwise rewrite every record on
+each scan for a cache no later call could use. Only non-Fresh calls use it.
+
 The `DirSize` cache file is never written when the marshalled document exceeds
 `maxCacheBytes` (an existing file is removed; a cheap lower bound of the encoded
 size skips the marshal for trees that are certainly too large) and not rewritten when no
 directory was re-read or dropped (its mtime is refreshed instead, as the "last
 used" stamp). `walk.PruneCache` deletes `dirsize-v1-*.json` files unused for 30
 days, unreadable or oversized ones, those of vanished roots (`CheckRoots`) and
-old temp files. It runs by age once per process on the first cache write and in
+old temp files. The gitbloat blob caches (`gitbloat-blobs-<hash>.json`,
+capped at 1 MiB, and their `.tmp` files) in the same directory are listed by age,
+size and interrupted write; a cache hit refreshes the mtime. Their name is a hash
+of the repository path, so there is no root check. It runs by age once per process on the first cache write and in
 full via `brooom purge`.
 
 ### Branch classification and delete-branch planning
