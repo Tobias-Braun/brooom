@@ -329,9 +329,17 @@ restores trashed ones via a `--no-checkout` placeholder, `Trasher.Restore`,
 `Entry.Undo` carries `worktree`, `branch`, `head` and `repo`.
 
 `prune-worktrees` requires the recorded path to be prunable, unlocked and
-missing on disk. `git worktree prune` cannot be limited to one entry, so Apply
-compares the list before and after, fails if anything non-prunable vanished
-and names every removed entry in the hint. It is not undoable.
+missing on disk. Apply drops only the finding's own registration with
+`git worktree remove --force -- <path>` (never the repository-wide `git worktree
+prune`, which would also take registrations the user declined), then compares
+the list before and after and fails if anything other than the target vanished.
+A detached worktree whose HEAD no branch, remote branch or tag holds is skipped
+at plan and apply time, because HEAD and its reflog live in the admin dir and
+the commit would become unreachable; the `worktrees` detector likewise offers no
+action for a missing detached worktree whose HEAD containment is unknown or
+negative (`head_not_pushed`, `unpushed_commits`, hint `git worktree repair`).
+The entry records `repo`, `worktree`, `branch` and `head` in `Undo` (for manual
+recovery, `git branch rescue <sha>`), but it is not undoable.
 
 #### `brooom clean --from` (`internal/cli/cmd_clean.go`, `clean_scope.go`, `clean_vet.go`)
 

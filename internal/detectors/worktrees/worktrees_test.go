@@ -258,7 +258,7 @@ func TestMissingDirectory(t *testing.T) {
 		t.Errorf("id %q", f.ID)
 	}
 	a := f.SuggestedAction
-	if a.Type != findings.ActionPruneWorktrees || a.Command != "git worktree prune" || a.Reason == "" {
+	if a.Type != findings.ActionPruneWorktrees || a.Command != "git worktree remove --force "+wt || a.Reason == "" {
 		t.Errorf("action %+v", a)
 	}
 	if f.Confidence != findings.ConfidenceHigh || f.SizeBytes != 0 {
@@ -275,6 +275,48 @@ func TestMissingDirectory(t *testing.T) {
 	if f.LastModified == nil || !f.LastModified.Equal(testutil.BaseTime) {
 		t.Errorf("last modified %v", f.LastModified)
 	}
+}
+
+// TestMissingDetachedWorktree covers issue #91: a missing directory says
+// nothing about the commits of a detached HEAD, which lived in the admin dir
+// that a prune deletes, so the prune is only offered when the HEAD is safe.
+func TestMissingDetachedWorktree(t *testing.T) {
+	t.Run("unique commit is never pruned", func(t *testing.T) {
+		repo := testutil.NewRepo(t)
+		wt := repo.AddWorktree("det-gone", "")
+		commitIn(t, repo, wt, "unique.txt")
+		h := wtHarness(t, repo, wt)
+		if err := os.RemoveAll(wt); err != nil {
+			t.Fatal(err)
+		}
+		f := one(t, h.detect())
+		a := f.SuggestedAction
+		if f.Kind != findings.KindWorktreeMissing || a.Type != findings.ActionNone || a.Command != "" {
+			t.Fatalf("kind %q action %+v", f.Kind, a)
+		}
+		if !strings.Contains(a.Reason, "git worktree repair") {
+			t.Errorf("reason %q lacks the repair hint", a.Reason)
+		}
+		if !f.HasRisk(findings.RiskUnpushedCommits) {
+			t.Errorf("flags %v", f.RiskFlags)
+		}
+		if ev := evidence(t, f, "head_not_pushed"); ev.Value != f.Meta["head"] {
+			t.Errorf("head_not_pushed value %v", ev.Value)
+		}
+		evidence(t, f, "worktree_missing")
+	})
+	t.Run("head contained in the base is pruned", func(t *testing.T) {
+		repo := testutil.NewRepo(t)
+		wt := repo.AddWorktree("det-gone", "")
+		h := wtHarness(t, repo, wt)
+		if err := os.RemoveAll(wt); err != nil {
+			t.Fatal(err)
+		}
+		f := one(t, h.detect())
+		if f.SuggestedAction.Type != findings.ActionPruneWorktrees || f.HasRisk(findings.RiskUnpushedCommits) {
+			t.Errorf("action %q flags %v", f.SuggestedAction.Type, f.RiskFlags)
+		}
+	})
 }
 
 func TestMissingDirectoryOutsideGuard(t *testing.T) {
