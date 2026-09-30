@@ -119,6 +119,24 @@ The OS trash is selected per platform by `newOSTrasher` in
 `ostrash_windows.go`; quarantine and delete live in `quarantine.go` and
 `delete.go`, so the platform implementations never touch each other's files.
 
+### Sessions (`internal/session`)
+
+One manifest per applied run, `~/.brooom/sessions/<id>.json` (mode 0600, dir
+0700), ids like `20260929-224501-3f9a`. `Manifest` holds `version`, `id`,
+`started_at`, `finished_at` (zero if the run crashed), `command`, `entries[]`
+and `reclaimed_bytes` (sum of `size_bytes` of `applied` entries only; call
+`RecomputeReclaimed` after changing statuses). Each `Entry` records status
+(`applied`, `failed`, `skipped`, `restored`), action, path, size, the trash
+`Record` or `undo` data, `restorable` and a manual `recovery_hint`.
+
+`Store.Save` writes atomically (temp file in the same dir, fsync, rename), so
+a crash never leaves a half-written manifest; `*.tmp` files are ignored.
+`Load` takes a full id or unique prefix (`ErrNotFound`, `ErrAmbiguous`; ids
+with separators or `..` are refused). `List` returns manifests newest first
+plus `[]Problem` for unreadable, corrupt or unsupported-version files, so one
+damaged file never hides the history. `brooom sessions [id] [--format json]`
+is the read-only view.
+
 ### Open files (`internal/procs`)
 
 `procs.OpenFiles(ctx, paths)` reports which paths (or directories with an

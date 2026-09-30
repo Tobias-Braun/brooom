@@ -8,6 +8,7 @@
 package session
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -68,13 +69,32 @@ type Entry struct {
 	RecoveryHint string `json:"recovery_hint,omitempty"`
 }
 
-// errNotImplemented marks skeleton functions that are implemented by the
-// milestone issues. It is never returned by a released binary.
-var errNotImplemented = errors.New("session: not implemented yet")
+// ErrNotFound is returned when no session matches an id or prefix, or when
+// there are no sessions at all.
+var ErrNotFound = errors.New("session not found")
 
-// Store reads and writes manifests in a sessions directory.
-type Store struct {
-	Dir string
+// ErrAmbiguous is returned (wrapped, with the candidate ids) when an id
+// prefix matches several sessions.
+var ErrAmbiguous = errors.New("ambiguous session id")
+
+// Problem describes a manifest file that could not be used. Listing reports
+// problems instead of failing because manifests are the only undo record and
+// one damaged file must never hide the rest of the history.
+type Problem struct {
+	File string
+	Err  error
+}
+
+// MarshalJSON renders Err as a string, since error values do not marshal.
+func (p Problem) MarshalJSON() ([]byte, error) {
+	msg := ""
+	if p.Err != nil {
+		msg = p.Err.Error()
+	}
+	return json.Marshal(struct {
+		File  string `json:"file"`
+		Error string `json:"error"`
+	}{p.File, msg})
 }
 
 // NewID returns a new, sortable session ID: UTC timestamp plus a random
@@ -82,12 +102,3 @@ type Store struct {
 func NewID(now time.Time) string {
 	return now.UTC().Format("20060102-150405") + "-" + randomSuffix()
 }
-
-// Save writes the manifest atomically.
-func (s *Store) Save(m *Manifest) error { return errNotImplemented }
-
-// Load reads a manifest by ID.
-func (s *Store) Load(id string) (*Manifest, error) { return nil, errNotImplemented }
-
-// List returns all manifests, newest first.
-func (s *Store) List() ([]*Manifest, error) { return nil, errNotImplemented }
