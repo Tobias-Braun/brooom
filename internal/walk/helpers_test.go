@@ -90,15 +90,19 @@ func referenceSize(t testing.TB, root string) (int64, int) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || d.Type()&fs.ModeSymlink != 0 {
+		if d.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}
 		e, err := Stat(p)
 		if err != nil {
 			return err
 		}
+		// Directories count their own blocks (like du), files their
+		// allocation; only files are counted as files.
 		size += e.Allocated
-		files++
+		if !d.IsDir() {
+			files++
+		}
 		return nil
 	})
 	if err != nil {

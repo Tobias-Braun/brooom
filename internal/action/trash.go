@@ -12,7 +12,6 @@ import (
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
-	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/procs"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/session"
@@ -84,7 +83,7 @@ func (trashAction) Plan(ctx context.Context, env *Env, f findings.Finding) (Step
 	}
 	return Step{
 		Finding:     fresh,
-		Description: describe(strategy, fresh.SizeBytes, path, notes),
+		Description: describe(strategy, path, notes),
 		Command:     displayCommand(strategy, path),
 	}, nil
 }
@@ -250,64 +249,24 @@ func trasherFor(env *Env, detector string) (trash.Trasher, error) {
 	return tr, nil
 }
 
-// describe renders the one-line step description, e.g.
-// "move node_modules (1.2 GB) to trash".
-func describe(strategy config.TrashStrategy, size int64, path string, notes []string) string {
+// describe renders the one-line step description, e.g. "move node_modules to
+// trash". It carries no size: the plan and the prompts print the finding's
+// size next to every description, so adding it here would show it twice.
+func describe(strategy config.TrashStrategy, path string, notes []string) string {
 	name := filepath.Base(path)
-	sz := output.FormatSize(size)
 	var d string
 	switch strategy {
 	case config.StrategyDelete:
-		d = fmt.Sprintf("permanently delete %s (%s)", name, sz)
+		d = fmt.Sprintf("permanently delete %s", name)
 	case config.StrategyQuarantine:
-		d = fmt.Sprintf("move %s (%s) to quarantine", name, sz)
+		d = fmt.Sprintf("move %s to quarantine", name)
 	default:
-		d = fmt.Sprintf("move %s (%s) to trash", name, sz)
+		d = fmt.Sprintf("move %s to trash", name)
 	}
 	if len(notes) > 0 {
 		d += " [" + strings.Join(notes, "; ") + "]"
 	}
 	return d
-}
-
-// displayCommand is a display-only shell equivalent of the step. Brooom never
-// runs it.
-func displayCommand(strategy config.TrashStrategy, path string) string {
-	q := shellQuote(path)
-	switch strategy {
-	case config.StrategyDelete:
-		return "rm -rf " + q
-	case config.StrategyQuarantine:
-		dir := "<quarantine dir>"
-		if d, err := config.ResolveDirs(); err == nil {
-			dir = shellQuote(d.Quarantine)
-		}
-		return "mv " + q + " " + dir
-	default:
-		return "trash " + q
-	}
-}
-
-// shellQuote single-quotes s unless it only holds characters that are safe
-// unquoted in a shell.
-func shellQuote(s string) string {
-	safe := s != ""
-	for _, r := range s {
-		if !shellSafeRune(r) {
-			safe = false
-			break
-		}
-	}
-	if safe {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// shellSafeRune reports whether r needs no quoting in a shell word.
-func shellSafeRune(r rune) bool {
-	alnum := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
-	return alnum || strings.ContainsRune("/._-:+@%", r)
 }
 
 // Apply removes the planned path through the configured trasher. The path is
@@ -335,7 +294,8 @@ func (trashAction) Apply(ctx context.Context, env *Env, s Step) (session.Entry, 
 	// A step may come from any caller, so the checks that Plan makes
 	// against live state run again: nested repositories, open files and
 	// the delete-strategy guard.
-	if err := recheckStep(ctx, env, f, path); err != nil {
+	size, err := recheckStep(ctx, env, f, path)
+	if err != nil {
 		return failedTrash(en, err)
 	}
 	tr, err := trasherFor(env, f.Detector)
@@ -345,7 +305,10 @@ func (trashAction) Apply(ctx context.Context, env *Env, s Step) (session.Entry, 
 	if tr.Strategy() == config.StrategyDelete && env.BeforeDelete != nil {
 		env.BeforeDelete()
 	}
-	rec, err := tr.Remove(ctx, path)
+	// The size of the walk that just re-validated the tree goes to the
+	// trasher, so it neither walks again nor reports a different number than
+	// the plan showed.
+	rec, err := tr.Remove(trash.WithSizeHint(ctx, path, size), path)
 	if err != nil {
 		return removeFailed(en, path, rec, err)
 	}
@@ -358,20 +321,21 @@ func (trashAction) Apply(ctx context.Context, env *Env, s Step) (session.Entry, 
 // vanished is left to the caller's existence check, which runs before this
 // one. refreshFinding walks the whole tree once more, so a large directory
 // is scanned twice per run (Plan, then Apply); that is the price of not
-// trusting a step, and the walk is only needed for the nested .git check
-// here, its size result is discarded.
-func recheckStep(ctx context.Context, env *Env, f findings.Finding, path string) error {
-	if _, err := inspectTarget(ctx, env, f, path); err != nil {
-		return err
+// trusting a step. The walk's size is returned and handed to the trasher, so
+// Remove does not measure a third time.
+func recheckStep(ctx context.Context, env *Env, f findings.Finding, path string) (int64, error) {
+	fresh, err := inspectTarget(ctx, env, f, path)
+	if err != nil {
+		return 0, err
 	}
 	if _, err := checkOpen(ctx, path); err != nil {
-		return err
+		return 0, err
 	}
 	if _, err := checkTracked(ctx, env, path); err != nil {
-		return err
+		return 0, err
 	}
-	_, err := planStrategy(ctx, env, f, path)
-	return err
+	_, err = planStrategy(ctx, env, f, path)
+	return fresh.SizeBytes, err
 }
 
 func failedTrash(en session.Entry, err error) (session.Entry, error) {

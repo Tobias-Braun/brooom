@@ -203,7 +203,7 @@ func TestUpstreamGoneContainedIsHigh(t *testing.T) {
 		ref: "feat/gone", confidence: findings.ConfidenceHigh, age: 100,
 		flags:    []findings.RiskFlag{findings.RiskUpstreamGone},
 		evidence: []string{"last_commit_age", "upstream_gone", "contained_in_remote"},
-		action:   findings.ActionDeleteBranch, command: "git branch -D feat/gone", verified: "in-remote",
+		action:   findings.ActionDeleteBranch, command: "git branch -D -- feat/gone", verified: "in-remote",
 		prCheck: prCheckDisabled,
 	})
 }
@@ -215,7 +215,7 @@ func TestUpstreamPresentContainedIsMediumWithSafeDelete(t *testing.T) {
 	f.check(got, want{
 		ref: "feat/kept", confidence: findings.ConfidenceMedium, age: 120,
 		evidence: []string{"last_commit_age", "contained_in_remote"},
-		action:   findings.ActionDeleteBranch, command: "git branch -d feat/kept", verified: "in-remote",
+		action:   findings.ActionDeleteBranch, command: "git branch -d -- feat/kept", verified: "in-remote",
 		prCheck: prCheckDisabled, flags: []findings.RiskFlag{},
 	})
 	if got.Meta["upstream"] != "origin/feat/kept" || got.Meta["base"] != "origin/main" {
@@ -233,7 +233,7 @@ func TestRemoteTrackingTwinIsNotNeverPushed(t *testing.T) {
 	f.check(f.only(), want{
 		ref: "feat/twin", confidence: findings.ConfidenceMedium, age: 100,
 		evidence: []string{"last_commit_age", "contained_in_remote"},
-		action:   findings.ActionDeleteBranch, command: "git branch -D feat/twin", verified: "in-remote",
+		action:   findings.ActionDeleteBranch, command: "git branch -D -- feat/twin", verified: "in-remote",
 		prCheck: prCheckDisabled, flags: []findings.RiskFlag{},
 	})
 }
@@ -284,7 +284,7 @@ func TestNeverPushedButContainedIsLow(t *testing.T) {
 		ref: "feat/pointer", confidence: findings.ConfidenceLow, age: 100,
 		flags:    []findings.RiskFlag{findings.RiskNeverPushed},
 		evidence: []string{"last_commit_age", "never_pushed", "contained_in_remote"},
-		action:   findings.ActionDeleteBranch, command: "git branch -D feat/pointer", verified: "in-remote",
+		action:   findings.ActionDeleteBranch, command: "git branch -D -- feat/pointer", verified: "in-remote",
 		prCheck: prCheckDisabled,
 	})
 }
@@ -361,7 +361,7 @@ func TestOpenPullRequest(t *testing.T) {
 		}},
 		{"unknown does not block", ghFail, want{
 			confidence: findings.ConfidenceMedium, flags: []findings.RiskFlag{},
-			action: findings.ActionDeleteBranch, command: "git branch -d feat/pr", verified: "in-remote", prCheck: prCheckUnknown,
+			action: findings.ActionDeleteBranch, command: "git branch -d -- feat/pr", verified: "in-remote", prCheck: prCheckUnknown,
 		}},
 	}
 	for _, tt := range tests {
@@ -494,7 +494,7 @@ func TestForcedOverride(t *testing.T) {
 			if tt.action == findings.ActionNone {
 				return
 			}
-			if sa.Args["verified"] != "forced" || sa.Command != "git branch -D "+tt.branch || sa.Reason != tt.reason {
+			if sa.Args["verified"] != "forced" || sa.Command != "git branch -D -- "+tt.branch || sa.Reason != tt.reason {
 				t.Errorf("forced action %+v", sa)
 			}
 		})

@@ -420,37 +420,20 @@ func checkedOutReason(worktree, outsideNote string) string {
 }
 
 func deleteAction(name, method, base string) findings.SuggestedAction {
-	q := shellQuote(name)
+	q := findings.ShellQuote(name)
 	if method == gitx.MethodAncestor {
 		return findings.SuggestedAction{
 			Type:    findings.ActionDeleteBranch,
-			Command: "git branch -d " + q,
+			Command: "git branch -d -- " + q,
 			Reason:  "fully merged into " + base,
 		}
 	}
 	return findings.SuggestedAction{
 		Type:    findings.ActionDeleteBranch,
 		Args:    map[string]string{"verified": "squash"},
-		Command: "git branch -D " + q,
+		Command: "git branch -D -- " + q,
 		Reason:  methodWord(method) + " into " + base + "; -D is required because git cannot see the squash merge",
 	}
-}
-
-// shellQuote single-quotes s unless it only contains characters that are safe
-// in a shell word. The command is informational and never run through a shell.
-func shellQuote(s string) string {
-	safe := s != ""
-	for _, r := range s {
-		ok := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._/-", r)
-		if !ok {
-			safe = false
-			break
-		}
-	}
-	if safe {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // remoteBranches reports merged remote-tracking branches. Deleting remote

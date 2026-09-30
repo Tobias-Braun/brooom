@@ -6,7 +6,26 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Tobias-Braun/brooom/internal/output"
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
+
+// allocatedSizeOf is the size string sessions report for a file with the given
+// content: its allocation on this filesystem (one block for small files), not
+// the number of bytes written.
+func allocatedSizeOf(t *testing.T, content string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "probe")
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Lstat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return output.FormatSize(walk.AllocatedSize(fi))
+}
 
 var purgeClock = time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 
@@ -64,7 +83,7 @@ func TestPurgeDryRunListsExpiredOnly(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
-	for _, want := range []string{oldSession, "60 days old", "older than 14 days", "total: 1 session(s), 8 B",
+	for _, want := range []string{oldSession, "60 days old", "older than 14 days", "total: 1 session(s), " + allocatedSizeOf(t, "old data"),
 		"dry run: nothing was deleted; re-run 'brooom purge --apply' to delete them permanently"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
@@ -100,7 +119,7 @@ func TestPurgeApplyDeletesAndMarksManifests(t *testing.T) {
 	if !f.reload(newSession).Entries[0].Restorable {
 		t.Fatal("young session's entry must stay restorable")
 	}
-	if !strings.Contains(out, "purged 1 session(s), freed 8 B") {
+	if !strings.Contains(out, "purged 1 session(s), freed "+allocatedSizeOf(t, "old data")) {
 		t.Fatalf("output:\n%s", out)
 	}
 	// undo now lists the purged entry as not restorable with the hint.

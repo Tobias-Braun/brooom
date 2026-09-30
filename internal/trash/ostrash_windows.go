@@ -65,6 +65,9 @@ func (w *winTrash) Remove(ctx context.Context, path string) (Record, error) {
 	if err != nil {
 		return Record{}, fmt.Errorf("cannot inspect %q: %w", path, err)
 	}
+	// Always measured now, never taken from a plan-time size hint: the bin
+	// capacity decision and the integrity check after a failed shell call
+	// must compare against the item as it is.
 	size, longestRel, err := measureTree(path)
 	if err != nil {
 		return Record{}, fmt.Errorf("cannot measure %q: %w", path, err)

@@ -111,6 +111,7 @@ func TestRemoveFileWritesTrashInfoFD(t *testing.T) {
 	p := filepath.Join(work, "we ird%#ü\nname.txt")
 	writeFile(t, p, "hello", 0o644)
 
+	wantSize := refSize(t, p)
 	rec, err := f.Remove(context.Background(), p)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +130,7 @@ func TestRemoveFileWritesTrashInfoFD(t *testing.T) {
 	if got := readFile(t, rec.InfoPath); got != want {
 		t.Errorf("info = %q, want %q", got, want)
 	}
-	if rec.Strategy != config.StrategyTrash || rec.OriginalPath != p || rec.SizeBytes != 5 || rec.IsDir || !rec.Restorable || !rec.RemovedAt.Equal(fdNow) {
+	if rec.Strategy != config.StrategyTrash || rec.OriginalPath != p || rec.SizeBytes != wantSize || rec.IsDir || !rec.Restorable || !rec.RemovedAt.Equal(fdNow) {
 		t.Errorf("record: %+v", rec)
 	}
 	for _, d := range []string{trash, filepath.Join(trash, "files"), filepath.Join(trash, "info")} {
@@ -218,11 +219,12 @@ func TestRemoveSymlinkAndDirFD(t *testing.T) {
 		t.Error("link target was touched")
 	}
 
+	wantSize := refSize(t, target)
 	rec, err = f.Remove(context.Background(), target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !rec.IsDir || rec.SizeBytes != 1 || !exists(filepath.Join(rec.StoredPath, "keep")) {
+	if !rec.IsDir || rec.SizeBytes != wantSize || !exists(filepath.Join(rec.StoredPath, "keep")) {
 		t.Errorf("dir record %+v", rec)
 	}
 }
@@ -231,6 +233,7 @@ func TestDirectorySizesFD(t *testing.T) {
 	f, trash, work := newTestTrasher(t)
 	d := filepath.Join(work, "dir one")
 	writeFile(t, filepath.Join(d, "f"), "12345", 0o644)
+	wantSize := strconv.FormatInt(refSize(t, d), 10) + " "
 
 	// Without an existing cache none is created.
 	rec, err := f.Remove(context.Background(), d)
@@ -251,7 +254,7 @@ func TestDirectorySizesFD(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(readFile(t, cache)), "\n")
-	if len(lines) != 2 || !strings.HasPrefix(lines[1], "5 ") || !strings.HasSuffix(lines[1], " dir%20one") {
+	if len(lines) != 2 || !strings.HasPrefix(lines[1], wantSize) || !strings.HasSuffix(lines[1], " dir%20one") {
 		t.Fatalf("cache = %q", lines)
 	}
 	if err := f.Restore(context.Background(), rec); err != nil {

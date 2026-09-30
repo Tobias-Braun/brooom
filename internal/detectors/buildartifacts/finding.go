@@ -211,7 +211,7 @@ func (s *scan) action(f facts, flags []findings.RiskFlag) findings.SuggestedActi
 	if f.sum.Incomplete {
 		return findings.SuggestedAction{Type: findings.ActionNone, Reason: "cannot read part of the directory"}
 	}
-	cmd := "trash " + f.path
+	cmd := "trash " + findings.ShellQuote(f.path)
 	if f.git.tracked && s.env.Force && findings.Actionable(flags, true) {
 		return findings.SuggestedAction{Type: findings.ActionTrash, Command: cmd, Reason: "forced: contains files tracked by git"}
 	}

@@ -257,7 +257,7 @@ func (s *scan) inspectOne(ctx context.Context, e entry) *candidate {
 		}
 		c.size, c.mod = sum.SizeBytes, sum.NewestModTime
 	case fi.Mode().IsRegular():
-		c.size, c.mod = fi.Size(), fi.ModTime()
+		c.size, c.mod = walk.LeafSize(fi), fi.ModTime()
 	default:
 		// Symlinks, sockets, devices and FIFOs are never candidates.
 		return nil

@@ -11,7 +11,6 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
-	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
@@ -317,17 +316,16 @@ func (removeWorktree) Plan(ctx context.Context, env *Env, f findings.Finding) (S
 	fresh.Path = ev.path
 	if ev.trasher == nil {
 		return Step{
-			Finding: fresh,
-			Description: fmt.Sprintf("remove worktree %s (%s) with git worktree remove",
-				filepath.Base(ev.path), output.FormatSize(f.SizeBytes)) + noteSuffix(ev.note),
-			Command: "git worktree remove -- " + shellQuote(ev.path),
+			Finding:     fresh,
+			Description: fmt.Sprintf("remove worktree %s with git worktree remove", filepath.Base(ev.path)) + noteSuffix(ev.note),
+			Command:     "git worktree remove -- " + displayQuote(ev.path),
 		}, nil
 	}
 	strategy := ev.trasher.Strategy()
 	return Step{
 		Finding:     fresh,
-		Description: describe(strategy, f.SizeBytes, ev.path, ev.notes()) + noteSuffix(ev.note),
-		Command:     displayCommand(strategy, ev.path) + " && git worktree remove -- " + shellQuote(ev.path),
+		Description: describe(strategy, ev.path, ev.notes()) + noteSuffix(ev.note),
+		Command:     chainCommands(displayCommand(strategy, ev.path), "git worktree remove -- "+displayQuote(ev.path)),
 	}, nil
 }
 
@@ -417,9 +415,9 @@ func (ev *removeEval) applyTrashed(ctx context.Context, env *Env, en session.Ent
 
 // readdHint is the manual git command that recreates the worktree.
 func readdHint(undo map[string]string) string {
-	path := shellQuote(undo[undoWT])
+	path := findings.ShellQuote(undo[undoWT])
 	if b := undo[undoBranch]; b != "" {
-		return "git worktree add " + path + " " + shellQuote(b)
+		return "git worktree add " + path + " " + findings.ShellQuote(b)
 	}
 	return "git worktree add --detach " + path + " " + undo[undoHead]
 }

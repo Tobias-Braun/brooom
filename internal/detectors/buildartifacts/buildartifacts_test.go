@@ -12,6 +12,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/testutil"
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 type wantFinding struct {
@@ -623,9 +624,16 @@ func TestSizeThreshold(t *testing.T) {
 	if got := rels(f.byRel()); !slices.Equal(got, []string{"a/node_modules", "node_modules"}) {
 		t.Fatalf("without threshold: %v", got)
 	}
-	f.cfg.Thresholds.MinSizeBytes = 1
+	// An empty directory still occupies its own block(s), so it is not below
+	// a 1 byte threshold any more; the threshold that separates the two
+	// candidates is one byte above the empty directory's allocation.
+	empty, err := walk.DirSize(context.Background(), filepath.Join(f.dir, "a", "node_modules"), walk.Options{Fresh: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.cfg.Thresholds.MinSizeBytes = empty.SizeBytes + 1
 	if got := rels(f.byRel()); !slices.Equal(got, []string{"node_modules"}) {
-		t.Fatalf("with 1 byte: %v", got)
+		t.Fatalf("above the empty directory's %d bytes: %v", empty.SizeBytes, got)
 	}
 	f.cfg.Thresholds.MinSizeBytes = 1 << 40
 	if got := f.byRel(); len(got) != 0 {

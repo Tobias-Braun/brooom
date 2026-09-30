@@ -21,9 +21,12 @@
 //
 // Size semantics: Entry.Size is the logical file size. Entry.Allocated and
 // DirSummary.SizeBytes are what deleting would actually free: on unix the
-// allocated blocks (Stat_t.Blocks*512), on Windows the logical size because
+// allocated blocks (Stat_t.Blocks*512, directory blocks included, as du counts
+// them), on Windows the logical size because
 // the allocated size is not cheaply available. Hard links are counted once
-// per DirSize call.
+// per DirSize call. This is the one sizing rule of Brooom: AllocatedSize and
+// LeafSize expose it for single items, so detectors, the plan and the trash
+// record agree.
 //
 // NewestModTime from a cached (non-Fresh) DirSize is a lower-bound hint.
 // Callers that use it for age thresholds, recently_modified or LastModified
@@ -65,7 +68,7 @@ type Entry struct {
 	// Allocated is the number of bytes actually allocated on disk. On unix
 	// it is Stat_t.Blocks*512 taken from the same Info call as Size. On
 	// Windows it equals Size because the allocated size is not cheaply
-	// available. It is 0 for directories.
+	// available. For a directory it is the directory's own allocation.
 	Allocated int64
 	// ModTime is the entry's modification time.
 	ModTime time.Time
@@ -270,11 +273,27 @@ func entryFromInfo(path string, fi fs.FileInfo) Entry {
 	}
 	e := Entry{Path: path, Name: fi.Name(), Type: typ, ModTime: fi.ModTime(), fid: fileIDOf(fi)}
 	if typ.IsDir() {
+		// A directory has no content size, but its own blocks are real disk
+		// usage (a tree of empty directories is not free), so DirSize and the
+		// trash measurement count them like du does.
+		e.Allocated = allocatedSize(fi)
 		return e
 	}
 	e.Size = fi.Size()
 	e.Allocated = allocatedSize(fi)
 	return e
+}
+
+// LeafSize is the size of a non-directory item from its lstat info under the
+// rule of DirSize: a symlink counts as its own (logical) size and is never
+// followed, anything else counts its allocated bytes (AllocatedSize). The
+// detectors use it for single files so a sparse file is sized by what it
+// occupies and a directory of such files agrees with the file's own number.
+func LeafSize(fi fs.FileInfo) int64 {
+	if fi.Mode()&fs.ModeSymlink != 0 {
+		return fi.Size()
+	}
+	return AllocatedSize(fi)
 }
 
 // IsSizedFile reports whether the entry is a file whose size counts towards

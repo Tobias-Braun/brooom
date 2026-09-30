@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 // failCrossDevice makes every rename fail like a move across filesystems, so
@@ -153,11 +155,25 @@ func TestTreeSize(t *testing.T) {
 	writeFile(t, filepath.Join(root, "d", "n", "b"), "123", 0o644)
 	writeFile(t, filepath.Join(root, "big"), "0123456789", 0o644)
 	symlinkOrSkip(t, filepath.Join(root, "big"), filepath.Join(root, "d", "link"))
-	if got, err := treeSize(filepath.Join(root, "d")); err != nil || got != 8 {
-		t.Errorf("dir size = %d, %v; want 8 (links not counted)", got, err)
+	// Allocated bytes with directory blocks; the symlink counts its own
+	// length and its 10 byte (one block) target is not followed.
+	d := filepath.Join(root, "d")
+	if got, err := treeSize(d); err != nil || got != refSize(t, d) {
+		t.Errorf("dir size = %d, %v; want %d", got, err, refSize(t, d))
 	}
-	if got, _ := treeSize(filepath.Join(root, "big")); got != 10 {
-		t.Errorf("file size = %d, want 10", got)
+	fi, err := os.Lstat(filepath.Join(root, "big"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := treeSize(filepath.Join(root, "big")); got != walk.AllocatedSize(fi) {
+		t.Errorf("file size = %d, want its allocation %d", got, walk.AllocatedSize(fi))
+	}
+	li, err := os.Lstat(filepath.Join(d, "link"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := treeSize(filepath.Join(d, "link")); got != li.Size() {
+		t.Errorf("symlink size = %d, want its own length %d", got, li.Size())
 	}
 }
 

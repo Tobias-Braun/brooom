@@ -65,7 +65,7 @@ func TestSessionsTable(t *testing.T) {
 		if code != ExitOK {
 			t.Fatalf("code=%d err=%q", code, errOut)
 		}
-		for _, want := range []string{"ID", "RECLAIMED", "20260101-000000-aaaa", "3h ago", "3.0 MiB", "(unfinished)"} {
+		for _, want := range []string{"ID", "RECLAIMED", "20260101-000000-aaaa", "3h ago", "3.1 MB", "(unfinished)"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("table lacks %q:\n%s", want, out)
 			}
@@ -109,7 +109,7 @@ func TestSessionsDetail(t *testing.T) {
 		t.Fatalf("code=%d", code)
 	}
 	for _, want := range []string{"20260101-000000-aaaa", "Finished:", "sweep --apply", "[applied]", "/x/node_modules",
-		"3.0 MiB", "boom", "restore from trash", "strategy=trash", "/trash/files/node_modules", "restorable: true"} {
+		"3.1 MB", "boom", "restore from trash", "strategy=trash", "/trash/files/node_modules", "restorable: true"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("detail lacks %q:\n%s", want, out)
 		}
@@ -144,14 +144,5 @@ func TestSessionsErrors(t *testing.T) {
 				t.Fatalf("code=%d stderr=%q", code, errOut)
 			}
 		})
-	}
-}
-
-func TestHumanBytes(t *testing.T) {
-	tests := map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KiB", 1536: "1.5 KiB", 1 << 30: "1.0 GiB"}
-	for in, want := range tests {
-		if got := humanBytes(in); got != want {
-			t.Errorf("humanBytes(%d) = %q, want %q", in, got, want)
-		}
 	}
 }

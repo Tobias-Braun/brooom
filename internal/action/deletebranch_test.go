@@ -137,7 +137,7 @@ func TestDeleteBranchMergedUsesDashD(t *testing.T) {
 	f := fx.finding("feat/x", "merged-branch", "")
 
 	step, en := fx.mustApply(f)
-	if step.Command != "git branch -d feat/x" || !strings.Contains(step.Description, "-d") {
+	if step.Command != "git branch -d -- feat/x" || !strings.Contains(step.Description, "-d") {
 		t.Fatalf("step = %+v", step)
 	}
 	if fx.branchExists("feat/x") {
@@ -149,11 +149,32 @@ func TestDeleteBranchMergedUsesDashD(t *testing.T) {
 	if en.Undo["branch"] != "feat/x" || en.Undo["sha"] != f.Meta["tip"] {
 		t.Fatalf("undo = %v", en.Undo)
 	}
-	checkRecoveryHint(t, en.RecoveryHint, "git branch feat/x "+f.Meta["tip"])
+	// The plan names the reference that justified -d.
+	if !strings.Contains(step.Description, "fully merged into HEAD") {
+		t.Errorf("description = %q, want it to name HEAD", step.Description)
+	}
+	checkReachableHint(t, en.RecoveryHint, "git branch feat/x "+f.Meta["tip"], "main")
 }
 
-// checkRecoveryHint asserts the hint is accurate about git: it names the
-// command and the reflog deletion, and never promises a 90 day window.
+// checkReachableHint asserts the hint of a branch whose commits another ref
+// still holds: it names that ref and does not warn about unreachable objects.
+func checkReachableHint(t *testing.T, hint, cmd, ref string) {
+	t.Helper()
+	for _, want := range []string{cmd, "still reachable from " + ref} {
+		if !strings.Contains(hint, want) {
+			t.Errorf("hint %q lacks %q", hint, want)
+		}
+	}
+	for _, bad := range []string{"unreachable", "2 weeks", "reflog"} {
+		if strings.Contains(hint, bad) {
+			t.Errorf("hint %q must not mention %q for a branch that stays reachable", hint, bad)
+		}
+	}
+}
+
+// checkRecoveryHint asserts the hint of an unmerged, force-deleted branch is
+// accurate about git: it names the command and the reflog deletion, and
+// never promises a 90 day window.
 func checkRecoveryHint(t *testing.T, hint, cmd string) {
 	t.Helper()
 	for _, want := range []string{cmd, "reflog", "unreachable", "2 weeks"} {
@@ -177,7 +198,7 @@ func TestDeleteBranchMergedWhileOtherBranchCheckedOut(t *testing.T) {
 
 	step, _ := fx.mustApply(f)
 	// git -d would refuse (HEAD is work) but the base ancestry is re-verified.
-	if step.Command != "git branch -D feat/x" || !strings.Contains(step.Description, "merged into origin/main") {
+	if step.Command != "git branch -D -- feat/x" || !strings.Contains(step.Description, "merged into origin/main") {
 		t.Fatalf("step = %+v", step)
 	}
 	if fx.branchExists("feat/x") {
@@ -193,7 +214,7 @@ func TestDeleteBranchSquash(t *testing.T) {
 	f := fx.finding("feat/sq", "merged-branch", "squash")
 
 	step, _ := fx.mustApply(f)
-	if step.Command != "git branch -D feat/sq" || !strings.Contains(step.Description, "re-verified") {
+	if step.Command != "git branch -D -- feat/sq" || !strings.Contains(step.Description, "re-verified") {
 		t.Fatalf("step = %+v", step)
 	}
 	if fx.branchExists("feat/sq") {
@@ -235,7 +256,7 @@ func TestDeleteBranchInRemote(t *testing.T) {
 	f := fx.finding("feat/r", "stale-branch", "in-remote")
 
 	step, _ := fx.mustApply(f)
-	if step.Command != "git branch -D feat/r" || !strings.Contains(step.Description, "remote-tracking") {
+	if step.Command != "git branch -D -- feat/r" || !strings.Contains(step.Description, "remote-tracking") {
 		t.Fatalf("step = %+v", step)
 	}
 	if fx.branchExists("feat/r") {
@@ -248,7 +269,7 @@ func TestDeleteBranchInRemoteWithUpstreamUsesDashD(t *testing.T) {
 	fx.featureBranch("feat/u")
 	fx.repo.Push("feat/u")
 	step, _ := fx.mustApply(fx.finding("feat/u", "stale-branch", "in-remote"))
-	if step.Command != "git branch -d feat/u" {
+	if step.Command != "git branch -d -- feat/u" {
 		t.Fatalf("command = %q", step.Command)
 	}
 }
@@ -281,7 +302,7 @@ func TestDeleteBranchInRemoteRemoteRefGone(t *testing.T) {
 	// --force skips the unpushed check and falls through to the -D rule.
 	fx.env.Force = true
 	step, err := fx.plan(f)
-	if err != nil || step.Command != "git branch -D feat/r" || !strings.Contains(step.Description, "forced") {
+	if err != nil || step.Command != "git branch -D -- feat/r" || !strings.Contains(step.Description, "forced") {
 		t.Fatalf("forced step = %+v, %v", step, err)
 	}
 }
@@ -296,12 +317,15 @@ func TestDeleteBranchUnmergedNeedsForce(t *testing.T) {
 
 	fx.env.Force = true
 	step, en := fx.mustApply(f)
-	if step.Command != "git branch -D feat/wip" || !strings.Contains(step.Description, "forced") {
+	if step.Command != "git branch -D -- feat/wip" || !strings.Contains(step.Description, "forced") {
 		t.Fatalf("step = %+v", step)
 	}
 	if fx.branchExists("feat/wip") || en.Status != session.StatusApplied {
 		t.Fatalf("branch exists or entry = %+v", en)
 	}
+	// Nothing else holds the commits, so this is the case that warrants the
+	// unreachable-objects warning.
+	checkRecoveryHint(t, en.RecoveryHint, "git branch feat/wip "+f.Meta["tip"])
 }
 
 func TestDeleteBranchRefusalsEvenWithForce(t *testing.T) {

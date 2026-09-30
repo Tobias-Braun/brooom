@@ -170,7 +170,7 @@ func TestMergeMethods(t *testing.T) {
 			merge:      func(f *fixture) { f.repo.Git("merge", "-q", "--ff-only", "feat/x") },
 			mode:       config.MergeAncestorSquash,
 			wantMethod: "ancestor",
-			wantCmd:    "git branch -d feat/x",
+			wantCmd:    "git branch -d -- feat/x",
 			wantReason: "fully merged into origin/main",
 			wantEv:     "merged_into",
 		},
@@ -179,7 +179,7 @@ func TestMergeMethods(t *testing.T) {
 			merge:      func(f *fixture) { f.repo.GitAt(at(50), "merge", "-q", "--no-ff", "-m", "merge", "feat/x") },
 			mode:       config.MergeAncestorSquash,
 			wantMethod: "ancestor",
-			wantCmd:    "git branch -d feat/x",
+			wantCmd:    "git branch -d -- feat/x",
 			wantReason: "fully merged into origin/main",
 			wantEv:     "merged_into",
 		},
@@ -188,7 +188,7 @@ func TestMergeMethods(t *testing.T) {
 			merge:      func(f *fixture) { f.repo.SquashMerge("feat/x", "squashed", at(50)) },
 			mode:       config.MergeAncestorSquash,
 			wantMethod: "squash",
-			wantCmd:    "git branch -D feat/x",
+			wantCmd:    "git branch -D -- feat/x",
 			wantArgs:   map[string]string{"verified": "squash"},
 			wantReason: "squash-merged into origin/main; -D is required because git cannot see the squash merge",
 			wantEv:     "squash_merged_into",
@@ -198,7 +198,7 @@ func TestMergeMethods(t *testing.T) {
 			merge:      func(f *fixture) { f.repo.RebaseMerge("feat/x", at(50)) },
 			mode:       config.MergeAncestorSquash,
 			wantMethod: "rebase",
-			wantCmd:    "git branch -D feat/x",
+			wantCmd:    "git branch -D -- feat/x",
 			wantArgs:   map[string]string{"verified": "squash"},
 			wantReason: "rebase-merged into origin/main; -D is required because git cannot see the squash merge",
 			wantEv:     "squash_merged_into",
@@ -484,7 +484,7 @@ func TestOpenPR(t *testing.T) {
 		f.env.Force = true
 		x := mustFind(t, f.detect(), "feat/pr")
 		a := x.SuggestedAction
-		if a.Type != findings.ActionDeleteBranch || a.Command != "git branch -d feat/pr" {
+		if a.Type != findings.ActionDeleteBranch || a.Command != "git branch -d -- feat/pr" {
 			t.Errorf("action = %+v", a)
 		}
 		if !strings.HasPrefix(a.Reason, "forced:") || !strings.Contains(a.Reason, "has_open_pr") {
@@ -764,7 +764,7 @@ func TestQuotedCommandForOddBranchNames(t *testing.T) {
 	f.merge(name)
 	f.publish()
 	x := mustFind(t, f.detect(), name)
-	if want := `git branch -d 'feat/it'\''s'`; x.SuggestedAction.Command != want {
+	if want := `git branch -d -- 'feat/it'\''s'`; x.SuggestedAction.Command != want {
 		t.Errorf("command = %q, want %q", x.SuggestedAction.Command, want)
 	}
 }

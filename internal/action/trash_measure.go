@@ -85,7 +85,7 @@ func measureChecked(ctx context.Context, path string, check entryCheck) (measure
 		}
 		return measurement{size: size, newest: root.ModTime}, nil
 	}
-	return measureTree(ctx, path, root.ModTime, check)
+	return measureTree(ctx, path, root, check)
 }
 
 // newTreeMeter returns an empty meter; ownGit is the relative path of the
@@ -177,6 +177,9 @@ func (t *treeMeter) entrySize(e walk.Entry) int64 {
 	switch {
 	case e.IsSymlink():
 		return e.Size
+	case e.IsDir():
+		// Directory blocks count, as in walk.DirSize.
+		return e.Allocated
 	case !e.IsSizedFile():
 		return 0
 	}
@@ -195,12 +198,13 @@ func (t *treeMeter) fail(path string, err error) {
 	t.errs = append(t.errs, fmt.Errorf("%s: %w", path, err))
 }
 
-// measureTree walks a directory. rootMTime is used when the tree is empty so
-// LastModified never stays unset.
-func measureTree(ctx context.Context, path string, rootMTime time.Time, check entryCheck) (measurement, error) {
+// measureTree walks a directory. The root's mtime is used when the tree is
+// empty so LastModified never stays unset, and the root's own blocks are
+// counted because the walk only visits what is below it.
+func measureTree(ctx context.Context, path string, root walk.Entry, check entryCheck) (measurement, error) {
 	t := newTreeMeter("")
 	t.check = check
-	return measureWith(ctx, t, path, rootMTime)
+	return measureWith(ctx, t, path, root)
 }
 
 // measureWorktree is measureTree for a linked worktree directory: its own
@@ -212,10 +216,10 @@ func measureWorktree(ctx context.Context, path string) (measurement, error) {
 		return measurement{}, err
 	}
 	t := newTreeMeter(".git")
-	return measureWith(ctx, t, path, root.ModTime)
+	return measureWith(ctx, t, path, root)
 }
 
-func measureWith(ctx context.Context, t *treeMeter, path string, rootMTime time.Time) (measurement, error) {
+func measureWith(ctx context.Context, t *treeMeter, path string, root walk.Entry) (measurement, error) {
 	err := walk.Walk(ctx, path, walk.Options{Fresh: true}, t.visit, t.fail)
 	if err != nil {
 		return measurement{}, err
@@ -225,8 +229,9 @@ func measureWith(ctx context.Context, t *treeMeter, path string, rootMTime time.
 	}
 	t.markBareRepos()
 	if t.m.newest.IsZero() {
-		t.m.newest = rootMTime
+		t.m.newest = root.ModTime
 	}
+	t.m.size += root.Allocated
 	return t.m, nil
 }
 

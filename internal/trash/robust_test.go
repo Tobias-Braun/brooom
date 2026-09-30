@@ -84,8 +84,8 @@ func TestMeasureTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if size != 7 {
-		t.Errorf("size = %d, want 7", size)
+	if want := refSize(t, root); size != want {
+		t.Errorf("size = %d, want %d", size, want)
 	}
 	want := 1 + len("dir") + 1 + 3 // separator, "dir", separator, three BMP characters
 	if rel != want {

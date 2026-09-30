@@ -113,7 +113,7 @@ func (c *confirmer) confirm(p *Plan) bool {
 func (c *confirmer) confirmItems(g *Group) bool {
 	for i := range g.Items {
 		it := &g.Items[i]
-		prompt := fmt.Sprintf("  %s (%s)? [y]es/[n]o/[q]uit ", output.Sanitize(it.Step.Description), output.FormatSize(it.Step.Finding.SizeBytes))
+		prompt := fmt.Sprintf("  %s? [y]es/[n]o/[q]uit ", itemLine(it.Step))
 		switch c.ask(prompt, "ynq") {
 		case ansYes:
 			it.Confirmed = true
@@ -122,6 +122,17 @@ func (c *confirmer) confirmItems(g *Group) bool {
 		}
 	}
 	return true
+}
+
+// itemLine is a step's description followed by its size, the one place the
+// size of an item is printed. Steps without a size (branches, git
+// maintenance, whose finding size is 0) get no "(0 B)" suffix.
+func itemLine(s Step) string {
+	line := output.Sanitize(s.Description)
+	if s.Finding.SizeBytes > 0 {
+		line += " (" + output.FormatSize(s.Finding.SizeBytes) + ")"
+	}
+	return line
 }
 
 func (p *Plan) clearConfirmed() { p.setConfirmed(false) }
@@ -147,10 +158,10 @@ func renderPlan(w io.Writer, p *Plan) {
 	for _, g := range p.Groups {
 		fmt.Fprintf(w, "%s / %s: %s, %s\n", output.Sanitize(g.Detector), g.Action, plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
 		for _, it := range g.Items {
-			fmt.Fprintf(w, "  %s (%s)\n", output.Sanitize(it.Step.Description), output.FormatSize(it.Step.Finding.SizeBytes))
+			fmt.Fprintf(w, "  %s\n", itemLine(it.Step))
 			if it.Step.Command != "" {
 				// Step.Command is deliberately not sanitized here: it is a
-				// copy-pasteable shell command whose quoting is handled in #129.
+				// copy-pasteable shell command whose values are quoted by findings.ShellQuote (or the PowerShell equivalent).
 				fmt.Fprintf(w, "    $ %s\n", it.Step.Command)
 			}
 		}

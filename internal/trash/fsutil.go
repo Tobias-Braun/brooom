@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 // This file holds the filesystem helpers shared by every strategy. The OS
@@ -83,44 +85,95 @@ func checkRemovable(path string) (fs.FileInfo, error) {
 // isSymlink reports whether fi describes a symbolic link.
 func isSymlink(fi fs.FileInfo) bool { return fi.Mode()&fs.ModeSymlink != 0 }
 
-// treeSize returns the size of the item at path: the lstat size for files and
-// symlinks, the recursive sum of regular-file sizes for directories. Symlinks
-// inside directories are not followed and do not count.
+// treeSize returns the size of the item at path with the sizing rule of the
+// whole program (walk.AllocatedSize, walk.DirSize): allocated bytes including
+// directory blocks, hard links counted once, symlinks as their own size and
+// never followed. It is the same number the scan and the plan show, so what
+// is reclaimed agrees with what was announced. A directory that cannot be
+// read completely is an error, since its size would only be a lower bound.
 func treeSize(path string) (int64, error) {
-	size, _, err := measureTree(path)
-	return size, err
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return 0, err
+	}
+	if isSymlink(fi) {
+		return fi.Size(), nil
+	}
+	if !fi.IsDir() {
+		return walk.AllocatedSize(fi), nil
+	}
+	sum, err := walk.DirSize(context.Background(), path, walk.Options{Fresh: true})
+	if err != nil {
+		return 0, err
+	}
+	if sum.Incomplete {
+		return sum.SizeBytes, fmt.Errorf("%q could not be read completely", path)
+	}
+	return sum.SizeBytes, nil
 }
 
 // measureTree is treeSize plus the UTF-16 length of the longest descendant
 // path relative to path, counting its leading separator (0 for a file or an
 // empty directory). The Windows Recycle Bin needs the latter because items
-// are re-rooted deeper below $Recycle.Bin (see checkTreeDepth). One walk
-// yields both, so measuring depth costs nothing extra.
+// are re-rooted deeper below $Recycle.Bin (see checkTreeDepth). The depth is a
+// second, name-only pass: the size follows the shared sizing rule (hard links
+// once, directory blocks), which a name walk cannot provide.
 func measureTree(path string) (size int64, longestRel int, err error) {
+	size, err = treeSize(path)
+	if err != nil {
+		return size, 0, err
+	}
 	fi, err := os.Lstat(path)
 	if err != nil {
 		return 0, 0, err
 	}
-	if !fi.IsDir() {
-		return fi.Size(), 0, nil
+	if !fi.IsDir() || isSymlink(fi) {
+		return size, 0, nil
 	}
-	err = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(path, func(p string, _ fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if rel, rerr := filepath.Rel(path, p); rerr == nil && rel != "." {
 			longestRel = max(longestRel, 1+utf16Len(rel))
 		}
-		if d.Type().IsRegular() {
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			size += info.Size()
-		}
 		return nil
 	})
 	return size, longestRel, err
+}
+
+// sizeHintKey carries the size measured by the plan to the trasher.
+type sizeHintKey struct{}
+
+type sizeHint struct {
+	path string
+	size int64
+}
+
+// WithSizeHint returns a context that tells trashers the size of path as the
+// plan measured it (with the same rule as treeSize), so Remove does not walk
+// the tree a second time and the reclaimed size equals the planned one. The
+// hint only applies to exactly that path; a trasher measures any other path
+// itself. The size is accounting only: it never influences what is removed.
+func WithSizeHint(ctx context.Context, path string, size int64) context.Context {
+	return context.WithValue(ctx, sizeHintKey{}, sizeHint{path: path, size: size})
+}
+
+// SizeHintFrom returns the planned size carried by ctx for exactly path.
+func SizeHintFrom(ctx context.Context, path string) (int64, bool) {
+	h, ok := ctx.Value(sizeHintKey{}).(sizeHint)
+	if !ok || h.path != path || h.size < 0 {
+		return 0, false
+	}
+	return h.size, true
+}
+
+// sizeOf is treeSize unless ctx carries a size hint for exactly path.
+func sizeOf(ctx context.Context, path string) (int64, error) {
+	if size, ok := SizeHintFrom(ctx, path); ok {
+		return size, nil
+	}
+	return treeSize(path)
 }
 
 // moveTree moves src to dst without following symlinks. dst must not exist.

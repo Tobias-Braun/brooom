@@ -67,7 +67,7 @@ type mergeFact struct {
 
 // command is the exact git invocation for display.
 func (d decision) command() string {
-	return "git branch " + d.flag + " " + shellQuote(d.name)
+	return "git branch " + d.flag + " -- " + findings.ShellQuote(d.name)
 }
 
 // Plan re-validates the finding against the live repository; see evaluate.
@@ -120,8 +120,22 @@ func (deleteBranch) Apply(ctx context.Context, env *Env, s Step) (session.Entry,
 		en.Undo[k] = v
 	}
 	en.Restorable = true
-	en.RecoveryHint = branchRecoveryHint(d.name, sha)
+	en.RecoveryHint = branchRecoveryHint(d.name, sha, d.reachableFrom(ctx, env, sha))
 	return en, nil
+}
+
+// reachableFrom names a branch, remote-tracking branch or tag that still
+// holds the deleted tip, or "" when none does or git cannot say (unknown is
+// treated as unreachable, so the warning is only ever dropped on evidence).
+// Stash refs are not consulted: a stash descends from a commit without being
+// a reason to consider it kept.
+func (d decision) reachableFrom(ctx context.Context, env *Env, sha string) string {
+	out, err := env.Git.Run(ctx, d.repo.Dir, "for-each-ref", "--count=1", "--contains", sha,
+		"--format=%(refname:short)", "refs/heads", "refs/remotes", "refs/tags")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }
 
 func failedBranch(en session.Entry, err error) (session.Entry, error) {
@@ -129,12 +143,20 @@ func failedBranch(en session.Entry, err error) (session.Entry, error) {
 	return en, err
 }
 
-// branchRecoveryHint is accurate about git: deleting a branch also deletes its own
-// reflog, so the commits are only unreachable objects that a later gc prunes.
-func branchRecoveryHint(name, sha string) string {
+// branchRecoveryHint is accurate about git: deleting a branch also deletes its
+// own reflog. When another ref (keptBy) still holds the tip, the commits stay
+// reachable and gc never prunes them, so the hint says that instead of
+// warning about unreachable objects; only when nothing holds them (a forced
+// deletion of unmerged work) are they unreachable objects that a later gc
+// prunes.
+func branchRecoveryHint(name, sha, keptBy string) string {
+	if keptBy != "" {
+		return fmt.Sprintf("run inside the repository: git branch %s %s. The commits are still reachable from %s, "+
+			"so git gc will not prune them.", findings.ShellQuote(name), sha, findings.ShellQuote(keptBy))
+	}
 	return fmt.Sprintf("run inside the repository: git branch %s %s. Deleting a branch also deletes its reflog; "+
 		"the commits stay as unreachable objects until git gc prunes them (by default unreachable objects older "+
-		"than 2 weeks may be pruned by the next gc), so recover promptly.", shellQuote(name), sha)
+		"than 2 weeks may be pruned by the next gc), so recover promptly.", findings.ShellQuote(name), sha)
 }
 
 // run executes the chosen flag and returns the sha of the commit that was
@@ -434,8 +456,8 @@ func (d *decision) recheckFlags(ctx context.Context, env *Env) error {
 // past this point without --force. A gate keyed on the detector name or the
 // finding's "verified" claim would trust a field a findings file can edit.
 func (d *decision) chooseFlag(ctx context.Context, env *Env, b gitx.Branch, f findings.Finding) error {
-	if d.gitAccepts(ctx, b) {
-		d.flag, d.why = flagSafe, "fully merged"
+	if target, ok := d.gitAccepts(ctx, b); ok {
+		d.flag, d.why = flagSafe, "fully merged into "+target
 		return nil
 	}
 	d.flag = flagForce
@@ -452,16 +474,18 @@ func (d *decision) chooseFlag(ctx context.Context, env *Env, b gitx.Branch, f fi
 
 // gitAccepts predicts git's own merge check for -d: the tip must be reachable
 // from the upstream when one exists, otherwise from the current HEAD of the
-// repository directory.
-func (d *decision) gitAccepts(ctx context.Context, b gitx.Branch) bool {
-	target := "HEAD"
+// repository directory. It also returns the reference that justified the
+// deletion, in the words shown to the user ("upstream origin/x" or "HEAD"), so
+// the plan never claims a merge into something git did not check.
+func (d *decision) gitAccepts(ctx context.Context, b gitx.Branch) (string, bool) {
+	target, label := "HEAD", "HEAD"
 	if b.Upstream != "" && !b.UpstreamGone {
 		// UpstreamRef also names a local upstream (remote "."), which lives
 		// under refs/heads/ and not under refs/remotes/.
-		target = b.UpstreamRef
+		target, label = b.UpstreamRef, "upstream "+b.Upstream
 	}
 	ok, err := d.repo.IsAncestor(ctx, d.tip, target)
-	return err == nil && ok
+	return label, err == nil && ok
 }
 
 // verifiedWhy re-verifies, right now, one of the facts that justify -D: the

@@ -108,6 +108,7 @@ func TestQuarantineRoundTrip(t *testing.T) {
 			if tt.isLink {
 				wantTarget, _ = os.Readlink(p)
 			}
+			wantSize := refSize(t, p)
 			rec, err := q.Remove(context.Background(), p)
 			if err != nil {
 				t.Fatal(err)
@@ -120,8 +121,8 @@ func TestQuarantineRoundTrip(t *testing.T) {
 				rec.IsDir != tt.isDir || !rec.Restorable || !rec.RemovedAt.Equal(fixedNow) {
 				t.Errorf("unexpected record %+v", rec)
 			}
-			if tt.size >= 0 && rec.SizeBytes != tt.size {
-				t.Errorf("size = %d, want %d", rec.SizeBytes, tt.size)
+			if tt.size >= 0 && rec.SizeBytes != wantSize {
+				t.Errorf("size = %d, want %d", rec.SizeBytes, wantSize)
 			}
 			if tt.isLink {
 				if got, err := os.Readlink(wantStored); err != nil || got != wantTarget {
@@ -164,7 +165,7 @@ func TestQuarantineManifestContent(t *testing.T) {
 		t.Fatalf("manifest = %+v", m)
 	}
 	it := m.Items[0]
-	if it.N != 1 || it.OriginalPath != p || it.StoredPath != "1/f.txt" || it.SizeBytes != 5 || it.IsDir || it.IsSymlink || !it.RemovedAt.Equal(fixedNow) {
+	if it.N != 1 || it.OriginalPath != p || it.StoredPath != "1/f.txt" || it.SizeBytes != fiveByteFileSize(t) || it.IsDir || it.IsSymlink || !it.RemovedAt.Equal(fixedNow) {
 		t.Errorf("item = %+v", it)
 	}
 	if runtime.GOOS != "windows" {

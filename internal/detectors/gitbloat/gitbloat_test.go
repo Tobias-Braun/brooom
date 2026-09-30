@@ -751,11 +751,3 @@ func TestParseBlobLine(t *testing.T) {
 		}
 	}
 }
-
-func TestHumanBytes(t *testing.T) {
-	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KiB", 5 << 20: "5.0 MiB", 3 << 30: "3.0 GiB"} {
-		if got := humanBytes(n); got != want {
-			t.Errorf("%d: %q, want %q", n, got, want)
-		}
-	}
-}

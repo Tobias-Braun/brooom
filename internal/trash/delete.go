@@ -32,7 +32,7 @@ func (d *deleter) Remove(ctx context.Context, path string) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	size, err := treeSize(path)
+	size, err := sizeOf(ctx, path)
 	if err != nil {
 		return Record{}, fmt.Errorf("cannot measure %q: %w", path, err)
 	}

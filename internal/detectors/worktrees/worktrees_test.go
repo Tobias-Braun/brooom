@@ -258,7 +258,7 @@ func TestMissingDirectory(t *testing.T) {
 		t.Errorf("id %q", f.ID)
 	}
 	a := f.SuggestedAction
-	if a.Type != findings.ActionPruneWorktrees || a.Command != "git worktree remove --force "+wt || a.Reason == "" {
+	if a.Type != findings.ActionPruneWorktrees || a.Command != "git worktree remove --force -- "+wt || a.Reason == "" {
 		t.Errorf("action %+v", a)
 	}
 	if f.Confidence != findings.ConfidenceHigh || f.SizeBytes != 0 {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/findings"
+	"github.com/Tobias-Braun/brooom/internal/output"
 )
 
 const (
@@ -78,8 +79,8 @@ func looseFinding(env *detect.Env, info *repoInfo, count, size, garbage int64, m
 	setTime(env, &f, mtime)
 	f.Evidence = append(f.Evidence,
 		findings.Evidence{Code: "loose_object_count", Message: fmt.Sprintf("%d loose objects (threshold %d)", count, info.cfg.LooseObjectsThreshold), Value: count},
-		findings.Evidence{Code: "loose_size_bytes", Message: "loose objects use " + humanBytes(size), Value: size},
-		findings.Evidence{Code: "estimated_savings", Message: fmt.Sprintf("about %d%% of the loose size (%s) is estimated to be reclaimed by packing", looseSavingsPercent, humanBytes(saving)), Value: saving},
+		findings.Evidence{Code: "loose_size_bytes", Message: "loose objects use " + output.FormatSize(size), Value: size},
+		findings.Evidence{Code: "estimated_savings", Message: fmt.Sprintf("about %d%% of the loose size (%s) is estimated to be reclaimed by packing", looseSavingsPercent, output.FormatSize(saving)), Value: saving},
 	)
 	if garbage > 0 {
 		f.Evidence = append(f.Evidence, findings.Evidence{Code: "garbage", Message: fmt.Sprintf("%d unrecognised files in the object store", garbage), Value: garbage})
@@ -95,8 +96,8 @@ func packsFinding(env *detect.Env, info *repoInfo, packs, size int64, mtime time
 	setTime(env, &f, mtime)
 	f.Evidence = append(f.Evidence,
 		findings.Evidence{Code: "pack_count", Message: fmt.Sprintf("%d packs (threshold %d)", packs, info.cfg.PackCountThreshold), Value: packs},
-		findings.Evidence{Code: "pack_size_bytes", Message: "packs use " + humanBytes(size), Value: size},
-		findings.Evidence{Code: "estimated_savings", Message: fmt.Sprintf("about %d%% of the pack size (%s) is estimated to be reclaimed by repacking", packSavingsPercent, humanBytes(saving)), Value: saving},
+		findings.Evidence{Code: "pack_size_bytes", Message: "packs use " + output.FormatSize(size), Value: size},
+		findings.Evidence{Code: "estimated_savings", Message: fmt.Sprintf("about %d%% of the pack size (%s) is estimated to be reclaimed by repacking", packSavingsPercent, output.FormatSize(saving)), Value: saving},
 	)
 	f.SuggestedAction = gcAction(info, "repacking consolidates many small packs into one")
 	return f

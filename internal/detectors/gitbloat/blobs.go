@@ -11,6 +11,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
+	"github.com/Tobias-Braun/brooom/internal/output"
 )
 
 const (
@@ -160,7 +161,7 @@ func blobFinding(info *repoInfo, b blob, total int) findings.Finding {
 	f.Confidence = findings.ConfidenceLow
 	f.Evidence = append(f.Evidence, findings.Evidence{
 		Code:    "large_blob",
-		Message: fmt.Sprintf("blob %s is %s (threshold %s)", shortSHA(b.SHA), humanBytes(b.Size), humanBytes(info.cfg.LargeBlobBytes)),
+		Message: fmt.Sprintf("blob %s is %s (threshold %s)", shortSHA(b.SHA), output.FormatSize(b.Size), output.FormatSize(info.cfg.LargeBlobBytes)),
 		Value:   b.Size,
 	})
 	if total > maxBlobFindings {

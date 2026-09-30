@@ -112,7 +112,7 @@ func (m *macTrash) RemoveMany(ctx context.Context, paths []string) ([]Record, []
 			errs[i] = fmt.Errorf("cannot trash %q: skipped because an earlier native trash call is still pending", p)
 			continue
 		}
-		it, err := m.prepare(i, p)
+		it, err := m.prepare(ctx, i, p)
 		if err != nil {
 			errs[i] = err
 			continue
@@ -124,7 +124,7 @@ func (m *macTrash) RemoveMany(ctx context.Context, paths []string) ([]Record, []
 }
 
 // prepare validates path and measures it.
-func (m *macTrash) prepare(idx int, path string) (pendingItem, error) {
+func (m *macTrash) prepare(ctx context.Context, idx int, path string) (pendingItem, error) {
 	if strings.IndexByte(path, 0) >= 0 {
 		return pendingItem{}, fmt.Errorf("cannot trash %q: path contains a NUL byte", path)
 	}
@@ -135,7 +135,7 @@ func (m *macTrash) prepare(idx int, path string) (pendingItem, error) {
 	if err != nil {
 		return pendingItem{}, err
 	}
-	size, err := treeSize(path)
+	size, err := sizeOf(ctx, path)
 	if err != nil {
 		return pendingItem{}, fmt.Errorf("cannot measure %q: %w", path, err)
 	}

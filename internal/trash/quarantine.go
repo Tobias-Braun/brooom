@@ -59,7 +59,7 @@ func (q *quarantine) Remove(ctx context.Context, path string) (Record, error) {
 	if err := ctx.Err(); err != nil {
 		return Record{}, err
 	}
-	fi, size, err := q.checkRemoveTarget(path)
+	fi, size, err := q.checkRemoveTarget(ctx, path)
 	if err != nil {
 		return Record{}, err
 	}
@@ -106,7 +106,7 @@ func (q *quarantine) Remove(ctx context.Context, path string) (Record, error) {
 // checkRemoveTarget validates path for Remove and returns its Lstat info and
 // size. It refuses paths inside the quarantine directory and ancestors of it
 // (the home directory, ~/.brooom), which would be moved into themselves.
-func (q *quarantine) checkRemoveTarget(path string) (fs.FileInfo, int64, error) {
+func (q *quarantine) checkRemoveTarget(ctx context.Context, path string) (fs.FileInfo, int64, error) {
 	fi, err := checkRemovable(path)
 	if err != nil {
 		return nil, 0, err
@@ -117,7 +117,7 @@ func (q *quarantine) checkRemoveTarget(path string) (fs.FileInfo, int64, error) 
 	if q.containsQuarantine(path) {
 		return nil, 0, fmt.Errorf("refusing to quarantine %q: it contains the quarantine directory", path)
 	}
-	size, err := treeSize(path)
+	size, err := sizeOf(ctx, path)
 	if err != nil {
 		return nil, 0, fmt.Errorf("cannot measure %q: %w", path, err)
 	}

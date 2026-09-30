@@ -135,7 +135,7 @@ func TestRemoveManyBatchWithMissingPathAndSpecialNames(t *testing.T) {
 // was trashed into <home>/.Trash.
 func checkTrashedFile(t *testing.T, r Record, orig, home string) {
 	t.Helper()
-	if r.Strategy != config.StrategyTrash || r.OriginalPath != orig || r.SizeBytes != 5 || r.IsDir ||
+	if r.Strategy != config.StrategyTrash || r.OriginalPath != orig || r.SizeBytes != fiveByteFileSize(t) || r.IsDir ||
 		!r.Restorable || r.RemovedAt.IsZero() || r.RemovedAt.Location() != time.UTC {
 		t.Errorf("unexpected record %+v", r)
 	}
@@ -162,11 +162,12 @@ func TestRemoveDirectoryAndSymlink(t *testing.T) {
 	if rec.IsDir || !exists(filepath.Join(root, "dir", "a")) {
 		t.Errorf("symlink record %+v, target must survive", rec)
 	}
+	wantDirSize := refSize(t, filepath.Join(root, "dir"))
 	rec, err = m.Remove(context.Background(), filepath.Join(root, "dir"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !rec.IsDir || rec.SizeBytes != 5 {
+	if !rec.IsDir || rec.SizeBytes != wantDirSize {
 		t.Errorf("dir record %+v", rec)
 	}
 }

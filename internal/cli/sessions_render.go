@@ -91,7 +91,7 @@ func renderSessionTable(w io.Writer, list []*session.Manifest, now time.Time) er
 			cmdText += " (unfinished)"
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%s\t%d\n", output.Sanitize(m.ID), formatStarted(m.StartedAt, now),
-			output.Sanitize(cmdText), c.Applied, c.Failed, humanBytes(m.ReclaimedBytes), c.Restorable)
+			output.Sanitize(cmdText), c.Applied, c.Failed, output.FormatSize(m.ReclaimedBytes), c.Restorable)
 	}
 	return tw.Flush()
 }
@@ -105,7 +105,7 @@ func renderSessionDetail(w io.Writer, m *session.Manifest, now time.Time) error 
 		fmt.Fprintf(w, "Finished:  %s\n", m.FinishedAt.Local().Format("2006-01-02 15:04:05"))
 	}
 	fmt.Fprintf(w, "Command:   %s\n", output.Sanitize(m.Command))
-	fmt.Fprintf(w, "Reclaimed: %s\n", humanBytes(m.ReclaimedBytes))
+	fmt.Fprintf(w, "Reclaimed: %s\n", output.FormatSize(m.ReclaimedBytes))
 	if len(m.Entries) == 0 {
 		_, err := fmt.Fprintln(w, "\nNo entries.")
 		return err
@@ -119,7 +119,7 @@ func renderSessionDetail(w io.Writer, m *session.Manifest, now time.Time) error 
 
 func writeEntry(w io.Writer, n int, e session.Entry) {
 	fmt.Fprintf(w, "\n%d. [%s] %s  %s\n", n, output.Sanitize(string(e.Status)), output.Sanitize(string(e.Action)), output.Sanitize(e.Path))
-	fmt.Fprintf(w, "   size:       %s\n", humanBytes(e.SizeBytes))
+	fmt.Fprintf(w, "   size:       %s\n", output.FormatSize(e.SizeBytes))
 	fmt.Fprintf(w, "   restorable: %t\n", e.Restorable)
 	if e.Error != "" {
 		fmt.Fprintf(w, "   error:      %s\n", output.Sanitize(e.Error))
@@ -151,18 +151,4 @@ func relativeAge(t, now time.Time) string {
 		return fmt.Sprintf("%dh ago", int(d.Hours()))
 	}
 	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
-}
-
-// humanBytes formats a size with binary units, e.g. "1.5 GiB".
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for v := n / unit; v >= unit; v /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

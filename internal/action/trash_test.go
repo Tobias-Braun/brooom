@@ -608,12 +608,14 @@ type stubTrasher struct {
 	removeErr  error
 	restoreErr error
 	removed    []string
+	removeCtx  []context.Context
 	restored   []trash.Record
 }
 
 func (s *stubTrasher) Strategy() config.TrashStrategy { return s.strategy }
 
-func (s *stubTrasher) Remove(_ context.Context, path string) (trash.Record, error) {
+func (s *stubTrasher) Remove(ctx context.Context, path string) (trash.Record, error) {
+	s.removeCtx = append(s.removeCtx, ctx)
 	s.removed = append(s.removed, path)
 	return s.removeRec, s.removeErr
 }
@@ -856,35 +858,21 @@ func TestDescribeAndDisplayCommand(t *testing.T) {
 		wantDesc string
 		wantCmd  string
 	}{
-		{config.StrategyTrash, nil, "move node_modules (1.2 MB) to trash", "trash "},
-		{config.StrategyQuarantine, nil, "move node_modules (1.2 MB) to quarantine", "mv "},
-		{config.StrategyDelete, nil, "permanently delete node_modules (1.2 MB)", "rm -rf "},
-		{config.StrategyTrash, []string{"tracked files", "open-file check incomplete"}, "move node_modules (1.2 MB) to trash [tracked files; open-file check incomplete]", "trash "},
+		{config.StrategyTrash, nil, "move node_modules to trash", "trash "},
+		{config.StrategyQuarantine, nil, "move node_modules to quarantine", "mv "},
+		{config.StrategyDelete, nil, "permanently delete node_modules", "rm -rf "},
+		{config.StrategyTrash, []string{"tracked files", "open-file check incomplete"}, "move node_modules to trash [tracked files; open-file check incomplete]", "trash "},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.strategy)+strings.Join(tt.notes, ","), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "node_modules")
-			if got := describe(tt.strategy, 1_200_000, path, tt.notes); got != tt.wantDesc {
+			if got := describe(tt.strategy, path, tt.notes); got != tt.wantDesc {
 				t.Errorf("describe = %q, want %q", got, tt.wantDesc)
 			}
 			if got := displayCommand(tt.strategy, path); !strings.HasPrefix(got, tt.wantCmd) || !strings.Contains(got, "node_modules") {
 				t.Errorf("displayCommand = %q", got)
 			}
 		})
-	}
-}
-
-func TestShellQuote(t *testing.T) {
-	tests := map[string]string{
-		"/a/b-c_d.txt": "/a/b-c_d.txt",
-		"/a b/c":       "'/a b/c'",
-		"it's":         `'it'\''s'`,
-		"":             "''",
-	}
-	for in, want := range tests {
-		if got := shellQuote(in); got != want {
-			t.Errorf("shellQuote(%q) = %q, want %q", in, got, want)
-		}
 	}
 }
 

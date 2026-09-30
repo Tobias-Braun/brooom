@@ -44,6 +44,11 @@ type fileID struct {
 // not cheaply available from the directory listing.
 func allocatedSize(fi fs.FileInfo) int64 { return fi.Size() }
 
+// AllocatedSize is the one sizing rule of Brooom; on Windows it is the
+// logical size (see allocatedSize), so plan, scan and reclaimed numbers use
+// the same rule on every OS.
+func AllocatedSize(fi fs.FileInfo) int64 { return allocatedSize(fi) }
+
 // fileIDOf reports no identity.
 func fileIDOf(fs.FileInfo) fileID { return fileID{} }
 
