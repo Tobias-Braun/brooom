@@ -1,6 +1,10 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/Tobias-Braun/brooom/internal/config"
+)
 
 func newWorktreesCmd(a *app) *cobra.Command {
 	var af applyFlags
@@ -13,7 +17,7 @@ never suggested for removal. With --apply, worktrees are removed with
 'git worktree remove' and metadata is pruned with 'git worktree prune'.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return errNotImplemented
+			return a.runCleanup(cmd, cleanupSelection{detectors: []string{config.DetectorWorktrees}, label: "worktrees"}, af)
 		},
 	}
 	addApplyFlags(cmd, &af)
