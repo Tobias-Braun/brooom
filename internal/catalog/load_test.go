@@ -55,7 +55,7 @@ func TestEmbeddedDataLoads(t *testing.T) {
 			t.Errorf("AI tool %q must protect its configuration files", tool.ID)
 		}
 	}
-	for _, id := range []string{"claude-code", "npm", "macos-finder"} {
+	for _, id := range []string{"claude-code", "npm", "macos"} {
 		if _, ok := c.Tool(id); !ok {
 			t.Errorf("seed tool %q missing", id)
 		}
