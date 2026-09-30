@@ -67,6 +67,8 @@ func TestRestoreRefusesSymlinkedTrashDir(t *testing.T) {
 	}
 }
 
+// The file carries no build tag on purpose: the code under test compiles on
+// every OS, and only this path-shape test skips itself on Windows.
 func TestIsTrashRootMac(t *testing.T) {
 	// The inputs are macOS paths with forward slashes; isTrashRoot compares
 	// them with filepath, which uses backslashes on Windows.

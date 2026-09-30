@@ -31,8 +31,10 @@ func TestCheckRecordPaths(t *testing.T) {
 		{"unclean stored", with(func(r *trash.Record) { r.StoredPath = root + "/trash/files/../files/a.txt" }), true},
 		{"relative info", with(func(r *trash.Record) { r.InfoPath = "info/a.trashinfo" }), true},
 		{"unclean info", with(func(r *trash.Record) { r.InfoPath = root + "/trash/info/../info/a.trashinfo" }), true},
-		{"stored inside .git", with(func(r *trash.Record) { r.StoredPath = filepath.Join(root, "repo", ".git", "HEAD") }), true},
-		{"info inside .git", with(func(r *trash.Record) { r.InfoPath = filepath.Join(root, "repo", ".git", "x") }), true},
+		// A trash root may live below a directory named .git (for example a
+		// home path), so such stored paths must stay restorable.
+		{"stored below .git-named parent", with(func(r *trash.Record) { r.StoredPath = filepath.Join(root, ".git", "trash", "files", "a.txt") }), false},
+		{"info below .git-named parent", with(func(r *trash.Record) { r.InfoPath = filepath.Join(root, ".git", "trash", "info", "a.trashinfo") }), false},
 		{"stored equals destination", with(func(r *trash.Record) { r.StoredPath = orig }), true},
 		{"stored inside destination", with(func(r *trash.Record) { r.StoredPath = filepath.Join(orig, "x") }), true},
 		{"destination inside stored", with(func(r *trash.Record) { r.OriginalPath = filepath.Join(stored, "x") }), true},
@@ -63,7 +65,6 @@ func TestTrashUndoRefusesForgedRecordPaths(t *testing.T) {
 		{"relative stored path", trash.Record{StoredPath: "files/secret.txt"}},
 		{"traversing stored path", trash.Record{StoredPath: fx.path("t") + "/files/../../secret.txt"}},
 		{"relative info path", trash.Record{StoredPath: fx.path("t/files/a"), InfoPath: "a.trashinfo"}},
-		{"stored path inside git metadata", trash.Record{StoredPath: fx.path("proj/.git/config")}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

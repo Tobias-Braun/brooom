@@ -112,7 +112,8 @@ func statOwner(fi fs.FileInfo) (uid int, ok bool) {
 // makes the caller fall through to the next candidate. Both modes require
 // files/ and info/ to end up as real directories, the same condition Restore
 // enforces (checkRootOnDisk), so Remove never writes a record that Restore
-// would later refuse. The home trash is not checked for ownership or mode.
+// would later refuse. The home trash is not checked for ownership or mode, and its root may be
+// a symlink to a directory (strict topdir trashes never may).
 //
 // Known limits. A topdir trash on a filesystem without POSIX permissions
 // (vfat, exfat, ntfs) reports mode 0777 and is always rejected by the mode
@@ -122,24 +123,48 @@ func statOwner(fi fs.FileInfo) (uid int, ok bool) {
 // structural checks narrow the window but cannot close it.
 func (f *freedesktop) ensureTrashDir(dir string, strict bool) error {
 	if !strict {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return fmt.Errorf("cannot create trash directory %q: %w", dir, err)
+		if err := ensureHomeRoot(dir); err != nil {
+			return err
 		}
 	}
 	for _, d := range []string{dir, filepath.Join(dir, "files"), filepath.Join(dir, "info")} {
+		if !strict && d == dir {
+			continue // home root handled above; a symlink is allowed there
+		}
 		if err := os.Mkdir(d, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 			return fmt.Errorf("cannot create trash directory %q: %w", d, err)
 		}
-		if !strict {
-			fi, err := f.lstat(d)
-			if err != nil || !fi.IsDir() || fi.Mode()&fs.ModeSymlink != 0 {
-				return fmt.Errorf("trash directory %q is not a real directory", d)
-			}
-			continue
-		}
-		if err := f.checkTrashLevel(d); err != nil {
+		if err := f.checkLevel(d, strict); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// ensureHomeRoot creates the home trash root and its parents. The root may
+// legitimately be a symlink (for example to a trash on another disk); it only
+// has to resolve to a directory. files/ and info/ below it are still required
+// to be real directories by the caller.
+func ensureHomeRoot(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("cannot create trash directory %q: %w", dir, err)
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return fmt.Errorf("trash directory %q is not a directory", dir)
+	}
+	return nil
+}
+
+// checkLevel verifies one level made by ensureTrashDir: the full ownership and
+// mode check for a strict topdir trash, a real-directory check for the home
+// trash.
+func (f *freedesktop) checkLevel(d string, strict bool) error {
+	if strict {
+		return f.checkTrashLevel(d)
+	}
+	fi, err := f.lstat(d)
+	if err != nil || !fi.IsDir() || fi.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("trash directory %q is not a real directory", d)
 	}
 	return nil
 }
