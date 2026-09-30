@@ -237,7 +237,9 @@ func (f *freedesktop) checkRecord(r Record) (string, error) {
 // The home trash is the user's own tree and only has to keep files/ (and
 // info/, when the record names an info file) as real directories, since
 // Restore moves from and deletes inside them and a symlinked files/ would turn
-// that into access to an arbitrary directory.
+// that into access to an arbitrary directory. The check runs before the move
+// and is inherently subject to a time-of-check/time-of-use race; it defends
+// against stale or forged manifests, not against a concurrent local attacker.
 func (f *freedesktop) checkRootOnDisk(root string, withInfo bool) error {
 	if top := f.topdirOf(root); top != "" {
 		return f.checkTopdirRoot(root, top)

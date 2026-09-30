@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 )
@@ -67,6 +68,11 @@ func TestRestoreRefusesSymlinkedTrashDir(t *testing.T) {
 }
 
 func TestIsTrashRootMac(t *testing.T) {
+	// The inputs are macOS paths with forward slashes; isTrashRoot compares
+	// them with filepath, which uses backslashes on Windows.
+	if runtime.GOOS == "windows" {
+		t.Skip("macOS path shapes")
+	}
 	m := newMacTrash("/Users/me")
 	m.uid = 501
 	tests := []struct {

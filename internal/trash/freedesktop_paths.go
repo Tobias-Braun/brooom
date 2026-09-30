@@ -109,7 +109,17 @@ func statOwner(fi fs.FileInfo) (uid int, ok bool) {
 // lives on a mount other users may write to, so each level is verified with
 // checkTrashLevel right after it is made and before anything is created
 // below it (Mkdir below a planted symlink would write through it); a failure
-// makes the caller fall through to the next candidate.
+// makes the caller fall through to the next candidate. Both modes require
+// files/ and info/ to end up as real directories, the same condition Restore
+// enforces (checkRootOnDisk), so Remove never writes a record that Restore
+// would later refuse. The home trash is not checked for ownership or mode.
+//
+// Known limits. A topdir trash on a filesystem without POSIX permissions
+// (vfat, exfat, ntfs) reports mode 0777 and is always rejected by the mode
+// check; Remove then falls back to a copy into the home trash, and a
+// half-created .Trash-$uid directory may stay behind. The check between
+// this function and the later move is inherently racy (TOCTOU); the
+// structural checks narrow the window but cannot close it.
 func (f *freedesktop) ensureTrashDir(dir string, strict bool) error {
 	if !strict {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -121,6 +131,10 @@ func (f *freedesktop) ensureTrashDir(dir string, strict bool) error {
 			return fmt.Errorf("cannot create trash directory %q: %w", d, err)
 		}
 		if !strict {
+			fi, err := f.lstat(d)
+			if err != nil || !fi.IsDir() || fi.Mode()&fs.ModeSymlink != 0 {
+				return fmt.Errorf("trash directory %q is not a real directory", d)
+			}
 			continue
 		}
 		if err := f.checkTrashLevel(d); err != nil {
