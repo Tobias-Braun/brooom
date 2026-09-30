@@ -286,7 +286,8 @@ func notRestorable(explanation string) error {
 func gcHint(prune string) string {
 	return "not restorable; unreachable objects older than " + prune + " are deleted, and reflog entries older than " +
 		"gc.reflogExpire / gc.reflogExpireUnreachable (git defaults 90 / 30 days) are expired, so resets and deleted " +
-		"branches older than that cannot be recovered via the reflog."
+		"branches older than that cannot be recovered via the reflog. Stash entries (refs/stash) are kept: Brooom " +
+		"protects them for the run."
 }
 
 func gitPruneHint(date string) string {
@@ -294,7 +295,7 @@ func gitPruneHint(date string) string {
 }
 
 func reflogHint(date string) string {
-	return "reflog entries older than " + date + " were removed; deleted branches and reset commits older than this can no longer be recovered via the reflog"
+	return "reflog entries older than " + date + " were removed; deleted branches and reset commits older than this can no longer be recovered via the reflog; stash entries (refs/stash) were kept"
 }
 
 // Compile-time checks that the actions satisfy the interface.

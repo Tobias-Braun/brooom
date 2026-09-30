@@ -302,8 +302,10 @@ func TestReflogFinding(t *testing.T) {
 	}
 	a := x.SuggestedAction
 	if a.Type != findings.ActionGitReflogExpire || a.Args["expire"] != "30.days.ago" ||
-		a.Command != "git reflog expire --expire=30.days.ago --all" ||
-		!strings.Contains(a.Reason, "can no longer be used to recover deleted branches or reset commits") {
+		a.Command != gitx.ReflogExpireCommand("30.days.ago") ||
+		!strings.Contains(a.Command, "gc.refs/stash.reflogExpire=never") ||
+		!strings.Contains(a.Reason, "can no longer be used to recover deleted branches or reset commits") ||
+		!strings.Contains(a.Reason, "stash entries") {
 		t.Errorf("action: %+v", a)
 	}
 	if x.LastModified == nil {

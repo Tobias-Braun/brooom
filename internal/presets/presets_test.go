@@ -114,18 +114,66 @@ func TestMinConfidence(t *testing.T) {
 	}
 }
 
-func TestOnlyAggressiveSetsExpiry(t *testing.T) {
+// TestNoPresetLengthensExpiry pins the semantics: no preset changes the
+// defaults, and in particular the aggressive preset must not raise the
+// default 2.weeks.ago prune expiry to 90 days (which prunes less, not more).
+func TestNoPresetLengthensExpiry(t *testing.T) {
 	def := config.Default().Detectors.GitBloat
 	for _, name := range Names() {
 		got := Apply(config.Default(), mustGet(t, name)).Detectors.GitBloat
-		if name == Aggressive {
-			if got.ReflogExpire != "90.days.ago" || got.PruneExpire != "90.days.ago" {
-				t.Errorf("aggressive expiry: %q / %q", got.ReflogExpire, got.PruneExpire)
-			}
-			continue
-		}
 		if got.ReflogExpire != def.ReflogExpire || got.PruneExpire != def.PruneExpire {
-			t.Errorf("%s changed the expiry: %q / %q", name, got.ReflogExpire, got.PruneExpire)
+			t.Errorf("%s changed the default expiry: %q / %q", name, got.ReflogExpire, got.PruneExpire)
+		}
+	}
+}
+
+func TestAggressiveOnlyShortensConfiguredExpiry(t *testing.T) {
+	for _, tc := range []struct {
+		name, reflog, prune, wantReflog, wantPrune string
+	}{
+		{"longer reflog is shortened to the preset", "365.days.ago", "2.weeks.ago", "90.days.ago", "2.weeks.ago"},
+		{"weeks are compared in days", "20.weeks.ago", "13.weeks.ago", "90.days.ago", "90.days.ago"},
+		{"prune now stays now", "90.days.ago", "now", "90.days.ago", "now"},
+		{"shorter values stay", "30.days.ago", "1.day.ago", "30.days.ago", "1.day.ago"},
+		{"never is longer than any date", "never", "never", "90.days.ago", "90.days.ago"},
+		{"unparseable values are left alone", "2026-01-01", "yesterday", "2026-01-01", "yesterday"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := config.Default()
+			in.Detectors.GitBloat.ReflogExpire = tc.reflog
+			in.Detectors.GitBloat.PruneExpire = tc.prune
+			got := Apply(in, mustGet(t, Aggressive)).Detectors.GitBloat
+			if got.ReflogExpire != tc.wantReflog || got.PruneExpire != tc.wantPrune {
+				t.Errorf("expiry %q / %q, want %q / %q", got.ReflogExpire, got.PruneExpire, tc.wantReflog, tc.wantPrune)
+			}
+		})
+	}
+}
+
+func TestOtherPresetsLeaveConfiguredExpiryAlone(t *testing.T) {
+	for _, name := range []string{Safe, Standard} {
+		in := config.Default()
+		in.Detectors.GitBloat.ReflogExpire = "365.days.ago"
+		in.Detectors.GitBloat.PruneExpire = "now"
+		got := Apply(in, mustGet(t, name)).Detectors.GitBloat
+		if got.ReflogExpire != "365.days.ago" || got.PruneExpire != "now" {
+			t.Errorf("%s changed the configured expiry: %q / %q", name, got.ReflogExpire, got.PruneExpire)
+		}
+	}
+}
+
+func TestExpiryDays(t *testing.T) {
+	for in, want := range map[string]int{
+		"now": 0, "NOW": 0, "never": maxExpiryDays, "1.day.ago": 1, "90.days.ago": 90,
+		"2.weeks.ago": 14, "1.week.ago": 7, "0.days.ago": 0, " 3.days.ago ": 3,
+	} {
+		if got, ok := expiryDays(in); !ok || got != want {
+			t.Errorf("expiryDays(%q) = %d, %v; want %d", in, got, ok, want)
+		}
+	}
+	for _, in := range []string{"", "2026-01-01", "yesterday", "-1.days.ago", "1.month.ago", "1.5.days.ago", "99999999999999999999.days.ago"} {
+		if _, ok := expiryDays(in); ok {
+			t.Errorf("expiryDays(%q) parsed, want unknown", in)
 		}
 	}
 }

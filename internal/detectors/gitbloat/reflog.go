@@ -11,6 +11,7 @@ import (
 
 	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/findings"
+	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
@@ -87,8 +88,9 @@ func (d *Detector) reflogFinding(ctx context.Context, env *detect.Env, info *rep
 	f.SuggestedAction = findings.SuggestedAction{
 		Type:    findings.ActionGitReflogExpire,
 		Args:    map[string]string{"expire": expire},
-		Command: "git reflog expire --expire=" + expire + " --all",
-		Reason:  "expiring reflog entries older than " + expire + " shrinks the logs; expired reflog entries can no longer be used to recover deleted branches or reset commits",
+		Command: gitx.ReflogExpireCommand(expire),
+		Reason: "expiring reflog entries older than " + expire + " shrinks the logs; expired reflog entries can no longer be used to recover deleted branches or reset commits " +
+			"(stash entries are uncommitted work and are kept)",
 	}
 	return &f, nil
 }

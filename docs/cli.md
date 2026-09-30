@@ -650,16 +650,16 @@ each is validated with git's own dry run before it is offered.
   --gc                    run 'git gc --prune=<prune_expire>' on repositories
                           with a loose-object or pack finding (healthy
                           repositories are never touched)
-  --reflog-expire <date>  run 'git reflog expire --expire=<date> --all' on
-                          every repository in scope where it would remove
-                          entries
+  --reflog-expire <date>  run 'git reflog expire --all' with <date> as expiry
+                          (stash entries excepted) on every repository in
+                          scope where it would remove entries
   --prune <date>          run 'git prune --expire=<date>' on every repository
                           in scope where it would delete objects
 
 What they do:
 
-  * git gc: repacks loose objects and packs (this can take a while and rewrites packs), deletes unreachable objects older than the configured prune_expire, and also expires reflog entries per gc.reflogExpire / gc.reflogExpireUnreachable (git defaults 90 / 30 days) and runs 'git worktree prune' and 'git rerere gc'. Recovery points are lost too. Not restorable.
-  * git reflog expire: removes reflog entries older than the date. Deleted branches and reset commits older than that can no longer be recovered via the reflog (entries of unreachable commits also follow gc.reflogExpireUnreachable). Not restorable.
+  * git gc: repacks loose objects and packs (this can take a while and rewrites packs), deletes unreachable objects older than the configured prune_expire, and also expires reflog entries per gc.reflogExpire / gc.reflogExpireUnreachable (git defaults 90 / 30 days) and runs 'git worktree prune' and 'git rerere gc'. Recovery points are lost too. Stash entries (refs/stash) are kept: Brooom protects them even if gc.refs/stash.reflogExpire is set. Not restorable.
+  * git reflog expire: removes reflog entries older than the date. Deleted branches and reset commits older than that can no longer be recovered via the reflog (entries of unreachable commits also follow gc.reflogExpireUnreachable). Stash entries (refs/stash) are uncommitted work and are never expired; the plan counts the old ones that are kept. Not restorable.
   * git prune: deletes unreachable objects older than the date permanently; commits only reachable through them cannot be recovered. Not restorable.
 
 Dates use git's syntax, e.g. '90.days.ago', '2.weeks.ago' or '2026-01-01'. The order is fixed: reflog
@@ -917,7 +917,7 @@ Presets:
       - everything in standard
       - lower age thresholds: stale branches 30 days, worktrees 14 days, minimum age 7 days, inactive projects 30 days (never raised above your own values)
       - large untracked and ignored files
-      - git gc, reflog expiry and pruning with 90.days.ago expiry
+      - git gc, reflog expiry and pruning; expiries longer than 90.days.ago are shortened to it, shorter ones are kept
 
 Without --preset the config key sweep.preset decides (default "safe").
 --detector narrows the preset's detectors; it cannot add ones the preset

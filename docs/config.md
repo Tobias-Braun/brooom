@@ -55,7 +55,7 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `detectors.stale-branch` | enabled, `min_age_days` 90, `include_unpushed` | Stale branch detector. |
 | `detectors.merged-branch` | enabled, `mode` `ancestor+squash`, `include_remote` false | `mode` is `ancestor` or `ancestor+squash`. |
 | `detectors.worktrees` | enabled, `include_stale`, `min_age_days` 30 | Worktree detector. |
-| `detectors.git-bloat` | enabled, thresholds, `reflog_expire` `90.days.ago`, `prune_expire` `2.weeks.ago` | The two expiry values are passed to git as option values: they must be non-empty, contain no whitespace or control characters and must not start with `-`. |
+| `detectors.git-bloat` | enabled, thresholds, `reflog_expire` `90.days.ago`, `prune_expire` `2.weeks.ago` | The two expiry values are passed to git as option values: they must be non-empty, contain no whitespace or control characters and must not start with `-`. Reflog expiry never touches the stash reflog (`refs/stash`); stash entries are uncommitted work. The `aggressive` sweep preset shortens an expiry to `90.days.ago` only when it is longer (`N.days.ago`, `N.weeks.ago`, `now`, `never` are compared; other forms are left as configured). |
 | `detectors.large-untracked` | enabled, `min_size_bytes` 100 MiB, `include_ignored` | Large untracked files. |
 | `detectors.ai-artifacts` | enabled, `user_locations` false | Optional `tools`, `extra[]` catalog entries, `min_age_days`. |
 | `detectors.build-artifacts` | enabled, `inactive_days` 30 | Optional `dirs`, `extra_dirs`, both lists of `name` or `name:marker1,marker2` (see below). |
