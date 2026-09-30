@@ -1,0 +1,8 @@
+DETECTOR         FINDINGS  ACTIONABLE  RECLAIMABLE
+build-artifacts         4           4       1.3 GB
+merged-branch           2           1          0 B
+worktrees               1           0          0 B
+TOTAL                   7           5       1.3 GB
+
+Scan errors (1):
+  git-bloat /work/shop: git count-objects failed

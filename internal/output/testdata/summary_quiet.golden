@@ -1,0 +1,4 @@
+7 findings, 5 actionable, 1.3 GB reclaimable
+
+Scan errors (1):
+  git-bloat /work/shop: git count-objects failed

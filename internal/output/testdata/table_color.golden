@@ -1,0 +1,25 @@
+[1mbuild-artifacts - rebuildable build output (4)[0m
+    [2mSIZE[0m  [2mAGE[0m  [2mCONF[0m    [2mACTION[0m  [2mPATH[0m
+  1.0 MB  -    [33mmedium[0m  trash   dist
+  1.2 GB  1y   [32mhigh[0m    trash   node_modules
+500.0 MB  1mo  [2mlow[0m     trash   node_modules/.cache
+ 88.0 MB  6mo  [32mhigh[0m    trash   packages/storefront/.next/cache/webpack/client-production
+[2m4 findings, 4 actionable, 1.3 GB reclaimable[0m
+
+[1mmerged-branch - branches already merged into the base branch (2)[0m
+[2mSIZE[0m  [2mAGE[0m  [2mCONF[0m    [2mACTION[0m         [2mPATH[0m  [2mREF[0m            [2mFLAGS[0m
+   -  3mo  [32mhigh[0m    delete-branch  .     feat/old-cart  [33mgone[0m
+[2m   -  12d  medium  none           .     feat/wip       unpushed,no-remote[0m
+[2m  -> unpushed[0m
+[2m2 findings, 1 actionable, 0 B reclaimable[0m
+
+[1mworktrees (1)[0m
+   [2mSIZE[0m  [2mAGE[0m  [2mCONF[0m  [2mACTION[0m  [2mPATH[0m           [2mFLAGS[0m
+[2m52.0 MB  3d   low   none    /work/shop-wt  dirty[0m
+[2m  -> worktree has uncommitted changes[0m
+[2m1 finding, 0 actionable, 0 B reclaimable[0m
+
+[1m7 findings, 5 actionable, 1.3 GB reclaimable[0m
+
+[31mScan errors (1):[0m
+  git-bloat /work/shop: git count-objects failed
