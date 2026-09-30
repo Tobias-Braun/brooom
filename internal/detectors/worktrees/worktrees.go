@@ -48,7 +48,6 @@ package worktrees
 
 import (
 	"context"
-	"errors"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/detect"
@@ -151,8 +150,8 @@ type scan struct {
 }
 
 // newScan prepares the shared state. It returns nil (and no error) when the
-// detector is disabled for the target or the repository has no working
-// directory (bare).
+// detector is disabled for the target. A bare repository (the anchor of a bare
+// plus linked worktrees layout) is fine: only its own entry is skipped.
 func newScan(ctx context.Context, env *detect.Env, target scope.Target) (*scan, error) {
 	cfg, err := env.Config.ForTarget(target.Scope.Path, target.Path)
 	if err != nil {
@@ -165,10 +164,9 @@ func newScan(ctx context.Context, env *detect.Env, target scope.Target) (*scan, 
 	if err != nil {
 		return nil, err
 	}
-	main, err := repo.MainWorktree(ctx)
-	if errors.Is(err, gitx.ErrBareRepo) {
-		return nil, nil
-	}
+	// The anchor may be the bare repository of a bare plus linked worktrees
+	// layout; its own entry is skipped when worktrees are classified.
+	main, _, err := repo.Anchor(ctx)
 	if err != nil {
 		return nil, err
 	}

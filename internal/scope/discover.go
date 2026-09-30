@@ -354,24 +354,78 @@ func hasAncestorTarget(kinds map[string]TargetKind, p, root string) bool {
 // file whose first line starts with "gitdir:". Symlinked .git entries do not
 // count and other files named .git are ignored.
 func isGitDir(dir string) bool {
-	p := filepath.Join(dir, ".git")
-	fi, err := os.Lstat(p)
+	fi, err := os.Lstat(filepath.Join(dir, ".git"))
 	if err != nil {
 		return false
 	}
 	if fi.IsDir() {
 		return true
 	}
-	if !fi.Mode().IsRegular() {
-		return false
-	}
-	fh, err := os.Open(p)
+	target, ok := gitFileTarget(dir, fi)
+	return ok && !pointsAtBareRepo(dir, target)
+}
+
+// IsBareAnchor reports whether dir is the project folder of a "bare
+// repository plus linked worktrees" layout: its .git is a file pointing at a
+// bare repository, so the folder has no working tree of its own.
+func IsBareAnchor(dir string) bool {
+	fi, err := os.Lstat(filepath.Join(dir, ".git"))
 	if err != nil {
 		return false
+	}
+	target, ok := gitFileTarget(dir, fi)
+	return ok && pointsAtBareRepo(dir, target)
+}
+
+// gitFileTarget returns the "gitdir:" target of dir's .git entry fi when it
+// is a regular file whose first line is such a pointer.
+func gitFileTarget(dir string, fi os.FileInfo) (string, bool) {
+	if !fi.Mode().IsRegular() {
+		return "", false
+	}
+	fh, err := os.Open(filepath.Join(dir, ".git"))
+	if err != nil {
+		return "", false
 	}
 	defer fh.Close()
 	buf := make([]byte, 512)
 	n, _ := io.ReadFull(fh, buf)
 	line, _, _ := bytes.Cut(buf[:n], []byte("\n"))
-	return bytes.HasPrefix(line, []byte("gitdir:"))
+	target, ok := bytes.CutPrefix(line, []byte("gitdir:"))
+	return string(target), ok
 }
+
+// pointsAtBareRepo reports whether the "gitdir:" target of the .git file in
+// dir is a bare repository. That is the anchor of the "bare repository plus
+// linked worktrees" layout (proj/.git containing "gitdir: ./.bare"): the
+// folder has no working tree of its own, so it is not a repository target
+// and discovery continues to the linked worktrees below it. Anything
+// unreadable counts as not bare, keeping the folder a repository as before.
+func pointsAtBareRepo(dir, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	p := filepath.FromSlash(target)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(dir, p)
+	}
+	fh, err := os.Open(filepath.Join(p, "config"))
+	if err != nil {
+		return false
+	}
+	defer fh.Close()
+	buf := make([]byte, gitConfigProbeSize)
+	n, _ := io.ReadFull(fh, buf)
+	for _, l := range strings.Split(string(buf[:n]), "\n") {
+		key, val, ok := strings.Cut(l, "=")
+		if ok && strings.EqualFold(strings.TrimSpace(key), "bare") {
+			return strings.EqualFold(strings.TrimSpace(val), "true")
+		}
+	}
+	return false
+}
+
+// gitConfigProbeSize bounds how much of a git config is read to find the
+// core.bare flag, which git writes at the top of the file.
+const gitConfigProbeSize = 4096

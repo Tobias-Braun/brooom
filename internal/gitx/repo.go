@@ -183,8 +183,20 @@ func Open(ctx context.Context, r Runner, dir string) (*Repo, error) {
 	return open(ctx, r, dir, false)
 }
 
+// OpenAnchor is Open that also accepts the bare repository of the "bare
+// repository plus linked worktrees" layout, the anchor a repository reports
+// as first worktree. The handle's Dir is then the bare git directory, where
+// branch and worktree commands run just as well as in a checkout.
+func OpenAnchor(ctx context.Context, r Runner, dir string) (*Repo, error) {
+	return openWith(ctx, r, dir, false, resolveAnchor)
+}
+
 func open(ctx context.Context, r Runner, dir string, memoize bool) (*Repo, error) {
-	top, common, err := resolveRepo(ctx, r, dir)
+	return openWith(ctx, r, dir, memoize, resolveRepo)
+}
+
+func openWith(ctx context.Context, r Runner, dir string, memoize bool, resolve resolver) (*Repo, error) {
+	top, common, err := resolve(ctx, r, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -209,6 +221,23 @@ func resolveRepo(ctx context.Context, r Runner, dir string) (top, common string,
 	}
 	common, err = CommonDir(ctx, r, dir)
 	return top, common, err
+}
+
+// resolver locates the top level and common dir of the repository around dir.
+type resolver func(ctx context.Context, r Runner, dir string) (top, common string, err error)
+
+// resolveAnchor is resolveRepo for a directory that may be the bare
+// repository of a bare-plus-linked-worktrees layout: it has no working tree,
+// so the git directory itself stands in for the top level.
+func resolveAnchor(ctx context.Context, r Runner, dir string) (top, common string, err error) {
+	top, common, err = resolveRepo(ctx, r, dir)
+	if !errors.Is(err, ErrBareRepo) {
+		return top, common, err
+	}
+	if common, err = CommonDir(ctx, r, dir); err != nil {
+		return "", "", err
+	}
+	return common, common, nil
 }
 
 // absCommonDir makes the --git-common-dir output absolute relative to dir.
@@ -266,17 +295,31 @@ func MainWorktree(ctx context.Context, r Runner, dir string) (string, error) {
 // MainWorktree returns the path of the repository's main worktree, the first
 // entry of `git worktree list`.
 func (r *Repo) MainWorktree(ctx context.Context) (string, error) {
-	wts, err := r.ListWorktrees(ctx)
+	path, bare, err := r.Anchor(ctx)
 	if err != nil {
 		return "", err
 	}
-	if len(wts) == 0 {
-		return "", ErrNotRepo
-	}
-	if wts[0].Bare {
+	if bare {
 		return "", ErrBareRepo
 	}
-	return wts[0].Path, nil
+	return path, nil
+}
+
+// Anchor returns the first entry of `git worktree list`, the location git
+// treats as the repository's home, and whether it is bare. In the bare
+// repository plus linked worktrees layout the anchor is the bare directory
+// (for example proj/.bare): it has no files to sweep, but branch and
+// worktree commands run there and it identifies the repository, so the
+// branch and worktree detectors use it in place of a main worktree.
+func (r *Repo) Anchor(ctx context.Context) (path string, bare bool, err error) {
+	wts, err := r.ListWorktrees(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	if len(wts) == 0 {
+		return "", false, ErrNotRepo
+	}
+	return wts[0].Path, wts[0].Bare, nil
 }
 
 // NormalizePath converts a path printed by git (forward slashes on Windows)
@@ -342,13 +385,23 @@ func NewCache(runner Runner) *Cache {
 // only asked outside the cache lock, so a slow repository never stalls the
 // lookups of the others.
 func (c *Cache) Repo(ctx context.Context, dir string) (*Repo, error) {
+	return c.repo(ctx, dir, resolveRepo)
+}
+
+// AnchorRepo is Repo that also accepts the bare repository of a bare plus
+// linked worktrees layout, see OpenAnchor.
+func (c *Cache) AnchorRepo(ctx context.Context, dir string) (*Repo, error) {
+	return c.repo(ctx, dir, resolveAnchor)
+}
+
+func (c *Cache) repo(ctx context.Context, dir string, resolve resolver) (*Repo, error) {
 	c.mu.Lock()
 	r, ok := c.byDir[dir]
 	c.mu.Unlock()
 	if ok {
 		return r, nil
 	}
-	top, common, err := resolveRepo(ctx, c.runner, dir)
+	top, common, err := resolve(ctx, c.runner, dir)
 	if err != nil {
 		return nil, err
 	}

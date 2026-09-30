@@ -175,7 +175,7 @@ func (d *Detector) load(ctx context.Context, env *detect.Env, target scope.Targe
 	if err != nil {
 		return nil, fmt.Errorf("merged-branch: open %q: %w", target.Path, err)
 	}
-	main, err := repo.MainWorktree(ctx)
+	main, _, err := repo.Anchor(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("merged-branch: main worktree of %q: %w", target.Path, err)
 	}

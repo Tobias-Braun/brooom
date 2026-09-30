@@ -71,7 +71,7 @@ func openRepoDir(ctx context.Context, env *Env, dir string) (*gitx.Repo, error) 
 	case err != nil:
 		return nil, skipf("cannot resolve repository %s: %v", dir, err)
 	}
-	repo, err := gitx.Open(ctx, env.Git, resolved)
+	repo, err := gitx.OpenAnchor(ctx, env.Git, resolved)
 	switch {
 	case errors.Is(err, gitx.ErrUnsafeRepo):
 		return nil, skipf("skipped: %v", err)
@@ -490,7 +490,7 @@ func deregisterMissing(ctx context.Context, env *Env, repo *gitx.Repo, path stri
 		return fmt.Errorf("git worktree remove %s: %w (fallback failed: %w)", path, gitErr, err)
 	}
 	// A fresh handle: the one in repo may cache its worktree list.
-	fresh, err := gitx.Open(ctx, env.Git, repo.Dir)
+	fresh, err := gitx.OpenAnchor(ctx, env.Git, repo.Dir)
 	if err != nil {
 		return fmt.Errorf("worktree: reopen %s after the fallback: %w", repo.Dir, err)
 	}

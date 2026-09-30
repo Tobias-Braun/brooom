@@ -23,8 +23,9 @@ import (
 // Messages of the usage errors of target selection. They say how to fix the
 // invocation because these are the errors a new user meets first.
 var (
-	errNotInRepo = fmt.Errorf("%w; run it inside a repo, use --workspaces, or configure roots with `brooom roots add <path>`", scope.ErrNotInRepo)
-	errNoRoots   = errors.New("no workspace roots available for --workspaces; add one with `brooom roots add <path>`")
+	errNotInRepo  = fmt.Errorf("%w; run it inside a repo, use --workspaces, or configure roots with `brooom roots add <path>`", scope.ErrNotInRepo)
+	errBareAnchor = errors.New("this folder is the bare repository of a bare plus linked worktrees layout and has no working tree; run brooom inside one of its worktrees or use --workspaces")
+	errNoRoots    = errors.New("no workspace roots available for --workspaces; add one with `brooom roots add <path>`")
 )
 
 // targetSet is what target building produces: the targets to scan, the
@@ -112,6 +113,11 @@ func repoTargets(ctx context.Context, runner gitx.Runner) (*targetSet, error) {
 	}
 	if !isLinkedWorktree(root) {
 		return ts, nil
+	}
+	if scope.IsBareAnchor(root) {
+		// Nothing to sweep here, and saying so as "0 findings" would be
+		// misleading: the files live in the linked worktrees below.
+		return nil, usageError{errBareAnchor}
 	}
 	ts.allowMainWorktree(ctx, runner, root)
 	return ts, nil
