@@ -69,6 +69,12 @@ func (s *scan) command(e *entry, a findings.ActionType) string {
 
 func (s *scan) meta(e *entry) map[string]string {
 	m := map[string]string{"repo": s.main, "head": e.wt.Head, "branch": e.wt.Branch}
+	// The remove action compares fresh file mtimes with LastModified; that is
+	// meaningless when LastModified is the HEAD commit time (see lastModified).
+	m["mtime_source"] = "commit"
+	if e.sized && !e.sum.NewestModTime.IsZero() {
+		m["mtime_source"] = "walk"
+	}
 	if e.wt.LockReason != "" {
 		m["locked_reason"] = e.wt.LockReason
 	}

@@ -59,6 +59,12 @@ func evaluatePrune(ctx context.Context, env *Env, f findings.Finding) (*gitx.Rep
 // become unreachable. The detector already withholds the action for such
 // worktrees, but a finding may come from a report file or an older version,
 // so apply time re-checks. A failing check counts as unknown and refuses.
+//
+// The two checks differ on purpose. The action asks only "would the commit
+// survive the removal?", so any local branch, remote branch or tag qualifies:
+// each keeps the objects reachable and the user's own branch is theirs to
+// keep. The detector asks the stricter "is the work safely published?" and
+// accepts only the base branch or a remote, because it recommends deleting.
 func checkDetachedHead(ctx context.Context, env *Env, repo *gitx.Repo, wt gitx.Worktree) error {
 	if !wt.Detached || wt.Head == "" {
 		return nil

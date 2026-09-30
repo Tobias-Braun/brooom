@@ -344,6 +344,14 @@ uncommitted and ignored content (`Repo.IgnoredEntries`, `git ls-files -o -i
 --exclude-standard --directory`). Afterwards `git worktree remove -- <missing
 path>` drops only that registration (never `worktree prune`, which would take
 unrelated entries too); a failure keeps the trash record and `Restorable`.
+Git older than the releases that accept a missing path may refuse that
+command, so the action then falls back to deleting the one
+`<common>/worktrees/<id>` directory whose `gitdir` file names the moved path
+(refused when it holds a `locked` file, verified by a fresh worktree list).
+The drift check (`checkUnmodified`) is skipped for findings whose
+`Meta["mtime_source"]` is `commit` (the detector had no file mtime and used the
+HEAD commit time); `walk` and a missing key are compared. The plan states the
+counts of uncommitted and ignored entries.
 The `delete` strategy refuses a dirty worktree or one with ignored files even
 with `--force`; a worktree with neither is removed by plain `git worktree
 remove` (git's `--force` is never passed). Undo re-adds plain removals (branch
