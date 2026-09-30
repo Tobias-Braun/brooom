@@ -34,7 +34,7 @@ func save(path string, cfg *Config, full bool) error {
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", path, err)
 	}
-	return writeFileAtomic(path, data, 0o600)
+	return WriteFileAtomic(path, data, 0o600)
 }
 
 // Marshal renders cfg as indented JSON with a trailing newline. With full it
@@ -108,12 +108,12 @@ func diffStruct(t reflect.Type, cur, def map[string]any) map[string]any {
 	return out
 }
 
-// writeFileAtomic writes data to path so that readers see either the old or
+// WriteFileAtomic writes data to path so that readers see either the old or
 // the complete new content: a temp file in the same directory (same
 // filesystem, so the rename is atomic) is written, fsynced, given mode and
 // renamed over the target. The temp file is removed on any failure and an
 // existing target stays untouched.
-func writeFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
+func WriteFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create directory %s: %w", dir, err)

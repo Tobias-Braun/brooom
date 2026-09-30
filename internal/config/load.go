@@ -42,16 +42,28 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	return Parse(path, data)
+}
+
+// Parse decodes and validates config file content exactly like Load does
+// after reading the file; label (normally the path) prefixes every error.
+// It exists so callers that rewrite the file (`brooom roots add`) can check
+// the bytes they are about to write with the very same rules as Load, before
+// anything reaches the disk.
+func Parse(label string, data []byte) (*Config, error) {
+	if len(data) > maxConfigBytes {
+		return nil, fmt.Errorf("%s: content is larger than the %d KiB limit", label, maxConfigBytes>>10)
+	}
 	cfg := Default()
-	if err := decodeStrict(path, data, cfg); err != nil {
+	if err := decodeStrict(label, data, cfg); err != nil {
 		return nil, err
 	}
 	normalizeNulls(cfg)
 	if cfg.Version < 1 || cfg.Version > CurrentVersion {
-		return nil, fmt.Errorf("%s: version: %s", path, versionMessage(cfg.Version, CurrentVersion))
+		return nil, fmt.Errorf("%s: version: %s", label, versionMessage(cfg.Version, CurrentVersion))
 	}
 	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", label, err)
 	}
 	return cfg, nil
 }
