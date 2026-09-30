@@ -95,7 +95,7 @@ func TestMergedIntoSpawnCount(t *testing.T) {
 
 	cachedResults := map[string]gitx.MergeResult{}
 	for _, n := range names {
-		res, err := handle.MergedInto(ctx, "main", n, true)
+		res, err := handle.MergedInto(ctx, "refs/heads/main", "refs/heads/"+n, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -109,7 +109,7 @@ func TestMergedIntoSpawnCount(t *testing.T) {
 	// handle, which asks git per branch.
 	plain := openRepo(t, execRunner(t), repo.Dir)
 	for _, n := range names {
-		want, err := plain.MergedInto(ctx, "main", n, true)
+		want, err := plain.MergedInto(ctx, "refs/heads/main", "refs/heads/"+n, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,7 +141,7 @@ func TestBaseCommitsAreDiffedOnce(t *testing.T) {
 	spy := &spyRunner{inner: execRunner(t)}
 	handle := cachedRepo(t, spy, repo.Dir)
 	for _, n := range names {
-		if res, err := handle.MergedInto(ctx, "main", n, true); err != nil || res.Merged {
+		if res, err := handle.MergedInto(ctx, "refs/heads/main", "refs/heads/"+n, true); err != nil || res.Merged {
 			t.Fatalf("%s: %+v, %v; want not merged", n, res, err)
 		}
 	}
@@ -165,10 +165,10 @@ func TestSquashMergedAfterBaseMoved(t *testing.T) {
 	repo.Checkout("main")
 
 	handle := cachedRepo(t, execRunner(t), repo.Dir)
-	if res, err := handle.MergedInto(ctx, "main", "feat", true); err != nil || res.Method != gitx.MethodSquash {
+	if res, err := handle.MergedInto(ctx, "refs/heads/main", "refs/heads/feat", true); err != nil || res.Method != gitx.MethodSquash {
 		t.Errorf("feat: %+v, %v; want squash", res, err)
 	}
-	if res, err := handle.MergedInto(ctx, "main", "other", true); err != nil || res.Merged {
+	if res, err := handle.MergedInto(ctx, "refs/heads/main", "refs/heads/other", true); err != nil || res.Merged {
 		t.Errorf("other: %+v, %v; want not merged", res, err)
 	}
 }
