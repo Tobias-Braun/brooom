@@ -356,8 +356,12 @@ A branch that a paused rebase or bisect will return to (`head-name`,
 (`OperationBranch`); branch detectors then flag `current_branch` and
 `delete-branch` refuses it.
 
-`gitx.Open` and `gitx.Cache.Repo` enforce `MinGitVersion` once per handle:
-an older or unparseable git is an error (`ErrGitTooOld`). On git older than
+`gitx.Open` enforces `MinGitVersion` per handle, `gitx.Cache.Repo` once per
+cache: the version is resolved outside the cache-wide lock, only a success is
+kept (a cancelled context fails that lookup and does not poison the scan) and
+every new handle is pre-seeded with it; new repositories are resolved and
+built outside the lock and inserted with a re-check. An older or unparseable
+git is an error (`ErrGitTooOld`). On git older than
 2.31, which has no `locked` porcelain token, `ListWorktrees` reads
 `<common>/worktrees/<id>/locked` and treats a worktree whose state cannot be
 determined as locked.
@@ -699,6 +703,32 @@ used" stamp). `walk.PruneCache` deletes `dirsize-v1-*.json` files unused for 30
 days, unreadable or oversized ones, those of vanished roots (`CheckRoots`) and
 old temp files. It runs by age once per process on the first cache write and in
 full via `brooom purge`.
+
+### Branch classification and delete-branch planning
+
+`merged-branch` and `stale-branch` classify the branches of one repository with
+a bounded worker pool (`detect.MapOrdered`, `detect.BranchWorkers`); workers
+return their result and the detector consumes them in branch order, so output
+does not depend on scheduling. On cached handles `gitx` answers "base has
+nothing the branch lacks" for all refs with one batched
+`for-each-ref --format=%(ahead-behind:<base>)` (git 2.41; older git falls back
+to the per-branch queries), which skips the merge-base and rev-list processes
+of the squash check for fresh branches. With the scan cache enabled
+(`scan.cache`), squash/rebase verdicts are also stored in
+`<cache>/verdicts/<key>.json`, keyed by the resolved base sha, tip sha, diff
+flags and both safety caps plus a format version. Only definite answers are
+stored, never truncated or failed checks; unreadable or inconsistent files are
+misses; only scan handles (`Cache.SetVerdictDir`) read the store, so actions,
+which use uncached handles, always verify against the live repository. Verdict
+files are tiny and not pruned automatically; the whole cache directory is safe
+to delete.
+
+One `Executor.Plan` pass shares a `gitx.Cache` between its findings (carried in
+the context, `action/plansnap.go`), so the branch listing, base branch,
+worktrees and open pull requests are read once per repository instead of per
+finding. Apply and the re-plan that precedes it never get a snapshot: they keep
+the live per-finding checks (a snapshot is deliberately not shared between
+Plan and Apply).
 
 ### Open files (`internal/procs`)
 

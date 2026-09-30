@@ -372,7 +372,14 @@ func openRepo(ctx context.Context, env *Env, f findings.Finding) (*gitx.Repo, er
 	if err != nil {
 		return nil, skipf("repository outside allowed roots or unresolvable: %v", err)
 	}
-	repo, err := gitx.Open(ctx, env.Git, path)
+	// A Plan pass shares one memoizing handle per repository; Apply opens an
+	// uncached one so it sees the repository as it is now.
+	var repo *gitx.Repo
+	if snap := planSnapshotFrom(ctx); snap != nil {
+		repo, err = snap.cache.Repo(ctx, path)
+	} else {
+		repo, err = gitx.Open(ctx, env.Git, path)
+	}
 	if errors.Is(err, gitx.ErrUnsafeRepo) {
 		return nil, skipf("skipped: %v", err)
 	}

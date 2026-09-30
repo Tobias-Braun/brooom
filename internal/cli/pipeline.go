@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -338,6 +339,11 @@ func newEnv(req *scanRequest, runner gitx.Runner, guard *scope.Guard) (*detect.E
 			return nil, err
 		}
 		env.CacheDir = dirs.Cache
+		if env.Repos != nil {
+			// Squash verdicts are pure functions of two commits, so they
+			// survive between scans; scan.cache=false keeps them off.
+			env.Repos.SetVerdictDir(filepath.Join(dirs.Cache, "verdicts"))
+		}
 	}
 	return env, nil
 }

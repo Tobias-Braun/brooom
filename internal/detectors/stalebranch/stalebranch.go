@@ -89,17 +89,22 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	// one broken branch must not hide the others, but it must show up as a
 	// scan error instead of silently missing from the report.
 	var errs []error
-	for _, b := range branches {
-		if err := ctx.Err(); err != nil {
-			return err
+	// A bounded worker pool assesses the branches (each costs several git
+	// processes); results are consumed in branch order so findings, errors and
+	// the "first failed branch" of the aggregate do not depend on scheduling.
+	for _, a := range detect.MapOrdered(ctx, branches, detect.BranchWorkers, s.assess) {
+		if a.mergedErr != nil {
+			s.mergedFail.record(a.branch, a.mergedErr)
 		}
-		f, ok, err := s.assess(ctx, b)
-		if err != nil {
-			errs = append(errs, err)
+		if a.err != nil {
+			errs = append(errs, a.err)
 		}
-		if ok {
-			emit(f)
+		if a.ok {
+			emit(a.finding)
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := s.mergedFail.error(s.base.Ref); err != nil {
 		errs = append(errs, err)
@@ -196,19 +201,20 @@ func (m *mergedFailure) error(base string) error {
 
 // mergedSkip reports whether merged-branch owns the branch. It uses the same
 // MergedInto call and mode as that detector so the two never disagree. A
-// failure means unknown, which is never treated as merged; it is recorded in
-// s.mergedFail and surfaced once per repository by Detect.
-func (s *scan) mergedSkip(ctx context.Context, name string) bool {
+// failure means unknown, which is never treated as merged; it is returned so
+// Detect can record it in s.mergedFail (in branch order) and surface it once
+// per repository. It is safe for concurrent use.
+func (s *scan) mergedSkip(ctx context.Context, name string) (skip bool, failure error) {
 	if !s.hasBase {
-		return false
+		return false, nil
 	}
 	squash := s.cfg.Detectors.MergedBranch.Mode == config.MergeAncestorSquash
 	res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/heads/"+name, squash)
 	if err != nil {
 		if ctx.Err() == nil {
-			s.mergedFail.record(name, err)
+			return false, err
 		}
-		return false
+		return false, nil
 	}
-	return res.Merged
+	return res.Merged, nil
 }

@@ -152,6 +152,8 @@ func (e *Executor) planSteps(ctx context.Context, fs []findings.Finding, p *Plan
 	var out []planned
 	// One open-file check for the whole plan instead of one per finding.
 	ctx = e.batchOpenCheck(ctx, fs)
+	// Shared git state for this pass only (see planSnapshot).
+	ctx = withPlanSnapshot(ctx, e.env)
 	for i, f := range fs {
 		// After Ctrl-C the remaining findings are reported as interrupted;
 		// asking their actions would only produce "context canceled" failures.

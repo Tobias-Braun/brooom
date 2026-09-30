@@ -98,10 +98,21 @@ type scan struct {
 // fail records a non-fatal per-branch problem. Context cancellation is not
 // recorded; the engine reports the interruption itself.
 func (s *scan) fail(ctx context.Context, what string, err error) {
-	if ctx.Err() != nil {
-		return
+	if e := s.wrap(ctx, what, err); e != nil {
+		s.errs = append(s.errs, e)
 	}
-	s.errs = append(s.errs, fmt.Errorf("merged-branch: %s: %w", what, err))
+}
+
+// wrap builds the scan error for a failed check, or nil when the failure is
+// the cancellation itself. A genuine git failure is kept even if the context
+// was cancelled meanwhile: with concurrent workers the cancel can land before
+// a sibling's unrelated error is recorded, and that error must not vanish.
+// Unlike fail it records nothing, so workers can return it.
+func (s *scan) wrap(ctx context.Context, what string, err error) error {
+	if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		return nil //nolint:nilerr // the engine reports the interruption itself
+	}
+	return fmt.Errorf("merged-branch: %s: %w", what, err)
 }
 
 const (
@@ -121,13 +132,17 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	}
 	// Every early return joins the errors collected so far: a scan that stops
 	// half way must still report the branches it could not classify.
-	for _, b := range s.branches {
-		if err := ctx.Err(); err != nil {
-			return s.joined(err)
+	// Branches are classified by a bounded worker pool (each costs several git
+	// processes), but findings and errors are consumed in branch order, so the
+	// output does not depend on scheduling.
+	for _, o := range detect.MapOrdered(ctx, s.branches, detect.BranchWorkers, s.localBranch) {
+		s.errs = append(s.errs, o.errs...)
+		if o.finding != nil {
+			emit(*o.finding)
 		}
-		if err := s.localBranch(ctx, b); err != nil {
-			return s.joined(err)
-		}
+	}
+	if err := ctx.Err(); err != nil {
+		return s.joined(err)
 	}
 	if s.cfg.Detectors.MergedBranch.IncludeRemote {
 		if err := s.remoteBranches(ctx); err != nil {
@@ -215,26 +230,42 @@ func (s *scan) tipOf(ctx context.Context) string {
 	return ""
 }
 
-// localBranch classifies one local branch and emits a finding when merged.
-func (s *scan) localBranch(ctx context.Context, b gitx.Branch) error {
+// outcome is what classifying one branch produced: a finding when merged and
+// the non-fatal errors of the checks. Workers return it instead of emitting or
+// recording, which keeps the shared scan free of writes.
+type outcome struct {
+	finding *findings.Finding
+	errs    []error
+}
+
+// localBranch classifies one local branch. It is safe for concurrent use.
+func (s *scan) localBranch(ctx context.Context, b gitx.Branch) outcome {
 	if gitx.IsBaseBranch(s.base, s.cfg.Git.BaseBranches, b.Name) {
-		return nil
+		return outcome{}
 	}
-	if s.unstarted(ctx, b) || s.belowAgeFloor(b.Date) {
-		return nil
+	skip, err := s.unstarted(ctx, b)
+	if skip || s.belowAgeFloor(b.Date) {
+		return outcome{errs: errorsOf(err)}
 	}
 	res, err := s.repo.MergedInto(ctx, s.base.FullRef, "refs/heads/"+b.Name, s.squash)
 	if err != nil {
 		// One unclassifiable branch must not hide the others, but it must
 		// not vanish silently either.
-		s.fail(ctx, fmt.Sprintf("classify branch %q in %q", b.Name, s.target.Path), err)
-		return ctx.Err()
+		return outcome{errs: errorsOf(s.wrap(ctx, fmt.Sprintf("classify branch %q in %q", b.Name, s.target.Path), err))}
 	}
 	if !res.Merged {
+		return outcome{}
+	}
+	f := s.buildFinding(ctx, b, res.Method)
+	return outcome{finding: &f}
+}
+
+// errorsOf turns an optional error into a slice for outcome.errs.
+func errorsOf(err error) []error {
+	if err == nil {
 		return nil
 	}
-	s.emit(s.buildFinding(ctx, b, res.Method))
-	return nil
+	return []error{err}
 }
 
 // belowAgeFloor applies the user's raised thresholds.min_age_days to the tip
@@ -252,24 +283,22 @@ func (s *scan) belowAgeFloor(date time.Time) bool {
 // from an agent branch that was committed on and then fast-forward merged,
 // which also sits on the base tip and was never pushed under its own name.
 // Failing checks are recorded and count as unstarted, the conservative side.
-func (s *scan) unstarted(ctx context.Context, b gitx.Branch) bool {
+func (s *scan) unstarted(ctx context.Context, b gitx.Branch) (bool, error) {
 	if s.baseTip == "" || b.Tip != s.baseTip {
-		return false
+		return false, nil
 	}
 	never, err := s.repo.NeverPushed(ctx, b)
 	if err != nil {
-		s.fail(ctx, fmt.Sprintf("check pushes of branch %q in %q", b.Name, s.target.Path), err)
-		return true
+		return true, s.wrap(ctx, fmt.Sprintf("check pushes of branch %q in %q", b.Name, s.target.Path), err)
 	}
 	if !never {
-		return false
+		return false, nil
 	}
 	created, err := s.repo.BranchCreatedOnly(ctx, b.Name)
 	if err != nil {
-		s.fail(ctx, fmt.Sprintf("read reflog of branch %q in %q", b.Name, s.target.Path), err)
-		return true
+		return true, s.wrap(ctx, fmt.Sprintf("read reflog of branch %q in %q", b.Name, s.target.Path), err)
 	}
-	return created
+	return created, nil
 }
 
 func (s *scan) newFinding(ref, tip string, date time.Time) findings.Finding {
