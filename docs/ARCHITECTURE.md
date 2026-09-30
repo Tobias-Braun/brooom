@@ -249,6 +249,31 @@ bind mounts or hard links of `.git` under another parent are not (the scope
 guard is the defence there). `ErrRestoreConflict` and `ErrNotRestorable` are
 passed through.
 
+#### The `delete-branch` action
+
+`internal/action/deletebranch.go` deletes with `git branch -d` and reads the
+sha git reports as deleted, which is what the manifest records. Every `-D`
+(chosen up front or escalated after git refuses `-d`) instead runs
+`git update-ref -d refs/heads/<name> <verified tip>` after re-checking that no
+worktree has the branch checked out, so a branch that moved after
+re-validation is skipped ("branch moved during apply") and never deleted (the
+checked-out check is best effort: a worktree created between it and
+`update-ref` is not caught; the `-d` path is not compare-and-swap, git itself
+refuses unmerged branches there);
+`branch.<name>.*` is then removed like `git branch -D` does. Before deleting,
+`branch.<name>.remote/merge` are recorded in `Entry.Undo`
+(`upstream_remote`, `upstream_merge`). Undo validates them (name shape, git's
+`check-ref-format`), and only when it created the branch restores them with
+`git branch --set-upstream-to` if the remote-tracking ref exists, else by
+writing the two config keys.
+
+Dubious ownership: `gitx.Open` returns `ErrNotRepo` only for git's "not a git
+repository"; a repository git refuses because another user owns it is an
+`*gitx.UnsafeRepoError` (`errors.Is(err, gitx.ErrUnsafeRepo)`) carrying git's
+message and the `safe.directory` hint, and other failures keep their stderr.
+`detect.Run` reports it once per repository as "skipped: dubious ownership ...",
+`git purge` and the worktree and branch actions report it as a visible skip.
+
 #### The worktree actions
 
 `internal/action/worktree.go` (plus `worktree_undo.go`, `worktree_prune.go`)

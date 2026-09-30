@@ -603,7 +603,7 @@ func TestDeleteBranchRunEscalation(t *testing.T) {
 			}
 			fx.env.Force = tc.force
 			d.flag = flagSafe
-			err = d.run(context.Background(), fx.env)
+			_, err = d.run(context.Background(), fx.env)
 			if tc.wantGone == fx.branchExists("feat/x") {
 				t.Fatalf("branch exists = %v, run err = %v", !tc.wantGone, err)
 			}

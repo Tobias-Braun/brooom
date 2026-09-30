@@ -69,6 +69,8 @@ func openRepoDir(ctx context.Context, env *Env, dir string) (*gitx.Repo, error) 
 	}
 	repo, err := gitx.Open(ctx, env.Git, resolved)
 	switch {
+	case errors.Is(err, gitx.ErrUnsafeRepo):
+		return nil, skipf("skipped: %v", err)
 	case errors.Is(err, gitx.ErrNotRepo), errors.Is(err, gitx.ErrBareRepo):
 		return nil, skipf("%s is not a usable git repository any more", resolved)
 	case err != nil:

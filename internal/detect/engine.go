@@ -2,11 +2,13 @@ package detect
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"sync"
 
 	"github.com/Tobias-Braun/brooom/internal/findings"
+	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 )
 
@@ -49,7 +51,11 @@ func Run(ctx context.Context, env *Env, targets []scope.Target, detectors []Dete
 		seen  = map[string]bool{}
 		found []findings.Finding
 		errs  []findings.ScanError
-		wg    sync.WaitGroup
+		// unsafeSeen holds the target paths already reported as dubious
+		// ownership, so every affected repository yields a single line no
+		// matter how many detectors ran on it.
+		unsafeSeen = map[string]bool{}
+		wg         sync.WaitGroup
 	)
 	emit := func(f findings.Finding) {
 		mu.Lock()
@@ -63,10 +69,11 @@ func Run(ctx context.Context, env *Env, targets []scope.Target, detectors []Dete
 			opts.OnFinding(f)
 		}
 	}
-	addErr := func(e findings.ScanError) {
+	// addErr records a detector failure under the mutex.
+	addErr := func(p pair, err error) {
 		mu.Lock()
-		errs = append(errs, e)
-		mu.Unlock()
+		defer mu.Unlock()
+		errs = appendScanError(errs, unsafeSeen, p, err)
 	}
 	work := make(chan pair)
 	for i := 0; i < n; i++ {
@@ -78,7 +85,7 @@ func Run(ctx context.Context, env *Env, targets []scope.Target, detectors []Dete
 					continue // drain so the producer can finish
 				}
 				if err := safeDetect(ctx, env, p, emit); err != nil {
-					addErr(findings.ScanError{Detector: p.d.Name(), Path: p.t.Path, Message: err.Error()})
+					addErr(p, err)
 				}
 			}
 		}()
@@ -113,4 +120,20 @@ func safeDetect(ctx context.Context, env *Env, p pair, emit func(findings.Findin
 		}
 	}()
 	return p.d.Detect(ctx, env, p.t, emit)
+}
+
+// appendScanError records a detector failure. A repository git refuses because
+// of dubious ownership is reported once per path as a skip that names the
+// fix, instead of once per detector. The caller holds the mutex guarding both
+// errs and unsafeSeen.
+func appendScanError(errs []findings.ScanError, unsafeSeen map[string]bool, p pair, err error) []findings.ScanError {
+	var unsafe *gitx.UnsafeRepoError
+	if !errors.As(err, &unsafe) {
+		return append(errs, findings.ScanError{Detector: p.d.Name(), Path: p.t.Path, Message: err.Error()})
+	}
+	if unsafeSeen[p.t.Path] {
+		return errs
+	}
+	unsafeSeen[p.t.Path] = true
+	return append(errs, findings.ScanError{Path: p.t.Path, Message: "skipped: " + unsafe.Error()})
 }
