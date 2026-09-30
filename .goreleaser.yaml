@@ -104,7 +104,7 @@ nfpms:
 # nothing. The commit author is the project identity for every commit the
 # pipeline creates in other repositories, and the message template carries no
 # trailers.
-brews:
+homebrew_casks:
   - name: brooom
     ids: [brooom]
     repository:
@@ -113,14 +113,11 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/Tobias-Braun/brooom
     description: Sweep disk clutter left behind by AI-assisted development.
-    license: MIT
     skip_upload: true
     commit_author:
       name: Tobias Braun
       email: mail@tobi-braun.com
     commit_msg_template: "brew: update {{ .ProjectName }} to {{ .Tag }}"
-    test: |
-      system "#{bin}/brooom", "version"
 
 scoops:
   - name: brooom

@@ -48,8 +48,10 @@ fi
 printf '%s  %s\n' "$sum" "$archive" > "$site/$tag/checksums.txt"
 
 port_file="$work/port"
-# stderr is dropped because the request log only adds noise to the output.
-python3 - "$site" "$port_file" 2>/dev/null <<'PY' &
+# The request log is silenced in the handler; stderr goes to a file that is
+# only shown when the server fails to start.
+server_log="$work/server.log"
+python3 - "$site" "$port_file" 2>"$server_log" <<'PY' &
 import functools, http.server, sys
 handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[1])
 handler.log_message = lambda *a, **k: None
@@ -63,7 +65,7 @@ server_pid=$!
 i=0
 while [ ! -s "$port_file" ]; do
   i=$((i + 1))
-  [ "$i" -lt 100 ] || fail "http server did not start"
+  [ "$i" -lt 100 ] || fail "http server did not start: $(cat "$server_log" 2>/dev/null)"
   sleep 0.1
 done
 port=$(cat "$port_file")
