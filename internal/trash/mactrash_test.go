@@ -410,7 +410,7 @@ func TestExecScriptTimeoutAndFailure(t *testing.T) {
 	failing := filepath.Join(dir, "failing")
 	writeFile(t, failing, "#!/bin/sh\necho 'script exploded' >&2\nexit 3\n", 0o755)
 	ok := filepath.Join(dir, "ok")
-	writeFile(t, ok, "#!/bin/sh\necho '[]'\n", 0o755)
+	writeFile(t, ok, "#!/bin/sh\nfor a; do :; done\necho '[]' > \"$a\"\n", 0o755)
 
 	m := newMacTrash(t.TempDir())
 	m.timeout = 200 * time.Millisecond

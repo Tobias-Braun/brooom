@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -49,8 +50,9 @@ const (
 // `$`, backticks or newlines in names are inert. fileURLWithPath with
 // isDirectory:false builds the URL from the string alone: it does not stat
 // the path, so a symlink to a directory is trashed as the link, not its
-// target. The result is written to stdout explicitly because osascript prints
-// a JXA return value on stderr.
+// target. The result is written to a file whose path arrives as the second
+// argv element (see execScript), because osascript prints a JXA return value
+// on stderr and writing to stdout through NSFileHandle crashed osascript.
 const trashItemScript = `ObjC.import('Foundation');
 function run(argv) {
   var paths = JSON.parse(argv[0]);
@@ -71,9 +73,11 @@ function run(argv) {
     }
     return item;
   });
-  var text = JSON.stringify(results) + '\n';
-  $.NSFileHandle.fileHandleWithStandardOutput.writeData(
-    $(text).dataUsingEncoding($.NSUTF8StringEncoding));
+  // The result goes to the file named by argv[1] instead of stdout: the
+  // NSFileHandle write on stdout crashed osascript on macOS runners, after
+  // the items had already been trashed.
+  var text = $.NSString.stringWithString(JSON.stringify(results) + '\n');
+  text.writeToFileAtomicallyEncodingError(argv[1], true, $.NSUTF8StringEncoding, null);
 }`
 
 // scriptRunner executes osascript with argv and returns its stdout.
@@ -224,7 +228,7 @@ func originalGone(path string) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, fs.ErrNotExist):
-		return fmt.Errorf("%q is gone and may already be in the Trash (look for it there; brooom cannot undo it)", path)
+		return fmt.Errorf("%q is gone and may already be in the Trash (look in ~/.Trash or /Volumes/<volume>/.Trashes/<uid>; brooom cannot undo it)", path)
 	}
 	return fmt.Errorf("cannot tell whether %q was trashed: %w", path, err)
 }
@@ -327,22 +331,47 @@ func (m *macTrash) invoke(ctx context.Context, chunk []pendingItem) ([]jxaResult
 	return parseTrashOutput(out, paths)
 }
 
-// execScript runs osascript with a bounded timeout. Stderr is kept apart from
-// stdout because osascript writes diagnostics (and JXA return values) there.
+// execScript runs osascript with a bounded timeout. The script writes its JSON
+// result to a private temp file whose path is appended to argv, and that file
+// is what is returned. Stderr is kept for diagnostics only.
+//
+// If osascript exits abnormally (it was seen to crash after trashing), a
+// complete result file is still returned: the items are already in the Trash
+// and dropping the result would lose their Records. parseTrashOutput validates
+// the content strictly, so a partial or absent file still becomes an error.
+// Timeouts and cancellation never use the file.
 func (m *macTrash) execScript(ctx context.Context, argv []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, m.osascript, argv...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	f, err := os.CreateTemp("", "brooom-trash-*.json")
+	if err != nil {
+		return nil, fmt.Errorf("cannot create osascript result file: %w", err)
+	}
+	outPath := f.Name()
+	f.Close()
+	defer os.Remove(outPath)
+
+	cmd := exec.CommandContext(ctx, m.osascript, append(slices.Clone(argv), outPath)...)
+	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	runErr := cmd.Run()
+	if runErr != nil && ctx.Err() != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("osascript timed out after %s", m.timeout)
 		}
-		return nil, fmt.Errorf("osascript failed: %w: %s", err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("osascript interrupted: %w", ctx.Err())
 	}
-	return stdout.Bytes(), nil
+	out, readErr := os.ReadFile(outPath)
+	if runErr != nil {
+		if readErr == nil && len(bytes.TrimSpace(out)) > 0 {
+			return out, nil
+		}
+		return nil, fmt.Errorf("osascript failed: %w: %s", runErr, strings.TrimSpace(stderr.String()))
+	}
+	if readErr != nil {
+		return nil, fmt.Errorf("cannot read osascript result: %w", readErr)
+	}
+	return out, nil
 }
 
 // buildTrashArgv returns the osascript arguments: the script and the JSON
