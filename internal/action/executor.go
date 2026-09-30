@@ -434,7 +434,10 @@ func (rs *runState) record(en session.Entry) error {
 	default:
 		rs.res.Applied++
 	}
-	if err := rs.e.opts.Store.Save(rs.m); err != nil {
+	// Only the new entry is appended (fsynced) to the session journal; the
+	// full manifest is rewritten once at Finish. Rewriting it here made large
+	// runs quadratic in I/O.
+	if err := rs.e.opts.Store.AppendEntry(rs.m.ID, len(rs.m.Entries)-1, en); err != nil {
 		if en.RecoveryHint != "" {
 			fmt.Fprintf(rs.e.opts.IO.Err, "recovery hint for %s: %s\n", entryLabel(en.Path, en.Ref), output.Sanitize(en.RecoveryHint))
 		}

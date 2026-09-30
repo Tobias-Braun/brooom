@@ -2,7 +2,6 @@ package trash
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -31,15 +30,11 @@ func newTestQuarantine(t *testing.T, session string) (*quarantine, string) {
 
 func loadManifest(t *testing.T, q *quarantine) *QuarantineManifest {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(q.dir, q.session, ManifestName))
+	m, err := loadQuarantineManifest(filepath.Join(q.dir, q.session))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var m QuarantineManifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		t.Fatal(err)
-	}
-	return &m
+	return m
 }
 
 func TestNewQuarantineValidation(t *testing.T) {
@@ -180,7 +175,7 @@ func TestQuarantineManifestContent(t *testing.T) {
 	}
 	entries, _ := os.ReadDir(filepath.Join(q.dir, "sess"))
 	for _, e := range entries {
-		if e.Name() != "1" && e.Name() != ManifestName {
+		if e.Name() != "1" && e.Name() != ManifestName && e.Name() != JournalName {
 			t.Errorf("stray file %q (temp manifest not cleaned up)", e.Name())
 		}
 	}
