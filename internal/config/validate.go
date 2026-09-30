@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // ErrInvalid is matched (errors.Is) by every *ValidationError.
@@ -27,7 +28,10 @@ type ValidationError struct {
 	Problems []Problem
 }
 
-// Error renders one line per problem.
+// Error renders one line per problem. Field names and messages can quote
+// user-controlled text (a root path, a config value), so control characters
+// are escaped here: the message is deliberately multi-line, and a newline in
+// a quoted value must not be able to start a forged line of its own.
 func (e *ValidationError) Error() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "invalid configuration (%d problem", len(e.Problems))
@@ -36,7 +40,30 @@ func (e *ValidationError) Error() string {
 	}
 	b.WriteString(")")
 	for _, p := range e.Problems {
-		fmt.Fprintf(&b, "\n  %s: %s", p.Field, p.Message)
+		fmt.Fprintf(&b, "\n  %s: %s", escapeControls(p.Field), escapeControls(p.Message))
+	}
+	return b.String()
+}
+
+// escapeControls makes s safe to embed in one line of terminal output. It is
+// a small local copy of the idea behind output.Sanitize, which this package
+// cannot import (output depends on config).
+func escapeControls(s string) string {
+	if !strings.ContainsFunc(s, unicode.IsControl) {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case unicode.IsControl(r):
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteRune(r)
+		}
 	}
 	return b.String()
 }

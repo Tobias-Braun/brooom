@@ -44,6 +44,23 @@ func Quote(s string) string { return QuoteFor(runtime.GOOS, s) }
 // which treats single quotes as literal characters. Every other value parses
 // identically in both shells.
 //
+// '!' and '^' are routed to the PowerShell form on purpose, although cmd.exe
+// only acts on them in some contexts ('^' is literal inside double quotes, '!'
+// is only expanded when delayed expansion is on, as with `cmd /V:ON`). Whether
+// a pasted hint is safe would then depend on a cmd.exe setting Brooom cannot
+// see, and a hint that fails to parse in cmd.exe is preferable to one that is
+// silently rewritten, so the conservative choice is kept and pinned by tests.
+//
+// Known limit of the PowerShell form: Windows PowerShell 5.1 (not 7.3+) builds
+// the native command line itself and re-quotes an argument that contains a
+// space by wrapping it in double quotes without escaping what is inside. A
+// single-quoted value that contains a double quote, or ends in a backslash
+// (which then escapes the closing quote when the program splits its command
+// line), can therefore reach brooom altered. Such values (odd paths or ref
+// names) are rare, and no quoting exists that both 5.1 and 7 read alike, so
+// the hint stays best effort there; a wrong hint fails to match a path rather
+// than acting on another one, because every apply still goes through the guard.
+//
 // The bare set is smaller than the POSIX one: ',' is PowerShell's array
 // operator (`--detector a,b` would reach the exe as two arguments) and a
 // leading '@' starts splatting or an array literal, so both, like '+' and '%',

@@ -176,7 +176,9 @@ const findingsFile = "brooom-findings.json"
 // -`): the pipe occupies stdin, so clean could neither prompt for the
 // confirmation nor pass its terminal check and would refuse to apply. A file
 // also gives the user the chance to review or trim the findings before
-// applying. Values are quoted for the host's shell (a.quote). The steps stay
+// applying. Values are quoted for the host's shell (a.quote); on Windows a
+// value holding %, $, ", !, ^ or a trailing backslash yields a PowerShell-only
+// step, which cmd.exe cannot parse (see findings.QuoteFor). The steps stay
 // separate strings because `&&` does not exist in Windows PowerShell 5.1;
 // applyHint words them as "run A, review the file, then run B".
 func (a *app) fileApplySteps(cmd *cobra.Command, detectors []string) []string {

@@ -86,6 +86,7 @@ func (trashAction) Plan(ctx context.Context, env *Env, f findings.Finding) (Step
 		Finding:     fresh,
 		Description: describe(strategy, path, notes),
 		Command:     displayCommand(strategy, path),
+		Strategy:    strategy,
 	}, nil
 }
 

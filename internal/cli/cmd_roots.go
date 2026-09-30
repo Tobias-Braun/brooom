@@ -225,13 +225,13 @@ func (a *app) runRootsAdd(args []string) error {
 	for _, arg := range args {
 		c, err := prepareRoot(arg)
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("  %s: %v", arg, err))
+			problems = append(problems, fmt.Sprintf("  %s: %s", output.Sanitize(arg), output.Sanitize(err.Error())))
 			continue
 		}
 		cands = append(cands, c)
 	}
 	if len(problems) > 0 {
-		return fmt.Errorf("nothing was added; invalid root path(s):\n%s", strings.Join(problems, "\n"))
+		return listError{"nothing was added; invalid root path(s):\n" + strings.Join(problems, "\n")}
 	}
 	home := homeKey()
 	var added, existing []string
@@ -323,14 +323,14 @@ func (a *app) runRootsRemove(args []string) error {
 
 func unknownRootsError(unknown []string, roots []config.Root) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "not a configured root: %s\nnothing was removed; configured roots:", strings.Join(unknown, ", "))
+	fmt.Fprintf(&b, "not a configured root: %s\nnothing was removed; configured roots:", output.Sanitize(strings.Join(unknown, ", ")))
 	if len(roots) == 0 {
 		b.WriteString(" (none)")
 	}
 	for _, r := range roots {
-		b.WriteString("\n  " + r.Path)
+		b.WriteString("\n  " + output.Sanitize(r.Path))
 	}
-	return errors.New(b.String())
+	return listError{b.String()}
 }
 
 // rootMatches reports whether arg names root r: by the stored string, by the

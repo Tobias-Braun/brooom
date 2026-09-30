@@ -90,7 +90,7 @@ func (c *confirmer) confirm(p *Plan) bool {
 	for gi := range p.Groups {
 		g := &p.Groups[gi]
 		prompt := fmt.Sprintf("%s / %s: apply %s (%s)? [y]es/[n]o/[i]ndividually/[q]uit ",
-			output.Sanitize(g.Detector), g.Action, plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
+			output.Sanitize(g.Detector), g.Label(), plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
 		switch c.ask(prompt, "yniq") {
 		case ansYes:
 			for i := range g.Items {
@@ -156,7 +156,7 @@ func plural(n int, noun string) string {
 // the skipped list and the plan-time failures.
 func renderPlan(w io.Writer, p *Plan) {
 	for _, g := range p.Groups {
-		fmt.Fprintf(w, "%s / %s: %s, %s\n", output.Sanitize(g.Detector), g.Action, plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
+		fmt.Fprintf(w, "%s / %s: %s, %s\n", output.Sanitize(g.Detector), g.Label(), plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
 		for _, it := range g.Items {
 			fmt.Fprintf(w, "  %s\n", itemLine(it.Step))
 			if it.Step.Command != "" {

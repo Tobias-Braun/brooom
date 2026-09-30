@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/output"
+	"github.com/Tobias-Braun/brooom/internal/scope"
 )
 
 func newConfigCmd(a *app) *cobra.Command {
@@ -69,6 +71,10 @@ never reverted.`,
 			Short: "Validate the config file",
 			Example: `  brooom config validate
   brooom config validate --config ./brooom.json`,
+			Long: `Check the config file and report every problem. Inside a git repository the
+repository's .brooom.json is checked as well, exactly as a scan would apply
+it, so the result depends on the current directory. A root that does not exist
+is only a warning, because a root on an unmounted volume is legitimate.`,
 			Args: cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error { return a.runConfigValidate() },
 		},
@@ -192,15 +198,72 @@ func (a *app) runConfigValidate() error {
 	if err := a.requireExplicitConfig(path); err != nil {
 		return err
 	}
+	cfg := config.Default()
+	msg := "ok"
 	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
-		_, err = fmt.Fprintf(a.io.Out, "ok (no config file at %s; defaults apply)\n", output.Sanitize(path))
-		return err
-	}
-	if _, err := config.Load(path); err != nil {
+		msg = fmt.Sprintf("ok (no config file at %s; defaults apply)", output.Sanitize(path))
+	} else if cfg, err = config.Load(path); err != nil {
 		return a.reportProblems(path, err)
 	}
-	_, err = fmt.Fprintln(a.io.Out, "ok")
+	a.warnMissingRoots(cfg)
+	note, err := a.validateRepoConfig(cfg)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(a.io.Out, msg+note)
 	return err
+}
+
+// warnMissingRoots prints a warning for every configured root that does not
+// exist. It stays a warning because a root on an unmounted volume or a
+// not yet cloned workspace is legitimate; --workspaces reports and skips it.
+func (a *app) warnMissingRoots(cfg *config.Config) {
+	for i, r := range cfg.Roots {
+		p, err := config.ExpandPath(r.Path)
+		if err != nil {
+			continue
+		}
+		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintf(a.io.Err, "warning: roots[%d].path: %s does not exist (--workspaces will skip it)\n", i, output.Sanitize(p))
+		}
+	}
+}
+
+// validateRepoConfig checks the .brooom.json of the repository the command
+// runs in with the same code a scan uses (config.ForTarget: parse, unknown
+// keys, tighten-only rules), so validate cannot say ok where scan skips the
+// repository. It returns a suffix for the ok line when a repository file was
+// checked; the result depends on the working directory, which the note says.
+// Outside a repository there is nothing to check.
+func (a *app) validateRepoConfig(cfg *config.Config) (string, error) {
+	root, file, ok := cwdRepoConfig()
+	if !ok {
+		return "", nil
+	}
+	if _, err := cfg.ForTarget("", root); err != nil {
+		return "", listError{fmt.Sprintf("repository config %s is invalid: %s\nnote: this depends on the current directory; brooom checked the repository at %s",
+			output.Sanitize(file), output.Sanitize(err.Error()), output.Sanitize(root))}
+	}
+	return fmt.Sprintf("; repository config %s is valid too (depends on the current directory)", output.Sanitize(file)), nil
+}
+
+// cwdRepoConfig finds the repository of the working directory and its
+// .brooom.json. ok is false when there is no repository or no such file; a
+// failure to look is treated alike, since a scan would not find one either.
+func cwdRepoConfig() (root, file string, ok bool) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", "", false
+	}
+	root, err = scope.FindRepoRoot(cwd)
+	if err != nil {
+		return "", "", false
+	}
+	file = filepath.Join(root, config.RepoConfigFileName)
+	if _, err := os.Lstat(file); err != nil {
+		return "", "", false
+	}
+	return root, file, true
 }
 
 func (a *app) runConfigEdit() error {

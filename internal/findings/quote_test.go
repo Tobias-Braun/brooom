@@ -27,6 +27,9 @@ func TestQuoteForWindowsWorksInBothShells(t *testing.T) {
 		{"50% done", `'50% done'`},
 		{`say "hi"`, `'say "hi"'`},
 		{"it's here", `'it''s here'`},
+		// '!' and '^' are deliberately PowerShell-only, see QuoteFor.
+		{"hey!", `'hey!'`},
+		{"a^b", `'a^b'`},
 	}
 	for _, tt := range tests {
 		if got := QuoteFor("windows", tt.in); got != tt.want {

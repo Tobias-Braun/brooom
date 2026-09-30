@@ -21,6 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/output"
 )
 
@@ -107,6 +108,42 @@ type scanFailedError struct{ err error }
 func (e scanFailedError) Error() string { return e.err.Error() }
 func (e scanFailedError) Unwrap() error { return e.err }
 
+// listError is an error whose message is deliberately several lines (a
+// heading followed by one indented line per problem). Its constructor must
+// already have sanitised every untrusted part; renderError only keeps the
+// line breaks of such errors.
+type listError struct{ msg string }
+
+func (e listError) Error() string { return e.msg }
+
+// renderError returns the text printed after "brooom:". Every message is
+// sanitised so a control character or newline in a quoted path cannot forge
+// output lines. The one exception is the message of a listError or
+// config.ValidationError, whose own newlines are kept and whose lines are
+// sanitised one by one as a backstop; any wrapping prefix (for example the
+// config file path) is still sanitised as a whole.
+func renderError(err error) string {
+	full := err.Error()
+	inner := ""
+	var le listError
+	var ve *config.ValidationError
+	switch {
+	case errors.As(err, &le):
+		inner = le.Error()
+	case errors.As(err, &ve):
+		inner = ve.Error()
+	}
+	prefix, ok := strings.CutSuffix(full, inner)
+	if inner == "" || !ok {
+		return output.Sanitize(full)
+	}
+	lines := strings.Split(inner, "\n")
+	for i, l := range lines {
+		lines[i] = output.Sanitize(l)
+	}
+	return output.Sanitize(prefix) + strings.Join(lines, "\n")
+}
+
 // Main runs the CLI with args (without the program name) and returns the
 // process exit code.
 //
@@ -139,7 +176,7 @@ func executeContext(ctx context.Context, a *app, args []string) int {
 	if err == nil {
 		return ExitOK
 	}
-	fmt.Fprintln(stdio.Err, "brooom:", output.Sanitize(err.Error()))
+	fmt.Fprintln(stdio.Err, "brooom:", renderError(err))
 	var ue usageError
 	var sf scanFailedError
 	switch {

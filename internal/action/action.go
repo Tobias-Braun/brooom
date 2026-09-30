@@ -76,6 +76,11 @@ type Step struct {
 	Description string
 	// Command is the equivalent shell command for display, if any.
 	Command string
+	// Strategy is the trash strategy the step will use, set only by steps
+	// that remove files through a trasher. Plans, prompts and headers use it
+	// to say "delete permanently" instead of the generic action name; it is
+	// display state and never reaches the manifest or JSON output.
+	Strategy config.TrashStrategy
 }
 
 // Action executes one action type.
