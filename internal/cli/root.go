@@ -63,6 +63,13 @@ type applyFlags struct {
 type app struct {
 	io    IO
 	flags globalFlags
+
+	// postRunHooks run in order after a successful command. Append to it;
+	// never assign a command's PersistentPostRun (see postRunHook).
+	postRunHooks []postRunHook
+
+	// update is the state of the opt-in background update check.
+	update updateState
 }
 
 // usageError marks errors caused by invalid invocation (exit code 2).
@@ -74,7 +81,13 @@ func (e usageError) Unwrap() error { return e.err }
 // Main runs the CLI with args (without the program name) and returns the
 // process exit code.
 func Main(args []string, stdio IO) int {
-	a := &app{io: stdio}
+	return execute(&app{io: stdio}, args)
+}
+
+// execute runs the command tree of a. Tests build the app themselves to
+// inject collaborators before calling it.
+func execute(a *app, args []string) int {
+	stdio := a.io
 	root := newRootCmd(a)
 	root.SetArgs(args)
 	root.SetIn(stdio.In)
@@ -108,6 +121,10 @@ Without flags Brooom only looks at the git repository you are in. Use
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			a.startUpdateCheck(cmd)
+		},
+		PersistentPostRun: a.runPostRunHooks,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runScan(cmd, scanOptions{})
 		},
@@ -124,6 +141,8 @@ Without flags Brooom only looks at the git repository you are in. Use
 	pf.BoolVar(&a.flags.noColor, "no-color", false, "disable colors (also honours NO_COLOR)")
 	pf.BoolVarP(&a.flags.verbose, "verbose", "v", false, "print progress and diagnostics to stderr")
 	pf.StringVar(&a.flags.configPath, "config", "", "config file (default ~/.brooom/config.json)")
+
+	a.postRunHooks = append(a.postRunHooks, a.finishUpdateCheck)
 
 	root.AddCommand(
 		newScanCmd(a),

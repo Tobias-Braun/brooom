@@ -65,6 +65,7 @@ packages and the same findings schema.
 | `internal/session` | Session manifests in `~/.brooom/sessions`, listing, undo bookkeeping. |
 | `internal/output` | Formatters, one file per format, registered by name. Color/TTY handling helpers. |
 | `internal/procs` | "Is this file open by a process?" per OS (best effort, never blocks a scan). |
+| `internal/updatecheck` | The opt-in update check: latest-release lookup, semver compare, install-method detection, 24h cache. The only package allowed to import `net/http` (enforced by a test). |
 | `internal/testutil` | Deterministic throwaway git repos and file trees for tests. |
 
 ## Contracts

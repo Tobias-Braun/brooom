@@ -35,14 +35,3 @@ func newVersionCmd(a *app) *cobra.Command {
 		},
 	}
 }
-
-func newUpdateCheckCmd(a *app) *cobra.Command {
-	return &cobra.Command{
-		Use:   "update-check",
-		Short: "Check GitHub for a newer release (opt-in, contacts api.github.com)",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return errNotImplemented
-		},
-	}
-}
