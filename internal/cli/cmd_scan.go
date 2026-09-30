@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -18,6 +19,9 @@ type scanOptions struct {
 	// force is passed to the detectors as detect.Env.Force (--force of the
 	// commands that can apply).
 	force bool
+	// userLocations turns on detectors.ai-artifacts.user_locations for this
+	// run only (`brooom ai --user`); the config file is never changed.
+	userLocations bool
 }
 
 func newScanCmd(a *app) *cobra.Command {
@@ -64,6 +68,9 @@ func (a *app) runScan(cmd *cobra.Command, opts scanOptions) error {
 	a.logScanErrors(res.Report.Errors, false)
 	if werr := formatter.Write(a.io.Out, res.Report, renderOpts); werr != nil {
 		return werr
+	}
+	if !machineFormats[req.format] && !a.flags.quiet && res.Report.Totals.Actionable > 0 {
+		fmt.Fprintln(a.io.Out, applyHint(cmd))
 	}
 	return err
 }

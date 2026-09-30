@@ -81,6 +81,9 @@ func (a *app) newScanRequest(opts scanOptions) (*scanRequest, error) {
 	if err != nil {
 		return nil, err
 	}
+	if opts.userLocations {
+		cfg.Detectors.AIArtifacts.UserLocations = true
+	}
 	return &scanRequest{opts: opts, cfg: cfg, cfgPath: path, format: format, detectors: detectors}, nil
 }
 

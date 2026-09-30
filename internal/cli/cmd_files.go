@@ -1,6 +1,10 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/Tobias-Braun/brooom/internal/config"
+)
 
 func newLogsCmd(a *app) *cobra.Command {
 	var af applyFlags
@@ -13,7 +17,7 @@ logs, pip/poetry/uv caches, Jest/Vitest/pytest caches, coverage output,
 that are currently open by a process are flagged, never suggested.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return errNotImplemented
+			return a.runCleanup(cmd, cleanupSelection{detectors: []string{config.DetectorLogs}, label: "logs"}, af)
 		},
 	}
 	addApplyFlags(cmd, &af)
@@ -30,7 +34,7 @@ target, .venv, __pycache__, .next, .turbo, .gradle, ...) weighted by how long
 the project has been inactive.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return errNotImplemented
+			return a.runCleanup(cmd, cleanupSelection{detectors: []string{config.DetectorBuildArtifacts}, label: "artifacts"}, af)
 		},
 	}
 	addApplyFlags(cmd, &af)
@@ -49,7 +53,7 @@ projects, and with --user also in well-known user-level locations. The list
 of tools is maintained as data; see docs/catalog.md to contribute entries.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return errNotImplemented
+			return a.runCleanup(cmd, cleanupSelection{detectors: []string{config.DetectorAIArtifacts}, userLocations: user, label: "ai"}, af)
 		},
 	}
 	cmd.Flags().BoolVar(&user, "user", false, "also scan user-level tool locations (caches, logs)")

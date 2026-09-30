@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -65,6 +66,9 @@ type applyFlags struct {
 type app struct {
 	io    IO
 	flags globalFlags
+	// args are the command-line arguments of this invocation (without the
+	// program name); the session manifest records them.
+	args []string
 
 	// postRunHooks run in order after a successful command. Append to it;
 	// never assign a command's PersistentPostRun (see postRunHook).
@@ -83,10 +87,11 @@ func (e usageError) Unwrap() error { return e.err }
 // Main runs the CLI with args (without the program name) and returns the
 // process exit code.
 //
-// The command runs with a context that is cancelled by Ctrl-C, so a scan can
-// stop early and still print its partial report.
+// The command runs with a context that is cancelled by Ctrl-C or SIGTERM, so
+// a scan can stop early and still print its partial report, and an apply run
+// stops after the current step with its manifest saved.
 func Main(args []string, stdio IO) int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return executeContext(ctx, &app{io: stdio}, args)
 }
@@ -101,6 +106,7 @@ func execute(a *app, args []string) int {
 // cancel a run without sending real signals.
 func executeContext(ctx context.Context, a *app, args []string) int {
 	stdio := a.io
+	a.args = args
 	root := newRootCmd(a)
 	root.SetArgs(args)
 	root.SetIn(stdio.In)
