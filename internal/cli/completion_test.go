@@ -252,4 +252,3 @@ func TestCompletionCommand(t *testing.T) {
 		t.Errorf("root help does not list the completion command")
 	}
 }
-
