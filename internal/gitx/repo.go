@@ -103,6 +103,14 @@ func (m *memo[K, V]) do(key K, f func() (V, error)) (V, error) {
 	return e.val, e.err
 }
 
+// forget drops the memoized result for key, so the next caller recomputes it.
+// Used when a result only reflects a cancelled context and must not stick.
+func (m *memo[K, V]) forget(key K) {
+	m.mu.Lock()
+	delete(m.m, key)
+	m.mu.Unlock()
+}
+
 // Repo is a handle on one git repository. Handles from Open are uncached:
 // every query hits git, which is what actions need because they must
 // re-validate against the live repository. Handles from Cache.Repo memoize
@@ -369,6 +377,9 @@ func (c *Cache) newRepo(ctx context.Context, top, common string) (*Repo, error) 
 // gitVersion runs `git version` once per Cache. Only a success is kept, so a
 // cancelled context fails that one lookup instead of poisoning the scan;
 // concurrent callers wait for the first attempt rather than each spawning git.
+// A waiter blocks on verMu without watching its own ctx: the holder runs one
+// short `git version` bounded by its own ctx, so the wait is brief and making
+// it interruptible would need a channel-based lock for no real gain.
 func (c *Cache) gitVersion(ctx context.Context) (Version, error) {
 	c.verMu.Lock()
 	defer c.verMu.Unlock()

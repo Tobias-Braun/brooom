@@ -82,6 +82,9 @@ func (s *verdictStore) put(key string, res MergeResult) {
 	}
 	_, werr := tmp.Write(data)
 	cerr := tmp.Close()
+	// On Windows the rename can fail while a concurrent scan holds the target
+	// open; the temp file is then removed and the existing verdict (identical,
+	// since the key determines the content) stays in place.
 	if werr != nil || cerr != nil || os.Rename(tmp.Name(), filepath.Join(s.dir, key)) != nil {
 		_ = os.Remove(tmp.Name())
 	}
@@ -111,6 +114,11 @@ func (r *Repo) behindCounts(ctx context.Context, baseSHA string) map[string]int 
 		}
 		return parseBehind(out), nil
 	})
+	if ctx.Err() != nil && counts == nil {
+		// The nil may only mean "cancelled": do not let it stick as the
+		// permanent fallback for this base.
+		r.behind.forget(baseSHA)
+	}
 	return counts
 }
 

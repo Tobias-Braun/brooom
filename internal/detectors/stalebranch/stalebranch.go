@@ -92,7 +92,13 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	// A bounded worker pool assesses the branches (each costs several git
 	// processes); results are consumed in branch order so findings, errors and
 	// the "first failed branch" of the aggregate do not depend on scheduling.
-	for _, a := range detect.MapOrdered(ctx, branches, detect.BranchWorkers, s.assess) {
+	results := detect.MapOrdered(ctx, branches, detect.BranchWorkers, s.assess)
+	// Results of workers that were running when ctx was cancelled may reflect
+	// the cancellation (e.g. "not merged"); drop them all.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for _, a := range results {
 		if a.mergedErr != nil {
 			s.mergedFail.record(a.branch, a.mergedErr)
 		}
@@ -102,9 +108,6 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 		if a.ok {
 			emit(a.finding)
 		}
-	}
-	if err := ctx.Err(); err != nil {
-		return err
 	}
 	if err := s.mergedFail.error(s.base.Ref); err != nil {
 		errs = append(errs, err)

@@ -23,6 +23,15 @@ const (
 	tmpGlob = "dirsize-*.tmp"
 	// tmpMaxAge keeps the temp file of a write that may still be running.
 	tmpMaxAge = time.Hour
+
+	// verdictSubdir is where gitx stores squash verdicts. Their key contains
+	// the base sha, so every new base commit orphans them; they are pruned by
+	// age like the size caches.
+	verdictSubdir = "verdicts"
+	// verdictGlob matches verdict files, verdictTmpGlob the temp files of an
+	// interrupted verdictStore.put.
+	verdictGlob    = "*.json"
+	verdictTmpGlob = "tmp-*"
 )
 
 // StaleCacheFile is a cache file PruneCache found unneeded.
@@ -60,14 +69,28 @@ func ListStaleCache(dir string, o PruneOptions) ([]StaleCacheFile, error) {
 	if o.Now.IsZero() {
 		o.Now = time.Now()
 	}
+	out, err := staleByGlob(dir, cacheGlob, tmpGlob, o)
+	if err != nil {
+		return nil, err
+	}
+	// Verdict files are tiny and never need a root check: age alone decides.
+	vo := o
+	vo.CheckRoots = false
+	verdicts, err := staleByGlob(filepath.Join(dir, verdictSubdir), verdictGlob, verdictTmpGlob, vo)
+	return append(out, verdicts...), err
+}
+
+// staleByGlob classifies the files of dir matching the cache glob and the
+// temp file glob.
+func staleByGlob(dir, cache, tmp string, o PruneOptions) ([]StaleCacheFile, error) {
 	var out []StaleCacheFile
-	for _, g := range []string{cacheGlob, tmpGlob} {
+	for _, g := range []string{cache, tmp} {
 		matches, err := filepath.Glob(filepath.Join(dir, g))
 		if err != nil {
 			return nil, err
 		}
 		for _, m := range matches {
-			if f, ok := staleReason(m, g == tmpGlob, o); ok {
+			if f, ok := staleReason(m, g == tmp, o); ok {
 				out = append(out, f)
 			}
 		}

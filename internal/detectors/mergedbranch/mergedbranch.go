@@ -135,9 +135,14 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	// Branches are classified by a bounded worker pool (each costs several git
 	// processes), but findings and errors are consumed in branch order, so the
 	// output does not depend on scheduling.
-	for _, o := range detect.MapOrdered(ctx, s.branches, detect.BranchWorkers, s.localBranch) {
+	outcomes := detect.MapOrdered(ctx, s.branches, detect.BranchWorkers, s.localBranch)
+	// Findings of workers that were running when ctx was cancelled may reflect
+	// the cancellation (e.g. "not merged"), so none is emitted after it; the
+	// per-branch errors are still kept and returned with the reason.
+	cancelled := ctx.Err() != nil
+	for _, o := range outcomes {
 		s.errs = append(s.errs, o.errs...)
-		if o.finding != nil {
+		if o.finding != nil && !cancelled {
 			emit(*o.finding)
 		}
 	}

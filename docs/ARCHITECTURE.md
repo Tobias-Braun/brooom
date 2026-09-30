@@ -720,8 +720,10 @@ flags and both safety caps plus a format version. Only definite answers are
 stored, never truncated or failed checks; unreadable or inconsistent files are
 misses; only scan handles (`Cache.SetVerdictDir`) read the store, so actions,
 which use uncached handles, always verify against the live repository. Verdict
-files are tiny and not pruned automatically; the whole cache directory is safe
-to delete.
+files are tiny but every new base commit orphans them, so the prune pass
+(automatic once per process, and `brooom purge`) ages them out like the size
+caches (same max age, plus stale `tmp-*` files of interrupted writes); the
+whole cache directory is safe to delete.
 
 One `Executor.Plan` pass shares a `gitx.Cache` between its findings (carried in
 the context, `action/plansnap.go`), so the branch listing, base branch,

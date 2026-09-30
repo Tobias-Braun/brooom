@@ -22,10 +22,21 @@ func MapOrdered[T, R any](ctx context.Context, items []T, workers int, fn func(c
 	workers = max(1, min(workers, len(items)))
 	var next atomic.Int64
 	var wg sync.WaitGroup
+	// A panic in a worker goroutine would kill the process past any recover
+	// of the caller; the first one is captured and re-raised on the caller's
+	// goroutine after all workers stopped.
+	var panicOnce sync.Once
+	var panicVal any
+	var panicked atomic.Bool
 	for w := 0; w < workers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() {
+				if v := recover(); v != nil {
+					panicOnce.Do(func() { panicVal = v; panicked.Store(true) })
+				}
+			}()
 			for ctx.Err() == nil {
 				i := int(next.Add(1)) - 1
 				if i >= len(items) {
@@ -36,5 +47,8 @@ func MapOrdered[T, R any](ctx context.Context, items []T, workers int, fn func(c
 		}()
 	}
 	wg.Wait()
+	if panicked.Load() {
+		panic(panicVal)
+	}
 	return out
 }
