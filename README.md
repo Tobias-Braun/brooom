@@ -56,6 +56,17 @@ curl -fsSL https://raw.githubusercontent.com/Tobias-Braun/brooom/main/scripts/in
 irm https://raw.githubusercontent.com/Tobias-Braun/brooom/main/scripts/install.ps1 | iex
 ```
 
+The installer does not change your PATH by default. `iex` cannot pass a switch,
+so to add the install directory to your user PATH run the script through a
+scriptblock, or set `BROOOM_ADD_TO_PATH=1` first:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Tobias-Braun/brooom/main/scripts/install.ps1))) -AddToPath
+```
+
+Upgrading while brooom is running works: the old `brooom.exe` is renamed to
+`brooom.exe.old` and removed on the next run.
+
 With a Go toolchain:
 
 ```sh
