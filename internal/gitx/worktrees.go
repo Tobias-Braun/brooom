@@ -23,13 +23,22 @@ type Worktree struct {
 	Main bool
 	// DirMissing is true when the directory no longer exists on disk.
 	DirMissing bool
+	// Operation names a rebase, merge, cherry-pick, revert or bisect in
+	// progress in this worktree ("" when none). OperationBranch is the branch
+	// a rebase or bisect will return to while HEAD is detached.
+	Operation       string
+	OperationBranch string
+	// HasSubmodules is true when the linked worktree has initialized
+	// submodules, which `git worktree remove` refuses to remove.
+	HasSubmodules bool
 }
 
 // ListWorktrees parses `git worktree list --porcelain -z`. Git older than
 // 2.36 rejects -z, so the newline porcelain is used there (paths containing
 // newlines are unsupported on that path). DirMissing comes from a read-only
-// os.Stat; with git older than 2.31, which does not report "prunable", a
-// missing unlocked directory is marked Prunable as well.
+// os.Stat; with git older than 2.31, which reports neither "prunable" nor
+// "locked", the lock is read from the administrative directory (failing
+// closed) and a missing unlocked directory is marked Prunable as well.
 func (r *Repo) ListWorktrees(ctx context.Context) ([]Worktree, error) {
 	return cached(r, &r.worktrees, struct{}{}, func() ([]Worktree, error) {
 		v := r.gitVersion(ctx)
@@ -44,15 +53,17 @@ func (r *Repo) ListWorktrees(ctx context.Context) ([]Worktree, error) {
 			return nil, err
 		}
 		wts := parseWorktrees(out, sep)
+		if len(wts) > 0 {
+			wts[0].Main = true
+		}
+		// Before the prunable fallback: it must see the lock.
+		r.annotateWorktrees(wts, v)
 		for i := range wts {
 			_, statErr := os.Stat(wts[i].Path)
 			wts[i].DirMissing = os.IsNotExist(statErr)
 			if wts[i].DirMissing && !v.AtLeast(2, 31) && !wts[i].Locked {
 				wts[i].Prunable = true
 			}
-		}
-		if len(wts) > 0 {
-			wts[0].Main = true
 		}
 		return wts, nil
 	})

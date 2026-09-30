@@ -3,6 +3,7 @@ package gitx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -98,7 +99,11 @@ func open(ctx context.Context, r Runner, dir string, memoize bool) (*Repo, error
 	if err != nil {
 		return nil, err
 	}
-	return &Repo{Runner: r, Dir: top, Common: common, memoize: memoize}, nil
+	repo := &Repo{Runner: r, Dir: top, Common: common, memoize: memoize}
+	if err := repo.requireGit(ctx); err != nil {
+		return nil, err
+	}
+	return repo, nil
 }
 
 // run executes git in the handle's worktree.
@@ -215,17 +220,40 @@ func (c *Cache) Repo(ctx context.Context, dir string) (*Repo, error) {
 		return r, nil
 	}
 	r := &Repo{Runner: c.runner, Dir: top, Common: common, memoize: true}
+	if err := r.requireGit(ctx); err != nil {
+		return nil, err
+	}
 	c.repos[common] = r
 	return r, nil
 }
 
 // gitVersion returns the (memoized) git version, or the zero Version when it
 // cannot be determined, which makes every feature check take the fallback.
+// Opening a repository already refuses unusable versions (requireGit).
 func (r *Repo) gitVersion(ctx context.Context) Version {
-	v, _ := cached(r, &r.version, struct{}{}, func() (Version, error) {
+	v, _ := r.gitVersionErr(ctx)
+	return v
+}
+
+func (r *Repo) gitVersionErr(ctx context.Context) (Version, error) {
+	return cached(r, &r.version, struct{}{}, func() (Version, error) {
 		return GitVersion(ctx, r.Runner)
 	})
-	return v
+}
+
+// requireGit fails when the git binary is older than MinGitVersion or its
+// version cannot be determined or parsed. It runs when a repository handle is
+// opened, so every detector and action is covered once instead of each git
+// feature guessing at a zero version.
+func (r *Repo) requireGit(ctx context.Context) error {
+	v, err := r.gitVersionErr(ctx)
+	if err != nil {
+		return fmt.Errorf("gitx: cannot determine the git version (Brooom needs git %s or newer): %w", MinGitVersion, err)
+	}
+	if !v.AtLeast(MinGitVersion.Major, MinGitVersion.Minor) {
+		return fmt.Errorf("%w: found git %s, Brooom needs %s or newer", ErrGitTooOld, v, MinGitVersion)
+	}
+	return nil
 }
 
 // resolveCommit resolves ref to a full commit SHA without side effects.

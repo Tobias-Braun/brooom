@@ -197,6 +197,12 @@ func checkRemovable(wt gitx.Worktree, f findings.Finding) error {
 			msg += " (" + wt.LockReason + ")"
 		}
 		return skipf("%s; unlock it with git worktree unlock first", msg)
+	case wt.Operation != "":
+		return skipf("%s: a %s is in progress in the worktree; finish or abort it first (removal would destroy its state)",
+			findings.RiskWorktreeOperation, wt.Operation)
+	case wt.HasSubmodules:
+		return skipf("worktree has initialized submodules, which git worktree remove refuses; " +
+			"deinitialize them (git submodule deinit --all) and remove the worktree manually")
 	case wt.DirMissing:
 		return skipf("directory is missing; prune-worktrees handles missing directories")
 	case f.Meta[metaHead] == "" || wt.Head != f.Meta[metaHead]:

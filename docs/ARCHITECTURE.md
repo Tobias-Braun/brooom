@@ -247,13 +247,31 @@ named by `Finding.Meta["repo"]` (resolved through `Guard.Resolve`, opened
 uncached) and look worktrees up with `Repo.ListWorktrees` and `gitx.SamePath`.
 
 `remove-worktree` skips when the path is no longer registered, is the main or
-a bare worktree, is locked (never overridable, the reason is quoted), its
+a bare worktree, is locked (never overridable, the reason is quoted), has a
+rebase, merge, cherry-pick, revert or bisect in progress (never overridable;
+`gitx.Worktree.Operation`, read from the worktree's private git directory) or
+initialized submodules (`HasSubmodules`: `<admin>/modules` is not empty, which
+makes `git worktree remove` fail; the detector reports such a worktree without
+action and evidence `worktree_has_submodules`, trash-based removal is not
+offered), its
 directory is missing, HEAD or branch differ from the finding, the current
 directory is inside it or a process has it open (`checkOpen`, before the dirty
 handling and never overridable), it hits the trash action's static path
 refusals (all but the repository-root one), a `.git` entry exists below the
 worktree root (nested repository or submodule, measured with `measureWorktree`,
 which ignores the worktree's own link file), or it is dirty without `--force`.
+
+A branch that a paused rebase or bisect will return to (`head-name`,
+`BISECT_START`) is checked out in no worktree while HEAD is detached, so
+`gitx.Repo.ListBranches` sets its `WorktreePath` from the git directories
+(`OperationBranch`); branch detectors then flag `current_branch` and
+`delete-branch` refuses it.
+
+`gitx.Open` and `gitx.Cache.Repo` enforce `MinGitVersion` once per handle:
+an older or unparseable git is an error (`ErrGitTooOld`). On git older than
+2.31, which has no `locked` porcelain token, `ListWorktrees` reads
+`<common>/worktrees/<id>/locked` and treats a worktree whose state cannot be
+determined as locked.
 
 The `worktrees` detector protects active worktrees the same way: a candidate
 containing the current directory or open by a process gets the blocking

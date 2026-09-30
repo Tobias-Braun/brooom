@@ -22,6 +22,9 @@ const (
 	RiskWorktreeDirty RiskFlag = "worktree_dirty"
 	// RiskWorktreeLocked: the worktree is locked (git worktree lock).
 	RiskWorktreeLocked RiskFlag = "worktree_locked"
+	// RiskWorktreeOperation: a rebase, merge, cherry-pick, revert or bisect is
+	// in progress in the worktree; removing it would destroy that state.
+	RiskWorktreeOperation RiskFlag = "worktree_operation_in_progress"
 	// RiskHasOpenPR: an open pull request uses the branch (via gh, optional).
 	RiskHasOpenPR RiskFlag = "has_open_pr"
 	// RiskCurrentBranch: the branch is checked out in some worktree.
@@ -57,6 +60,7 @@ var blockingRisks = map[RiskFlag]bool{
 	RiskFileOpen:           true,
 	RiskWorktreeDirty:      true,
 	RiskWorktreeLocked:     true,
+	RiskWorktreeOperation:  true,
 	RiskHasOpenPR:          true,
 	RiskCurrentBranch:      true,
 	RiskProtectedBranch:    true,
@@ -67,10 +71,11 @@ var blockingRisks = map[RiskFlag]bool{
 // on them would break a checkout, a running process or a lock the user set on
 // purpose.
 var neverOverridable = map[RiskFlag]bool{
-	RiskFileOpen:        true,
-	RiskWorktreeLocked:  true,
-	RiskCurrentBranch:   true,
-	RiskProtectedBranch: true,
+	RiskFileOpen:          true,
+	RiskWorktreeLocked:    true,
+	RiskWorktreeOperation: true,
+	RiskCurrentBranch:     true,
+	RiskProtectedBranch:   true,
 }
 
 // Blocking reports whether the flag prevents acting on a finding unless the
@@ -81,7 +86,8 @@ func (r RiskFlag) Blocking() bool {
 
 // ForceOverridable reports whether --force allows acting despite this flag.
 // Informational flags are trivially overridable; file_open_by_process,
-// worktree_locked, current_branch and protected_branch never are.
+// worktree_locked, worktree_operation_in_progress, current_branch and
+// protected_branch never are.
 func (r RiskFlag) ForceOverridable() bool {
 	return !neverOverridable[r]
 }
@@ -103,7 +109,7 @@ func Actionable(flags []RiskFlag, force bool) bool {
 func AllRiskFlags() []RiskFlag {
 	return []RiskFlag{
 		RiskUnpushedCommits, RiskUncommittedChanges, RiskFileOpen,
-		RiskWorktreeDirty, RiskWorktreeLocked, RiskHasOpenPR,
+		RiskWorktreeDirty, RiskWorktreeLocked, RiskWorktreeOperation, RiskHasOpenPR,
 		RiskCurrentBranch, RiskProtectedBranch, RiskTrackedFiles,
 		RiskRecentlyModified, RiskGitignored, RiskNeverPushed,
 		RiskUpstreamGone, RiskSymlink, RiskOutsideRepo,

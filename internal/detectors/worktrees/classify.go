@@ -22,6 +22,8 @@ const (
 	evHeadUnpushed = "head_not_pushed"
 	evDirty        = "worktree_dirty"
 	evLocked       = "worktree_locked"
+	evOperation    = "worktree_operation_in_progress"
+	evSubmodules   = "worktree_has_submodules"
 	evLocation     = "agent_worktree_location"
 )
 
@@ -271,8 +273,9 @@ func (s *scan) headCommitTime(ctx context.Context, e *entry) (time.Time, error) 
 	return t, nil
 }
 
-// flagBlocking adds the locked and dirty classification to a candidate.
-// Locked always wins and is never overridden. Dirty blocks unless --force is
+// flagBlocking adds the locked, operation, submodule and dirty classification
+// to a candidate. Locked and an operation in progress always win and are never
+// overridden. Dirty blocks unless --force is
 // set and the candidate is otherwise removable, in which case the removal
 // stays suggested with an explicit reason (the action trashes the directory).
 func (s *scan) flagBlocking(ctx context.Context, e *entry, v *verdict) error {
@@ -285,6 +288,8 @@ func (s *scan) flagBlocking(ctx context.Context, e *entry, v *verdict) error {
 		}
 		v.evidence = append(v.evidence, findings.Evidence{Code: evLocked, Message: msg, Value: e.wt.LockReason})
 	}
+	flagOperation(e, v)
+	flagSubmodules(e, v)
 	dirty := false
 	if !e.missing {
 		var err error
@@ -296,15 +301,45 @@ func (s *scan) flagBlocking(ctx context.Context, e *entry, v *verdict) error {
 		v.risks = append(v.risks, findings.RiskWorktreeDirty)
 		v.evidence = append(v.evidence, findings.Evidence{Code: evDirty, Message: "worktree has uncommitted changes", Value: true})
 	}
-	s.decideAction(v, locked, dirty)
+	s.decideAction(v, e, dirty)
 	return nil
 }
 
+// flagOperation blocks a worktree paused in a rebase, merge, cherry-pick,
+// revert or bisect: removing it would destroy the operation state (todo list,
+// stop point), and its detached HEAD would otherwise look like a removable
+// leftover.
+func flagOperation(e *entry, v *verdict) {
+	if e.missing || e.wt.Operation == "" {
+		return
+	}
+	v.risks = append(v.risks, findings.RiskWorktreeOperation)
+	v.evidence = append(v.evidence, findings.Evidence{
+		Code: evOperation, Message: "a " + e.wt.Operation + " is in progress in the worktree", Value: e.wt.Operation,
+	})
+}
+
+// flagSubmodules records initialized submodules. It is not a risk flag:
+// nothing is at risk, the removal just cannot work (`git worktree remove`
+// refuses such worktrees), so the finding stays visible without an action.
+func flagSubmodules(e *entry, v *verdict) {
+	if e.missing || !e.wt.HasSubmodules {
+		return
+	}
+	v.evidence = append(v.evidence, findings.Evidence{
+		Code: evSubmodules, Message: "the worktree has initialized submodules, which git worktree remove refuses", Value: true,
+	})
+}
+
 // decideAction applies the blocking rules to the suggested action.
-func (s *scan) decideAction(v *verdict, locked, dirty bool) {
+func (s *scan) decideAction(v *verdict, e *entry, dirty bool) {
 	switch {
-	case locked:
+	case e.wt.Locked:
 		v.action, v.reason = findings.ActionNone, "worktree is locked; unlock it with git worktree unlock first"
+	case !e.missing && e.wt.Operation != "":
+		v.action, v.reason = findings.ActionNone, "a "+e.wt.Operation+" is in progress in the worktree; finish or abort it first"
+	case !e.missing && e.wt.HasSubmodules && v.action == findings.ActionRemoveWorktree:
+		v.action, v.reason = findings.ActionNone, "the worktree has initialized submodules; deinitialize them (git submodule deinit --all) and remove the worktree manually"
 	case dirty && v.action == findings.ActionRemoveWorktree && s.env.Force:
 		v.reason = "forced: uncommitted changes will be moved to the trash, not deleted"
 	case dirty && v.action == findings.ActionRemoveWorktree:
