@@ -91,7 +91,7 @@ func pathFreeForWorktree(path string) error {
 		return fmt.Errorf("worktree undo: cannot inspect %s: %w", path, err)
 	}
 	if len(entries) > 0 {
-		return fmt.Errorf("worktree undo: %s already exists and is not empty", path)
+		return &undoConflictError{fmt.Sprintf("worktree undo: %s already exists and is not empty", path)}
 	}
 	return nil
 }

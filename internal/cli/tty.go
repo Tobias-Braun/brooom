@@ -3,6 +3,7 @@ package cli
 import (
 	"io"
 	"os"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -85,4 +86,23 @@ func colorEnabled(w io.Writer, noColorFlag bool, configColor string) bool {
 		return false
 	}
 	return on
+}
+
+// canPrompt reports whether the user can be asked a question: stdin must be a
+// terminal. Scripted readers (tests, pipes) are never terminals unless a test
+// injects stdinTTY.
+func (a *app) canPrompt() bool {
+	if a.stdinTTY != nil {
+		return a.stdinTTY()
+	}
+	f, ok := a.io.In.(*os.File)
+	return ok && term.IsTerminal(int(f.Fd()))
+}
+
+// now is the current time, injectable for tests.
+func (a *app) now() time.Time {
+	if a.clock != nil {
+		return a.clock()
+	}
+	return time.Now()
 }

@@ -90,8 +90,13 @@ cleanup safe, fast and reviewable.
 
 - `trash`: OS trash (default).
 - `quarantine`: move into `~/.brooom/quarantine/<session-id>/` with a
-  manifest; auto-purge after a configurable retention (e.g. 14 days) via
-  `brooom purge` or on next run with a notice.
+  manifest; after a configurable retention (`trash.quarantine_retention_days`,
+  default 14, 0 = never) `brooom purge --apply` deletes the session directories
+  permanently. Every other command prints one line on stderr when sessions are
+  past the retention (`brooom: N quarantined sessions (X MB) are past the
+  D-day retention, run 'brooom purge' to free the space`); it is suppressed
+  for `json`/`ndjson`/`plain` output and `--quiet`, and never printed by
+  `purge`, `undo`, `version`, completion and help.
 - `delete`: immediate permanent deletion (requires explicit config or flag,
   and a warning on first use).
 
@@ -189,11 +194,25 @@ brooom worktrees [--apply]
 brooom git purge [--gc] [--reflog-expire D] [--prune D] [--apply]
 brooom logs / brooom artifacts / brooom ai
 brooom clean --from findings.json [--apply] [-y]
-brooom undo [session-id] / brooom sessions / brooom purge
+brooom undo [session-id] [--apply] [-y]   # default: latest session, dry run
+brooom sessions / brooom purge [--apply] [-y]
 brooom roots add|remove|list
 brooom config init|show|edit|validate
 brooom version / brooom update-check
 ```
+
+`brooom undo` lists, last applied first, what it would restore and what it
+cannot (delete strategy, maintenance actions, failed or skipped entries, a
+missing stored copy, an unknown action, an entry outside the current scope),
+each with the reason and the manual recovery hint. Nothing is ever
+overwritten: an existing original path or branch is reported as a conflict.
+`--apply` asks `Restore N items? [y/N]` (unless `--yes`; without a terminal and
+without `--yes` it exits 2), saves the manifest after every entry and exits 1
+if a restorable entry conflicted or failed. Entries are only restored inside
+the current scope (the repository you are in, or `--workspaces`), because
+manifests are editable files. Running it again skips restored entries.
+`brooom purge` never touches the OS trash or session manifests; manifests of
+purged sessions are marked as not restorable.
 
 Shell completions (bash, zsh, fish, PowerShell) and good `--help` text.
 

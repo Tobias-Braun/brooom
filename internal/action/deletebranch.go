@@ -421,7 +421,7 @@ func restoreBranch(ctx context.Context, env *Env, dir, name, sha string) error {
 		if cur == full {
 			return nil
 		}
-		return fmt.Errorf("branch %s already exists at %s", name, cur)
+		return &undoConflictError{fmt.Sprintf("branch %s already exists at %s", name, cur)}
 	}
 	var gerr *gitx.Error
 	if !errors.As(err, &gerr) || gerr.ExitCode != 1 {

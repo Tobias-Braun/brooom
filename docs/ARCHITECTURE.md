@@ -361,6 +361,27 @@ plus `[]Problem` for unreadable, corrupt or unsupported-version files, so one
 damaged file never hides the history. `brooom sessions [id] [--format json]`
 is the read-only view.
 
+#### Undo, purge and the retention notice
+
+`action.PlanUndo` / `action.RunUndo` (`internal/action/undo.go`,
+`undo_run.go`) hold the undo logic and `internal/cli/cmd_undo.go` only wires
+it. Entries are planned and undone in reverse order; each is classified
+`restore`, `conflict`, `cannot-restore` or `already-restored`. Guard checks use
+the entry's original paths (never trusted); the CLI builds the guard like
+`scan` does (usage error outside a repository) and adds the user locations of
+`detect.TargetSource` detectors only when an entry falls outside it. Conflicts
+of actions that are not file conflicts (existing branch, occupied worktree
+path) return an error matching `trash.ErrRestoreConflict`. The manifest is
+saved after every restored entry.
+
+`trash.ListQuarantine` / `trash.Purge` (`internal/trash/purge.go`) list
+session directories (names must match the session id format, symlinks are
+skipped and reported, manifest.json gives time and size with the directory
+mtime and a recursive size as fallback) and delete them;
+`session.Store.MarkPurged` makes the affected manifest entries
+non-restorable. `retentionNotice` (`internal/cli/notice.go`) is a root
+post-run hook that prints the one-line stderr notice.
+
 #### macOS Trash and undo
 
 On macOS items are trashed by calling `NSFileManager trashItemAtURL` directly

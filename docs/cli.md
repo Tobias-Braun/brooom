@@ -643,16 +643,30 @@ brooom git purge [flags]
 
 ```text
 Report loose objects, pack count, reflog size and large blobs, and run the
-selected maintenance operations. Each operation is opt-in:
+selected maintenance operations. Without a flag nothing but the report is
+produced. Each operation is opt-in and independent, none can be undone, and
+each is validated with git's own dry run before it is offered.
 
-  --gc                    run 'git gc' (repacks objects; safe)
-  --reflog-expire <date>  run 'git reflog expire --expire=<date> --all';
-                          entries older than <date> can no longer be used to
-                          recover deleted branches or reset commits
-  --prune <date>          run 'git prune --expire=<date>'; unreachable
-                          objects older than <date> are deleted for good
+  --gc                    run 'git gc --prune=<prune_expire>' on repositories
+                          with a loose-object or pack finding (healthy
+                          repositories are never touched)
+  --reflog-expire <date>  run 'git reflog expire --expire=<date> --all' on
+                          every repository in scope where it would remove
+                          entries
+  --prune <date>          run 'git prune --expire=<date>' on every repository
+                          in scope where it would delete objects
 
-Dates use git's syntax, e.g. '90.days.ago' or '2026-01-01'.
+What they do:
+
+  * git gc: repacks loose objects and packs (this can take a while and rewrites packs), deletes unreachable objects older than the configured prune_expire, and also expires reflog entries per gc.reflogExpire / gc.reflogExpireUnreachable (git defaults 90 / 30 days) and runs 'git worktree prune' and 'git rerere gc'. Recovery points are lost too. Not restorable.
+  * git reflog expire: removes reflog entries older than the date. Deleted branches and reset commits older than that can no longer be recovered via the reflog (entries of unreachable commits also follow gc.reflogExpireUnreachable). Not restorable.
+  * git prune: deletes unreachable objects older than the date permanently; commits only reachable through them cannot be recovered. Not restorable.
+
+Dates use git's syntax, e.g. '90.days.ago', '2.weeks.ago' or '2026-01-01'. The order is fixed: reflog
+expiry, then prune, then gc, so later steps see the expired reflog. A
+repository with a rebase, merge, cherry-pick, revert or bisect in progress is
+skipped. Large blobs need a history rewrite (git filter-repo), which Brooom
+does not do. Use --workspaces for all repositories below the configured roots.
 ```
 
 **Examples**
@@ -669,9 +683,9 @@ brooom git purge --reflog-expire 90.days.ago --prune 2.weeks.ago --apply
 | --- | --- | --- |
 | `--apply` | - | execute the plan (default is a dry run) |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--gc` | - | run git gc |
-| `--prune` | - | prune unreachable objects older than this git date |
-| `--reflog-expire` | - | expire reflog entries older than this git date |
+| `--gc` | - | run git gc on repositories with a loose-object or pack finding (repos without one are not touched) |
+| `--prune` | - | delete unreachable objects older than this git date, e.g. 2.weeks.ago (permanent) |
+| `--reflog-expire` | - | expire reflog entries older than this git date, e.g. 90.days.ago (removes recovery points) |
 | `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
@@ -719,9 +733,12 @@ brooom purge [flags]
 ```
 
 ```text
-Delete the quarantined files of sessions older than the configured
-retention. This is the one command that removes data for good, so it is a
-dry run unless you pass --apply and it asks before deleting.
+List the quarantined sessions (~/.brooom/quarantine/<session-id>) that are
+older than trash.quarantine_retention_days and, with --apply, delete them
+permanently. A retention of 0 means quarantined files never expire, so
+nothing is listed. Only session directories are touched, never anything else
+in the quarantine directory, the OS trash or the session manifests; the
+manifests of purged sessions are marked as not restorable.
 ```
 
 **Examples**
@@ -735,9 +752,7 @@ brooom purge --apply
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--apply` | - | execute the plan (default is a dry run) |
-| `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--apply` | - | delete the listed sessions (default is a dry run) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
@@ -942,10 +957,20 @@ brooom undo [session-id] [flags]
 ```
 
 ```text
-Reverse an applied session using its manifest: trashed files are restored
-from the trash or quarantine, deleted branches are recreated at their
-recorded tip. Pass a full session id or a unique prefix; 'brooom sessions'
-lists them. Without --apply this is a dry run.
+Restore the items a session removed, last applied first. Pass a full session
+id or a unique prefix; without one the latest session is used. Without --apply
+this only prints what would be restored and what cannot be (with the reason
+and a manual recovery hint).
+
+Nothing is ever overwritten: an entry whose original location exists again is
+reported as a conflict and stays as it was. Entries are only restored inside
+the current scope (the repository you are in, or --workspaces), because
+manifests are files that can be edited. Run it from the repository the
+session worked on or use --workspaces.
+
+Exit status: 0 when every restorable entry was restored, 1 when one conflicted
+or failed, 2 when confirmation is needed but stdin is not a terminal (pass
+--yes).
 ```
 
 **Examples**
@@ -953,7 +978,7 @@ lists them. Without --apply this is a dry run.
 ```sh
 brooom undo
 brooom undo 20260929-224501-3f9a
-brooom sessions
+brooom undo --apply
 ```
 
 **Flags**
