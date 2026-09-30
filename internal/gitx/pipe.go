@@ -71,9 +71,8 @@ func pipeLimitInput(ctx context.Context, r Runner, dir string, stdin io.Reader, 
 	c1 := exec.CommandContext(ctx, path, append([]string{"-C", dir}, first...)...)
 	c2 := exec.CommandContext(ctx, path, append([]string{"-C", dir}, second...)...)
 	c1.Env, c2.Env = env, env
-	if stdin != nil {
-		c1.Stdin = stdin
-	}
+	// A nil interface leaves Stdin on the null device, as required.
+	c1.Stdin = stdin
 	c1.Stderr, c2.Stderr = &stderr1, &stderr2
 	pr, err := c1.StdoutPipe()
 	if err != nil {
