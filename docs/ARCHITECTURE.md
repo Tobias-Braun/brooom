@@ -214,7 +214,20 @@ reason at the first failure:
 6. Tracked files: `git ls-files -z -- <path>` in the repository root; tracked
    files, or a failing check, skip unless `--force`.
 7. Delete-strategy guard: with the `delete` strategy a finding whose
-   `Meta["user_data_risk"]` is `untracked` is refused.
+   `Meta["user_data_risk"]` is `untracked` is refused, and so is any path for
+   which git cannot show right now (`ls-files --others --exclude-standard`)
+   that it holds no untracked, non-ignored file. Meta is only a conservative
+   extra signal, since a findings file can drop it.
+8. Catalog protection (`protect.go`): the catalog protect rules (`.env`,
+   `.mcp.json`, `CLAUDE.local.md`, `.claude/settings.local.json`, ..., and the
+   user-level tool configuration) are enforced on the path itself and on what
+   a directory contains, whatever detector or kind the finding names. Below a
+   directory only path-anchored patterns count (`ProjectMatcher.ProtectedAnchored`):
+   base-name patterns such as `.npmrc` would match inside every `node_modules`.
+   The rules are tried relative to each directory from the project root down
+   to the target's parent, since outside a repository the root is only the
+   allowed root. Extras from the config can only add rules; tool toggles never
+   switch a protection off.
 
 Windows specifics: `Guard.ResolveParent` canonicalises the final element with
 `GetLongPathName` (8.3 aliases such as `GIT~1` become `.git`), and step 2 ends
@@ -231,7 +244,7 @@ warning (and its `.delete-warned` marker in the Brooom home) is emitted by
 delete strategy, so dry runs never consume it.
 
 Not overridable by `--force`: steps 1, 2, 3, 4 (open files, also via the
-`file_open_by_process` flag) and 7. `--force` only lifts blocking risk flags
+`file_open_by_process` flag), 7 and 8. `--force` only lifts blocking risk flags
 and the tracked-files check. `Apply` re-resolves and re-checks the static
 refusals, then re-runs the nested `.git`, open-file, tracked-files and
 delete-strategy checks against live state (a step may come from any caller, so
@@ -364,7 +377,20 @@ the command exit 1 after the accepted ones were processed; findings selected
 away with `--id` are never evaluated. Findings without an action (also with
 `--force`) are skipped with a re-scan hint, an unknown action type is refused,
 a known but unimplemented one is skipped. Risk flags, sizes and ages from the
-file are not trusted: the executor's `Plan` re-validates everything. Execution
+file are not trusted: the executor's `Plan` re-validates everything.
+
+The user's selection and configuration apply as in a scan. `-d/--detector` is
+validated against the registry (unknown name: exit 2) and findings of other
+detectors are left alone silently. `vet` derives the effective configuration
+(`ForTarget`, including the tighten-only `.brooom.json`) from the resolved
+path, never from the file's scope, and refuses a finding of a detector that is
+disabled there or whose path lies below an `exclude`d directory (`clean_config.go`).
+The catalog protect rules are enforced by the trash action (step 8 above).
+Accepted git maintenance findings lose their `Args`: the expiry of `git-gc`,
+`git-prune` and `git-reflog-expire` comes from the repository's configuration
+(`targetGitBloat`), so a forged `{"expire": "now"}` has no effect. `delete-branch`
+derives merged, squash-merged and remote containment from the repository at
+plan and apply time and never reads `Detector` or `Args["verified"]`. Execution
 is `runExecutor`, shared with the shortcut commands.
 
 ### Sweep presets (`internal/presets`, `internal/cli/cmd_sweep.go`)

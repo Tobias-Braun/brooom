@@ -15,12 +15,7 @@ import (
 )
 
 const (
-	metaTip = "tip"
-	// Values of the suggested action's "verified" argument set by the
-	// detectors: which fact made the deletion safe at scan time.
-	verifiedSquash   = "squash"
-	verifiedInRemote = "in-remote"
-
+	metaTip   = "tip"
 	flagSafe  = "-d"
 	flagForce = "-D"
 
@@ -57,10 +52,17 @@ type decision struct {
 	name string
 	tip  string
 	flag string
-	// verified is the finding's claim of how the deletion was verified.
-	verified string
 	// why says what justified the flag, for the step description.
 	why string
+	// merge caches mergedFact: the answer is needed twice per evaluation and
+	// the squash detection is not cheap.
+	merge *mergeFact
+}
+
+// mergeFact is the live answer to "is the tip merged into the base branch".
+type mergeFact struct {
+	why string
+	ok  bool
 }
 
 // command is the exact git invocation for display.
@@ -140,7 +142,7 @@ func branchRecoveryHint(name, sha string) string {
 // fully merged (its view differs from ours, or the repository changed in
 // between) it escalates to -D only through the same verification and --force
 // rules, never blindly.
-func (d decision) run(ctx context.Context, env *Env) (string, error) {
+func (d *decision) run(ctx context.Context, env *Env) (string, error) {
 	if d.flag == flagForce {
 		return d.deleteForced(ctx, env)
 	}
@@ -286,7 +288,7 @@ func evaluate(ctx context.Context, env *Env, f findings.Finding) (decision, erro
 	if err != nil {
 		return decision{}, err
 	}
-	d := decision{repo: repo, cfg: cfg, name: f.Ref, verified: f.SuggestedAction.Args["verified"]}
+	d := decision{repo: repo, cfg: cfg, name: f.Ref}
 	b, err := d.checkBranch(ctx, f)
 	if err != nil {
 		return decision{}, err
@@ -294,7 +296,7 @@ func evaluate(ctx context.Context, env *Env, f findings.Finding) (decision, erro
 	if err := d.checkProtection(ctx, b); err != nil {
 		return decision{}, err
 	}
-	if err := d.recheckFlags(ctx, env, f); err != nil {
+	if err := d.recheckFlags(ctx, env); err != nil {
 		return decision{}, err
 	}
 	return d, d.chooseFlag(ctx, env, b, f)
@@ -411,49 +413,26 @@ func (d *decision) checkProtection(ctx context.Context, b gitx.Branch) error {
 	return nil
 }
 
-// recheckFlags re-queries the risk flags that can change after the scan: an
-// open PR (unknown status never blocks) and unpushed commits, the latter only
-// where the finding's safety rests on remote containment.
-func (d *decision) recheckFlags(ctx context.Context, env *Env, f findings.Finding) error {
-	ref := "refs/heads/" + d.name
+// recheckFlags re-queries the risk flag that can change after the scan: an
+// open PR (unknown status never blocks).
+func (d *decision) recheckFlags(ctx context.Context, env *Env) error {
 	if d.cfg.Git.UseGH && !env.Force {
 		info := d.repo.OpenPRBranches(ctx, d.repo.Dir, gitx.PROptions{GH: ghRunner})
 		if info.HasOpenPR(d.name) {
 			return skipf("branch has an open pull request (use --force to override)")
 		}
 	}
-	if !env.Force && relyOnRemote(f) {
-		n, err := d.repo.UnpushedCount(ctx, ref)
-		if err != nil {
-			return skipf("cannot check for unpushed commits: %v", err)
-		}
-		if n > 0 {
-			return skipf("%s (use --force to override)", d.unpushedWording(ctx))
-		}
-	}
 	return nil
-}
-
-// unpushedWording explains the unpushed block. The gate counts every commit on
-// no remote, which includes history shared with the base; the number shown is
-// the count of commits only this branch holds. When that count cannot be
-// determined the wording stays free of numbers.
-func (d *decision) unpushedWording(ctx context.Context) string {
-	n, err := d.repo.UniqueCount(ctx, d.name)
-	if err != nil {
-		return "commits of this branch exist on no remote"
-	}
-	return gitx.OnlyOnBranchPhrase(n)
-}
-
-// relyOnRemote reports whether the finding's safety depends on the commits
-// being on a remote: in-remote verification and every stale-branch finding.
-func relyOnRemote(f findings.Finding) bool {
-	return f.SuggestedAction.Args["verified"] == verifiedInRemote || f.Detector == "stale-branch"
 }
 
 // chooseFlag picks -d when git would accept it, else -D only with a fact that
 // is re-verified now, else -D under --force, else a skip with the hint.
+//
+// There is deliberately no separate "commits on no remote" gate: every
+// justification for -D (merged into the base, contained in remotes) is
+// re-derived here from the repository, so an unverified branch never gets
+// past this point without --force. A gate keyed on the detector name or the
+// finding's "verified" claim would trust a field a findings file can edit.
 func (d *decision) chooseFlag(ctx context.Context, env *Env, b gitx.Branch, f findings.Finding) error {
 	if d.gitAccepts(ctx, b) {
 		d.flag, d.why = flagSafe, "fully merged"
@@ -486,33 +465,38 @@ func (d *decision) gitAccepts(ctx context.Context, b gitx.Branch) bool {
 }
 
 // verifiedWhy re-verifies, right now, one of the facts that justify -D: the
-// tip is an ancestor of the resolved base (for any finding), or, only for
-// findings that claimed it, a squash/rebase merge is still detected or all
-// commits are still contained in remotes. Errors mean unknown, never verified.
-func (d decision) verifiedWhy(ctx context.Context) (string, bool) {
-	base, err := d.repo.DefaultBase(ctx, d.cfg.Git.BaseBranches)
-	if err == nil {
-		if why, ok := d.mergedWhy(ctx, base); ok {
-			return why, true
-		}
+// tip is an ancestor of the resolved base, a squash/rebase merge is detected,
+// or all commits are contained in remotes. Nothing is taken from the finding.
+// Errors mean unknown, never verified.
+func (d *decision) verifiedWhy(ctx context.Context) (string, bool) {
+	if m := d.mergedFact(ctx); m.ok {
+		return m.why, true
 	}
-	if d.verified == verifiedInRemote {
-		ok, err := d.repo.ContainedInRemotes(ctx, "refs/heads/"+d.name)
-		if err == nil && ok {
-			return "all commits contained in remote-tracking branches, re-verified", true
-		}
+	ok, err := d.repo.ContainedInRemotes(ctx, "refs/heads/"+d.name)
+	if err == nil && ok {
+		return "all commits contained in remote-tracking branches, re-verified", true
 	}
 	return "", false
 }
 
-// mergedWhy checks ancestry of the tip in the base and, for a finding that
-// claimed a squash merge, the patch-id based squash/rebase detection.
-func (d decision) mergedWhy(ctx context.Context, base gitx.Base) (string, bool) {
+// mergedFact derives from the repository whether the tip is merged into the
+// resolved base: by ancestry, or by the patch-id based squash/rebase
+// detection. It is computed once per decision.
+func (d *decision) mergedFact(ctx context.Context) mergeFact {
+	if d.merge == nil {
+		d.merge = &mergeFact{}
+		if base, err := d.repo.DefaultBase(ctx, d.cfg.Git.BaseBranches); err == nil {
+			d.merge.why, d.merge.ok = d.mergedWhy(ctx, base)
+		}
+	}
+	return *d.merge
+}
+
+// mergedWhy checks ancestry of the tip in the base, then the squash/rebase
+// detection.
+func (d *decision) mergedWhy(ctx context.Context, base gitx.Base) (string, bool) {
 	if ok, err := d.repo.IsAncestor(ctx, d.tip, base.FullRef); err == nil && ok {
 		return "merged into " + base.Ref, true
-	}
-	if d.verified != verifiedSquash {
-		return "", false
 	}
 	res, err := d.repo.MergedInto(ctx, base.FullRef, "refs/heads/"+d.name, true)
 	if err != nil || !res.Merged {

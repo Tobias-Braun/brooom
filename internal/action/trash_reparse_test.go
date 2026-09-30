@@ -57,7 +57,7 @@ func TestSizeAndNestedGitReparseRoots(t *testing.T) {
 func TestRefreshFindingRefusesUninspectedReparseDirectory(t *testing.T) {
 	dir := t.TempDir()
 	withRoot(t, fs.ModeIrregular, true)
-	_, err := refreshFinding(context.Background(), trashFinding(dir), dir)
+	_, err := refreshFinding(context.Background(), trashFinding(dir), dir, nil)
 	wantSkip(t, err, "cannot inspect")
 }
 

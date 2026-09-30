@@ -137,13 +137,34 @@ func gitBloatConfig(env *Env) config.GitBloat {
 	return config.Default().Detectors.GitBloat
 }
 
-// date returns the finding's date: the arg when present (an empty arg is an
-// error, not a request for the default), else the configured value.
+// targetGitBloat is gitBloatConfig for the repository of a finding: the
+// per-root overrides and the tighten-only .brooom.json apply, so the
+// fallback date is the one a scan of that repository would have used. A
+// configuration that cannot be loaded falls back to the base one rather than
+// to anything the finding says.
+func targetGitBloat(env *Env, f findings.Finding) config.GitBloat {
+	if env.Config == nil {
+		return gitBloatConfig(env)
+	}
+	if cfg, err := env.Config.ForTarget("", f.Path); err == nil {
+		return cfg.Detectors.GitBloat
+	}
+	return gitBloatConfig(env)
+}
+
+// date returns the date of the operation: the arg when present (an empty arg
+// is an error, not a request for the default), else the configured value.
+//
+// The arg is only trustworthy from the callers that build the finding
+// themselves (`brooom git purge` with an explicit date, the detector with
+// the configured value). `brooom clean --from` strips it from findings read
+// from a file, so a forged {"expire": "now"} never reaches this point and the
+// configured expiry applies.
 func (b maintBase) date(env *Env, f findings.Finding) string {
 	if v, ok := f.SuggestedAction.Args[b.dateArg]; ok {
 		return v
 	}
-	return b.defaultDate(gitBloatConfig(env))
+	return b.defaultDate(targetGitBloat(env, f))
 }
 
 // prepare re-validates a finding: type, risk flags, scope, repository root,

@@ -55,9 +55,22 @@ func (sc *cleanScope) vet(fs []findings.Finding) verdict {
 			v.skipped = append(v.skipped, verdictEntry{f, reason})
 			continue
 		}
-		v.accepted = append(v.accepted, f)
+		v.accepted = append(v.accepted, stripUntrusted(f))
 	}
 	return v
+}
+
+// stripUntrusted removes the action arguments that would steer a destructive
+// git maintenance operation. The expiry of git gc, prune and reflog expire
+// comes from the configuration of the repository (the actions fall back to
+// it when the arguments are absent), never from a file that can be edited:
+// {"expire": "now"} would otherwise empty the reflog without --force.
+func stripUntrusted(f findings.Finding) findings.Finding {
+	switch f.SuggestedAction.Type {
+	case findings.ActionGitGC, findings.ActionGitPrune, findings.ActionGitReflogExpire:
+		f.SuggestedAction.Args = nil
+	}
+	return f
 }
 
 // unavailableAction skips findings whose action is a known type that this
@@ -90,6 +103,9 @@ func (sc *cleanScope) refusal(f findings.Finding) string {
 		return reason
 	}
 	if reason := checkAlias(f, resolved); reason != "" {
+		return reason
+	}
+	if reason := sc.checkConfig(f, resolved); reason != "" {
 		return reason
 	}
 	if !isGitFinding(f) {

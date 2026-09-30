@@ -228,6 +228,13 @@ locations are only accepted with --user. The action in the file only selects
 which action to run; risk flags, sizes and ages in the file are never trusted,
 and each finding is checked again against the live state before it is applied.
 
+Your configuration applies as in a scan: -d/--detector selects which findings
+are acted on (an unknown detector is a usage error), and findings of a detector
+that is disabled, in the configuration or by a repository's .brooom.json, or
+below an excluded directory are refused. Catalog-protected files such as .env
+and .mcp.json are never removed. Git maintenance findings ignore any expiry
+in the file and use the configured one.
+
 A finding without a suggested action stays untouched, even with --force: scan
 again with --force (export with 'brooom scan --force --format json') to get
 an action for findings blocked by an overridable risk flag.
