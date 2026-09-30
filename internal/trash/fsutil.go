@@ -45,7 +45,10 @@ type SourceNotRemovedError struct {
 }
 
 func (e *SourceNotRemovedError) Error() string {
-	return fmt.Sprintf("moved %q to %q, but removing the source failed: %v; the complete item is at %q and %q may hold leftovers that need manual cleanup",
+	// Paths are quoted with plain quotes rather than %q: %q doubles the
+	// backslashes of Windows paths, which breaks copy-pasting them for the
+	// manual cleanup this message asks for.
+	return fmt.Sprintf(`moved "%s" to "%s", but removing the source failed: %v; the complete item is at "%s" and "%s" may hold leftovers that need manual cleanup`,
 		e.Src, e.Dst, e.Err, e.Dst, e.Src)
 }
 
