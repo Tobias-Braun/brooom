@@ -25,6 +25,7 @@ const (
 	evOperation    = "worktree_operation_in_progress"
 	evSubmodules   = "worktree_has_submodules"
 	evLocation     = "agent_worktree_location"
+	evOutsideScope = "outside_scope"
 )
 
 // entry is one linked worktree under examination together with the lazily

@@ -393,10 +393,15 @@ of a git finding's repository. Git maintenance (`git-bloat`, `git-gc` and
 friends) uses `Resolve`; `brooom git purge` from a linked worktree runs in the
 linked worktree itself (same shared repository). A linked worktree the guard
 does not allow (a sibling below main, or one outside the repository, which is
-git's default for `git worktree add ../x`) is never listed; `worktrees`
-returns a non-fatal note per existing one ("outside the allowed scope; add its
-parent as a root and use --workspaces", `scope.OutsideWorktreeHint`), and the
-`current_branch` block reason of `merged-branch` and `stale-branch` names the
+git's default for `git worktree add ../x`) is never examined or offered;
+`worktrees` reports each existing one as an informational finding (action
+`none`, low confidence, evidence code `outside_scope`, message carrying
+`scope.OutsideWorktreeHint`: "outside the allowed scope; run `brooom roots add
+<parent>` or use --workspaces"), so it is visible without `--verbose` in every
+format that lists non-actionable findings (`plain` stays a path pipe of
+actionable findings only). `Guard.OutsideNote` gives the hint only for a
+non-empty path that fails with `ErrOutsideScope`. The `current_branch`
+block reason of `merged-branch` and `stale-branch` names the
 worktree and carries the same hint when it is out of scope. Missing (prunable)
 worktrees are still reported whenever the repository is reachable.
 

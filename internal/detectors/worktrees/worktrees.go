@@ -21,6 +21,13 @@
 // trash instead of deleting. Locked worktrees are never suggested, also not
 // with --force.
 //
+// # Out-of-scope worktrees
+//
+// A linked worktree the guard does not allow (for example ../repo-wt) is never
+// examined, sized or offered. It is reported as an informational finding with
+// action none and the outside_scope evidence, which names scope.OutsideWorktreeHint,
+// so every output format shows it without --verbose.
+//
 // # Active worktrees
 //
 // A worktree an agent is working in must never look removable. The newest
@@ -81,29 +88,15 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	if err != nil {
 		return err
 	}
-	var notes []error
 	for _, wt := range wts {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err := s.visit(ctx, wt, emit); err != nil {
-			var skip *outOfScopeError
-			if !errors.As(err, &skip) {
-				return err
-			}
-			notes = append(notes, err)
+			return err
 		}
 	}
-	return errors.Join(notes...)
-}
-
-// outOfScopeError is the non-fatal note for a linked worktree that the guard
-// does not allow. It is returned after every other worktree was examined, so
-// it ends up as a scan error (shown with --verbose) and never hides findings.
-type outOfScopeError struct{ path string }
-
-func (e *outOfScopeError) Error() string {
-	return "linked worktree " + e.path + " skipped: " + scope.OutsideWorktreeHint
+	return nil
 }
 
 // visit examines one worktree entry and emits its finding, if any. The main
@@ -114,7 +107,10 @@ func (s *scan) visit(ctx context.Context, wt gitx.Worktree, emit func(findings.F
 	}
 	e, ok := s.entry(wt)
 	if !ok {
-		return s.skipNote(wt)
+		if f, outside := s.outsideFinding(wt); outside {
+			emit(f)
+		}
+		return nil
 	}
 	f, ok, err := s.examine(ctx, e)
 	if err != nil || !ok {
@@ -204,17 +200,38 @@ func (s *scan) entry(wt gitx.Worktree) (*entry, bool) {
 	return e, true
 }
 
-// skipNote explains a skipped entry: a worktree that exists but lies outside
-// the guard gets a note, the scan scope itself and unreachable missing
-// worktrees stay silent.
-func (s *scan) skipNote(wt gitx.Worktree) error {
+// outsideFinding reports a skipped entry that exists but lies outside the
+// guard as an informational finding, so a plain run never claims there is
+// nothing to clean while a worktree was left unexamined. The scan scope
+// itself and missing worktrees stay silent. The finding carries no action
+// and low confidence; it is never unwrapped into a removal.
+func (s *scan) outsideFinding(wt gitx.Worktree) (findings.Finding, bool) {
 	if wt.DirMissing || wt.Prunable || gitx.SamePath(wt.Path, s.target.Scope.Path) {
-		return nil
+		return findings.Finding{}, false
 	}
 	if s.env.Guard.OutsideNote(wt.Path) == "" {
-		return nil
+		return findings.Finding{}, false
 	}
-	return &outOfScopeError{path: wt.Path}
+	return findings.Finding{
+		ID:         findings.NewID(Name, findings.KindWorktree, wt.Path, wt.Branch),
+		Detector:   Name,
+		Scope:      s.target.Scope,
+		Path:       wt.Path,
+		Kind:       findings.KindWorktree,
+		Ref:        wt.Branch,
+		Confidence: findings.ConfidenceLow,
+		Evidence: []findings.Evidence{{
+			Code:    evOutsideScope,
+			Message: "linked worktree " + wt.Path + " is not examined: " + scope.OutsideWorktreeHint,
+			Value:   wt.Path,
+		}},
+		RiskFlags: []findings.RiskFlag{},
+		SuggestedAction: findings.SuggestedAction{
+			Type:   findings.ActionNone,
+			Reason: "not examined, " + scope.OutsideWorktreeHint,
+		},
+		Meta: map[string]string{"repo": s.main, "head": wt.Head, "branch": wt.Branch},
+	}, true
 }
 
 func (s *scan) mainInGuard() bool {

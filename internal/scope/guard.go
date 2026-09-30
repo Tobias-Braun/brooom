@@ -173,11 +173,16 @@ func (g *Guard) ResolveRepoMeta(path string) (string, error) {
 	return "", err
 }
 
-// OutsideNote returns OutsideWorktreeHint when path does not resolve inside
-// the allowed locations and an empty string when it does. Repository metadata
-// locations do not count as inside.
+// OutsideNote returns OutsideWorktreeHint when path resolves to a location
+// outside the allowed ones and an empty string otherwise. Repository metadata
+// locations do not count as inside. An empty path is unknown, not outside, and
+// other resolution failures (permissions, loops) are not an out-of-scope
+// situation the hint could fix, so both yield no note.
 func (g *Guard) OutsideNote(path string) string {
-	if _, err := g.Resolve(path); err != nil {
+	if path == "" {
+		return ""
+	}
+	if _, err := g.Resolve(path); errors.Is(err, ErrOutsideScope) {
 		return OutsideWorktreeHint
 	}
 	return ""
