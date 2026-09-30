@@ -25,6 +25,8 @@ func isTerminal(in io.Reader) bool {
 type confirmer struct {
 	r   *bufio.Reader
 	out io.Writer
+	// sel is Options.Select: when set, "e" opens it from the question.
+	sel func(*Plan) (bool, error)
 }
 
 func newConfirmer(in io.Reader, out io.Writer) *confirmer {
@@ -46,6 +48,7 @@ const (
 	ansYes  = 'y'
 	ansNo   = 'n'
 	ansQuit = 'q'
+	ansEdit = 'e'
 )
 
 // ask prints the prompt and reads answers until one is valid. Answers are
@@ -74,7 +77,7 @@ func (c *confirmer) ask(prompt, allowed string) rune {
 
 // matchAnswer accepts the letter or the full word ("y" or "yes").
 func matchAnswer(a, allowed string) rune {
-	words := map[rune]string{ansYes: "yes", ansNo: "no", ansQuit: "quit"}
+	words := map[rune]string{ansYes: "yes", ansNo: "no", ansQuit: "quit", ansEdit: "edit"}
 	for _, r := range allowed {
 		if a == string(r) || a == words[r] {
 			return r
@@ -94,13 +97,57 @@ func (c *confirmer) confirm(p *Plan) bool {
 	if n := p.permanentCount(); n > 0 {
 		what += fmt.Sprintf(", %d of them deleted permanently", n)
 	}
-	prompt := "Proceed with " + what + "? [y/N] "
-	if c.ask(prompt, "yn") != ansYes {
+	prompt, allowed := "Proceed with "+what+"? [y/N] ", "yn"
+	if c.sel != nil {
+		prompt, allowed = "Proceed with "+what+"? [y/N/e to choose] ", "yne"
+	}
+	switch c.ask(prompt, allowed) {
+	case ansYes:
+		p.setConfirmed(true)
+		return true
+	case ansEdit:
+		return c.choose(p)
+	}
+	p.clearConfirmed()
+	return false
+}
+
+// choose lets the user untick items (Options.Select) with all of them
+// checked to begin with. Aborting, an error or unticking everything changes
+// nothing.
+func (c *confirmer) choose(p *Plan) bool {
+	p.setConfirmed(true)
+	ok, err := c.sel(p)
+	if err != nil {
+		fmt.Fprintf(c.out, "cannot show the list: %v\n", err)
+	}
+	if err != nil || !ok || p.confirmedCount() == 0 {
 		p.clearConfirmed()
 		return false
 	}
-	p.setConfirmed(true)
+	fmt.Fprintf(c.out, "cleaning %d of %s\n", p.confirmedCount(), plural(p.itemCount(), "item"))
 	return true
+}
+
+// Header is how the plan names a group: detector and action label.
+func (g Group) Header() string {
+	return output.Sanitize(g.Detector) + " / " + g.Label()
+}
+
+// Line is how the plan lists an item: its description and size.
+func (it Item) Line() string { return itemLine(it.Step) }
+
+// confirmedCount is the number of confirmed items over all groups.
+func (p *Plan) confirmedCount() int {
+	n := 0
+	for _, g := range p.Groups {
+		for _, it := range g.Items {
+			if it.Confirmed {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // itemLine is a step's description followed by its size, the one place the

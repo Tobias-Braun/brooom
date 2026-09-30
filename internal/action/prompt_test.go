@@ -2,6 +2,7 @@ package action
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -72,5 +73,48 @@ func TestIsTerminalNonFile(t *testing.T) {
 func TestPluralAndPromptText(t *testing.T) {
 	if plural(1, "item") != "1 item" || plural(2, "item") != "2 items" || plural(0, "item") != "0 items" {
 		t.Error("plural")
+	}
+}
+
+// TestChooseFromTheQuestion covers the "e" answer: it is only offered with a
+// selector, the selector's ticks decide what runs, and aborting, an error or
+// unticking everything changes nothing.
+func TestChooseFromTheQuestion(t *testing.T) {
+	plan := func() *Plan {
+		return &Plan{Groups: []Group{{Detector: "d", Action: "trash", Items: []Item{{}, {}, {}}}}}
+	}
+	untickFirst := func(p *Plan) (bool, error) {
+		p.Groups[0].Items[0].Confirmed = false
+		return true, nil
+	}
+	tests := []struct {
+		name  string
+		in    string
+		sel   func(*Plan) (bool, error)
+		ok    bool
+		count int
+	}{
+		{"untick one", "e\n", untickFirst, true, 2},
+		{"abort", "e\n", func(*Plan) (bool, error) { return false, nil }, false, 0},
+		{"error", "e\n", func(*Plan) (bool, error) { return true, errors.New("no tty") }, false, 0},
+		{"untick all", "e\n", func(p *Plan) (bool, error) { p.clearConfirmed(); return true, nil }, false, 0},
+		{"e without selector re-asks", "e\nn\n", nil, false, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			c := newConfirmer(strings.NewReader(tt.in), &out)
+			c.sel = tt.sel
+			p := plan()
+			if got := c.confirm(p); got != tt.ok || p.confirmedCount() != tt.count {
+				t.Errorf("confirm = %v with %d confirmed, want %v with %d\n%s", got, p.confirmedCount(), tt.ok, tt.count, out.String())
+			}
+			if tt.sel != nil && !strings.Contains(out.String(), "[y/N/e to choose]") {
+				t.Errorf("the question does not offer e:\n%s", out.String())
+			}
+			if tt.sel == nil && strings.Contains(out.String(), "e to choose") {
+				t.Errorf("e offered without a selector:\n%s", out.String())
+			}
+		})
 	}
 }
