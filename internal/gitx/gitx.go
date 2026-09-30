@@ -86,7 +86,7 @@ func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args 
 		if errors.As(err, &exitErr) {
 			return "", &Error{Args: args, Dir: dir, ExitCode: exitErr.ExitCode(), Stderr: stderr.String()}
 		}
-		return "", err
+		return "", mapStartErr(err)
 	}
 	return strings.TrimRight(stdout.String(), "\r\n"), nil
 }
