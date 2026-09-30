@@ -22,6 +22,15 @@ func TestDirSizeHasGit(t *testing.T) {
 		{"git dir at root", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, ".git", "HEAD"), 1) }, true},
 		{"git file deep", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, "a", "b", ".git"), 1) }, true},
 		{"similar name", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, ".github", "x"), 1) }, false},
+		{"hg dir deep", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, "a", ".hg", "store"), 1) }, true},
+		{"jj dir", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, "a", ".jj", "repo"), 1) }, true},
+		{"svn dir", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, ".svn", "wc.db"), 1) }, true},
+		{"bare repo deep", func(t *testing.T, root string) { makeBare(t, filepath.Join(root, "a", "clone.git")) }, true},
+		{"bare repo is the root", func(t *testing.T, root string) { makeBare(t, root) }, true},
+		{"HEAD and objects only", func(t *testing.T, root string) {
+			writeFile(t, filepath.Join(root, "HEAD"), 1)
+			writeFile(t, filepath.Join(root, "objects", "x"), 1)
+		}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -36,6 +45,14 @@ func TestDirSizeHasGit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// makeBare lays out the shape of a bare git repository (HEAD, objects/, refs/).
+func makeBare(t *testing.T, dir string) {
+	t.Helper()
+	writeFile(t, filepath.Join(dir, "HEAD"), 1)
+	writeFile(t, filepath.Join(dir, "objects", "pack", "p"), 1)
+	writeFile(t, filepath.Join(dir, "refs", "heads", "main"), 1)
 }
 
 func mustSize(t *testing.T, path string, opts Options) DirSummary {

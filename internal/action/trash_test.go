@@ -253,6 +253,30 @@ func TestTrashPlanSkips(t *testing.T) {
 			fx.write("dir/sub/nested/.git", "gitdir: /x\n")
 			return trashFinding(fx.path("dir"))
 		}, "contains a git repository (.git at sub/nested/.git)"},
+		{"nested mercurial repo", true, func(fx *trashFixture) findings.Finding {
+			fx.write("dir/sub/.hg/store", "x")
+			return trashFinding(fx.path("dir"))
+		}, "contains a nested repository (.hg at sub/.hg)"},
+		{"nested jujutsu repo", true, func(fx *trashFixture) findings.Finding {
+			fx.write("dir/.jj/repo", "x")
+			return trashFinding(fx.path("dir"))
+		}, "contains a nested repository (.jj at .jj)"},
+		{"nested subversion checkout", true, func(fx *trashFixture) findings.Finding {
+			fx.write("dir/sub/.svn/wc.db", "x")
+			return trashFinding(fx.path("dir"))
+		}, "contains a nested repository (.svn at sub/.svn)"},
+		{"nested bare repo", true, func(fx *trashFixture) findings.Finding {
+			fx.write("dir/sub/clone.git/HEAD", "ref: refs/heads/main\n")
+			fx.write("dir/sub/clone.git/objects/pack/p", "x")
+			fx.write("dir/sub/clone.git/refs/heads/main", "x")
+			return trashFinding(fx.path("dir"))
+		}, "contains a bare git repository (at sub/clone.git)"},
+		{"target is a bare repo", true, func(fx *trashFixture) findings.Finding {
+			fx.write("clone.git/HEAD", "ref: refs/heads/main\n")
+			fx.write("clone.git/objects/x", "x")
+			fx.write("clone.git/refs/x", "x")
+			return trashFinding(fx.path("clone.git"))
+		}, "contains a bare git repository (at .)"},
 		{"open file", false, func(fx *trashFixture) findings.Finding {
 			p := fx.write("proj/run.log", "x")
 			fx.setOpen(func(_ context.Context, paths []string) (map[string]bool, error) {

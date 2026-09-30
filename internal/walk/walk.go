@@ -130,11 +130,6 @@ func (o Options) workers() int {
 	return max(runtime.NumCPU(), 1)
 }
 
-// isGitName reports whether an entry name is ".git" on this OS's filesystem.
-func isGitName(name string) bool {
-	return name == ".git" || (foldNames() && strings.EqualFold(name, ".git"))
-}
-
 // foldNames reports whether directory names compare case-insensitively on
 // the current OS (the default filesystems of Windows and macOS).
 func foldNames() bool { return runtime.GOOS == "windows" || runtime.GOOS == "darwin" }
@@ -302,8 +297,9 @@ type DirSummary struct {
 	// lower-bound hint: see the package documentation.
 	NewestModTime time.Time
 	// HasGit is true when any directory of the tree (the root included)
-	// directly contains an entry named ".git", be it a directory or a file
-	// (linked worktrees and submodules). It is gathered by the size pass
+	// is a repository: it directly contains VCS metadata (.git as directory
+	// or file, or .hg, .jj, .svn) or has the shape of a bare git
+	// repository. It is gathered by the size pass
 	// itself and survives the cache, so callers that must refuse trees
 	// holding a repository need no second traversal.
 	HasGit bool

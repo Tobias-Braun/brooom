@@ -217,8 +217,7 @@ func sameName(a, b string) bool {
 // other scopes: scanning them here would report findings under a repo this
 // target does not own.
 func isNestedRepo(dir string) bool {
-	_, err := os.Lstat(filepath.Join(dir, ".git"))
-	return err == nil
+	return walk.HasVCSEntry(dir)
 }
 
 // linkCandidate claims a symlink that points to a directory and matches a

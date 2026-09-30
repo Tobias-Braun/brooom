@@ -276,8 +276,7 @@ func (s *scan) inspectOne(ctx context.Context, e entry) *candidate {
 // hasGitEntry reports whether dir directly contains a .git file or directory,
 // i.e. is a nested repository, submodule or linked worktree.
 func hasGitEntry(dir string) bool {
-	_, err := os.Lstat(filepath.Join(dir, ".git"))
-	return err == nil
+	return walk.HasVCSEntry(dir)
 }
 
 // checkOpen looks up all candidates in one batch. The returned error is

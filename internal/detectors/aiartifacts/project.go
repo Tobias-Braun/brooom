@@ -3,7 +3,6 @@ package aiartifacts
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -173,8 +172,7 @@ func (r *run) excluded(e walk.Entry) bool {
 // hasGitEntry reports whether dir directly contains a .git entry, file or
 // directory. Lstat keeps a symlinked .git from being followed.
 func hasGitEntry(dir string) bool {
-	_, err := os.Lstat(filepath.Join(dir, ".git"))
-	return err == nil
+	return walk.HasVCSEntry(dir)
 }
 
 // toolName returns the display name of a catalog tool for evidence messages.

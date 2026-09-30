@@ -196,9 +196,14 @@ reason at the first failure:
    (and anything containing it) and its `sessions` and `quarantine` dirs, and
    the user's home directory (and anything containing it).
 3. Existence and contents: one `walk.Walk` pass with `Fresh: true` sums the
-   size exactly like `walk.DirSize` and looks for a `.git` entry (file or
-   directory) at any depth below a directory. A nested repository, linked
-   worktree or submodule refuses the whole directory. A directory that cannot
+   size exactly like `walk.DirSize` and looks for VCS metadata (`.git` as file
+   or directory, `.hg`, `.jj`, `.svn`; `walk.IsVCSName`) or a bare git
+   repository shape (a directory holding `HEAD`, `objects/` and `refs/`;
+   `walk.DirShape`) in the target and at any depth below it. A nested
+   repository, linked worktree, submodule or bare clone refuses the whole
+   directory. The detectors use the same predicate (`walk.HasVCSEntry`) to
+   prune nested repositories, and `walk.DirSummary.HasGit` (cache version 3)
+   carries it through the size cache. A directory that cannot
    be read completely is refused too, since an unreadable subtree could hide
    a repository. `SizeBytes` and `LastModified` are refreshed in the step's
    finding copy, whose `Path` is the resolved path.

@@ -123,16 +123,21 @@ func (s *sizer) scan(path string, mtime int64, id string) *dirRecord {
 	if rec.Incomplete {
 		rec.Racy = true // partial listing: never trust it next time
 	}
+	var shape DirShape
 	for _, e := range entries {
 		rec.add(e)
+		shape.Add(e.Name, e.IsDir(), e.Type.IsRegular())
+	}
+	if shape.IsBareRepo() {
+		rec.HasVCS = true
 	}
 	return rec
 }
 
 // add folds one directory entry into the record.
 func (r *dirRecord) add(e Entry) {
-	if isGitName(e.Name) {
-		r.HasGit = true
+	if IsVCSName(e.Name) {
+		r.HasVCS = true
 	}
 	if e.IsDir() {
 		r.Subdirs = append(r.Subdirs, e.Name)
@@ -161,7 +166,7 @@ func (s *sizer) aggregate() DirSummary {
 	for rel, rec := range s.recs {
 		sum.SizeBytes += rec.DirectBytes
 		sum.Files += rec.DirectFiles
-		sum.HasGit = sum.HasGit || rec.HasGit
+		sum.HasGit = sum.HasGit || rec.HasVCS
 		sum.Incomplete = sum.Incomplete || rec.Incomplete
 		newest = max(newest, rec.DirectNewest)
 		if rel != "" {
