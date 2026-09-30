@@ -153,11 +153,10 @@ func openFilesFor(ctx context.Context, path string) (map[string]bool, error) {
 // outside any repository have nothing tracked. An error from git means
 // unknown, and unknown is never treated as untracked.
 func checkTracked(ctx context.Context, env *Env, path string) (bool, error) {
-	start := path
-	if fi, err := os.Lstat(path); err != nil || !fi.IsDir() {
-		start = filepath.Dir(path)
+	if ans, ok := trackedBatchFrom(ctx).lookup(path); ok {
+		return trackedVerdict(ctx, env, ans)
 	}
-	root, err := scope.FindRepoRoot(start)
+	root, err := scope.FindRepoRoot(trackedStart(path))
 	if errors.Is(err, scope.ErrNotInRepo) {
 		return false, nil
 	}
@@ -168,14 +167,32 @@ func checkTracked(ctx context.Context, env *Env, path string) (bool, error) {
 		return unknownTracked(env, "no git runner to check for tracked files")
 	}
 	out, err := env.Git.Run(ctx, root, "ls-files", "-z", "--", ":(literal)"+path)
-	if err != nil {
+	return trackedVerdict(ctx, env, trackedAnswer{
+		tracked: strings.Trim(out, "\x00 \n") != "",
+		err:     err,
+	})
+}
+
+// trackedStart is where the repository lookup for a target begins: the
+// directory itself, or the parent of a file or symlink.
+func trackedStart(path string) string {
+	if fi, err := os.Lstat(path); err != nil || !fi.IsDir() {
+		return filepath.Dir(path)
+	}
+	return path
+}
+
+// trackedVerdict applies the policy to a (batched or single) answer: errors
+// are unknown, tracked files are a skip without --force.
+func trackedVerdict(ctx context.Context, env *Env, ans trackedAnswer) (bool, error) {
+	if ans.err != nil {
 		if ctx.Err() != nil {
 			// Ctrl-C killed git: that is no reason to advise --force.
 			return false, fmt.Errorf("list tracked files: %w", ctx.Err())
 		}
-		return unknownTracked(env, fmt.Sprintf("cannot list tracked files: %v", err))
+		return unknownTracked(env, fmt.Sprintf("cannot list tracked files: %v", ans.err))
 	}
-	if strings.Trim(out, "\x00 \n") == "" {
+	if !ans.tracked {
 		return false, nil
 	}
 	if !env.Force {

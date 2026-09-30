@@ -312,7 +312,10 @@ func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planS
 	res.SessionID = id
 	res.UndoFlags = e.opts.UndoFlags
 	rs := &runState{e: e, m: m, res: res}
-	runErr := rs.loop(ctx, items)
+	// The live tracked-files check of the re-plan and of Apply is answered
+	// once per repository for the whole run (taken now, after confirmation)
+	// instead of once per item; a failure leaves every item unknown.
+	runErr := rs.loop(e.batchTrackedForItems(ctx, items), items)
 	// An interruption still finishes the manifest; only a failed save skips it.
 	if runErr == nil || errors.Is(runErr, ErrInterrupted) {
 		m.Finish(e.opts.Now())
