@@ -181,6 +181,9 @@ func checkCrossDevice(ctx context.Context, src string) error {
 // need a raw reparse-point call, so the move is refused up front with a clear
 // message instead of failing half way through the copy. Nothing has been
 // written when this returns.
+//
+// The offending path is quoted by hand rather than with %q so Windows
+// backslashes stay unescaped and the message can be copied into a shell.
 func checkCopyable(src string) error {
 	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -189,7 +192,7 @@ func checkCopyable(src string) error {
 		if t := d.Type(); t.IsDir() || t.IsRegular() || t&fs.ModeSymlink != 0 {
 			return nil
 		}
-		return fmt.Errorf("cannot move %q across volumes: %q is %s, which cannot be copied (nothing was copied and the item was left untouched); set BROOOM_HOME to a directory on the same volume as the item so it can be moved instead", src, p, describeIrregular(p, d.Type()))
+		return fmt.Errorf("cannot move %q across volumes: \"%s\" is %s, which cannot be copied (nothing was copied and the item was left untouched); set BROOOM_HOME to a directory on the same volume as the item so it can be moved instead", src, p, describeIrregular(p, d.Type()))
 	})
 }
 
