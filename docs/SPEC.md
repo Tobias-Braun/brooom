@@ -230,6 +230,7 @@ brooom git purge [PATH] [--gc] [--reflog-expire D] [--prune D] [--dry-run] [-y]
 brooom clean --from findings.json [--path P] [--dry-run] [-y]
 brooom undo [session-id] [--path P] [--dry-run] [-y] # default: latest session
 brooom sessions / brooom purge [--dry-run] [-y]
+brooom empty-trash [--dry-run] [-y]       # delete brooom's items from the OS trash
 brooom config init|show|edit|validate
 brooom version / brooom update-check
 ```
@@ -245,7 +246,13 @@ if a restorable entry conflicted or failed. Entries are only restored inside
 the current scope (the repository you are in, or `--path`), because
 manifests are editable files. Running it again skips restored entries.
 `brooom purge` never touches the OS trash or session manifests; manifests of
-purged sessions are marked as not restorable.
+purged sessions are marked as not restorable. `brooom empty-trash` is its
+counterpart for the OS trash: it lists the items the session manifests say
+brooom moved there and that are still there, asks once and deletes them
+permanently. Nothing else in the trash is touched: an item is only deleted
+when its stored copy lies inside an OS trash directory and still has the
+recorded type (and, for a file, size); its manifest entry becomes not
+restorable.
 
 Shell completions (bash, zsh, fish, PowerShell) and good `--help` text.
 

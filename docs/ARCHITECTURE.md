@@ -574,6 +574,21 @@ No preset runs stale-branch or large-untracked: sweep never removes unmerged
 work, and it has no `--force`. Skip reasons that used to say "re-run with
 --force" point to `brooom review` instead.
 
+### Emptying the OS trash (`internal/cli/cmd_emptytrash.go`, `internal/trash/empty.go`)
+
+`brooom empty-trash` (#292) reads every session manifest and keeps the
+applied, still restorable entries of the `trash` strategy whose stored copy
+exists. `trash.VerifyStored` accepts a copy only strictly inside an OS trash
+directory, judged by path components on any host (`InOSTrash`: `.Trash`,
+`.Trashes`, the `files`/`info` folders of a freedesktop trash,
+`$Recycle.Bin`), and only with the recorded type and, for a regular file, the
+recorded allocated size; directories are compared by type, because a
+cross-device move changes their allocation. Refused items are listed as kept
+with the reason. After one confirmation `trash.RemoveStored` deletes the copy
+and its `.trashinfo`/`$I` metadata, and `session.Store.MarkTrashEmptied` marks
+the entries not restorable with a recovery hint, as `MarkPurged` does for
+quarantine. The user's own trash content is never listed or touched.
+
 ### Review (`internal/cli/cmd_review.go`)
 
 `brooom review [path]` is where unmerged and dirty work is decided on (#291).
