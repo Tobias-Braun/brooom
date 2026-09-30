@@ -186,9 +186,11 @@ func TestOpenFilesSymlinkIsNotFollowed(t *testing.T) {
 	}
 	defer f.Close()
 
-	// The link itself is not held open; only the resolved target is.
+	// The link itself is not held open; only the resolved target is. Windows
+	// Restart Manager resolves the link to its target, so the link's result
+	// is unspecified there (documented on OpenFiles).
 	res := query(t, link, target)
-	if res[link] {
+	if runtime.GOOS != "windows" && res[link] {
 		t.Error("symlink must not be resolved to its target")
 	}
 	if !res[target] {

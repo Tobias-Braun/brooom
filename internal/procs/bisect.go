@@ -81,7 +81,9 @@ func bisectHalves(ctx context.Context, files []string, known bool, locked locked
 		return lh, append(lu, files[mid:]...), err
 	}
 	// If the left half is clean and the batch is known to be locked, the
-	// right half holds the lock without asking again.
+	// right half holds the lock without asking again. If the lock was released
+	// between the queries this can report a false positive; that is the safe
+	// direction and accepted for the saved query.
 	inferred := known && len(lh) == 0 && len(lu) == 0
 	rh, ru, err := bisectLocked(ctx, files[mid:], inferred, locked)
 	return append(lh, rh...), append(lu, ru...), err

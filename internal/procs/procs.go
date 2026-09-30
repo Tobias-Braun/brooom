@@ -13,7 +13,9 @@
 //     Memory-mapped files without an fd and working directories are not seen.
 //   - macOS runs lsof. Files are checked in batches, directories with the
 //     recursive +D option and one time slice each. lsof only reports other
-//     users' processes when permitted to. APFS is usually case-insensitive,
+//     users' processes when permitted to. +D also counts working directories
+//     and memory maps of subdirectories, which errs on the side of "open".
+//     APFS is usually case-insensitive,
 //     so names are matched case-insensitively as a fallback.
 //   - Windows uses the Restart Manager. It only knows handles it can attribute
 //     to a process and does not cover network shares. It cannot say which
@@ -29,8 +31,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -52,67 +56,102 @@ const DefaultTimeout = 3 * time.Second
 //
 // Paths must be absolute and already symlink-resolved (see scope.Guard);
 // they are cleaned and deduplicated, empty entries are ignored and a relative
-// entry is an error. Symlinks are treated as plain files and never followed.
-// The result has a key for every valid input path: false means "not known to
+// entry is an error. Symlinks are treated as plain files and are not
+// followed by brooom itself; the one exception is Windows, where Restart
+// Manager resolves a symlink to its target, so a symlink may be reported open
+// when its target is. The result has a key for every valid input path: false means "not known to
 // be open", and paths that do not exist are false.
 //
 // If ctx has no deadline, DefaultTimeout applies. On ErrIncomplete the
 // partial result is returned as well. Callers must treat any non-nil error as
 // "unknown" for entries that are false.
 func OpenFiles(ctx context.Context, paths []string) (map[string]bool, error) {
-	files, dirs, res, err := classify(paths)
-	if err != nil {
-		return nil, err
-	}
-	if len(files)+len(dirs) == 0 {
-		return res, nil
-	}
+	// The budget also covers the Lstat calls of classify, which is why it is
+	// applied first.
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, DefaultTimeout)
 		defer cancel()
 	}
+	files, dirs, res, unchecked, err := classify(ctx, paths)
+	if err != nil {
+		return nil, err
+	}
+	var statErr error
+	if unchecked {
+		statErr = fmt.Errorf("%w: some paths could not be inspected", ErrIncomplete)
+	}
+	if len(files)+len(dirs) == 0 {
+		return res, statErr
+	}
 	if ctx.Err() != nil {
 		return res, fmt.Errorf("%w: %w", ErrIncomplete, ctx.Err())
 	}
-	err = openFiles(ctx, files, dirs, res)
-	if err != nil && !errors.Is(err, ErrUnavailable) && !errors.Is(err, ErrIncomplete) && ctx.Err() != nil {
-		// A mechanism that failed because the budget ran out reports its own
-		// error; normalize it so callers only need to know two sentinels.
-		return res, fmt.Errorf("%w: %w", ErrIncomplete, ctx.Err())
+	err = normalizeErr(ctx, openFiles(ctx, files, dirs, res))
+	if err == nil {
+		err = statErr
 	}
 	return res, err
 }
 
+// normalizeErr maps a mechanism that failed because the budget ran out to
+// ErrIncomplete so callers only need to know two sentinels.
+func normalizeErr(ctx context.Context, err error) error {
+	if err != nil && !errors.Is(err, ErrUnavailable) && !errors.Is(err, ErrIncomplete) && ctx.Err() != nil {
+		return fmt.Errorf("%w: %w", ErrIncomplete, ctx.Err())
+	}
+	return err
+}
+
 // classify normalizes the input, seeds the result map with false for every
 // valid path and splits existing paths into files and directories. Lstat is
-// used so that a symlink counts as a file instead of being followed.
-func classify(paths []string) (files, dirs []string, res map[string]bool, err error) {
+// used so that a symlink counts as a file instead of being followed. Paths
+// that do not exist stay false; paths that cannot be inspected (permission
+// denied, budget exhausted) also stay false but set unchecked, because
+// unknown is never safe.
+func classify(ctx context.Context, paths []string) (files, dirs []string, res map[string]bool, unchecked bool, err error) {
 	res = make(map[string]bool, len(paths))
 	for _, p := range paths {
 		if p == "" {
 			continue
 		}
 		if !filepath.IsAbs(p) {
-			return nil, nil, nil, fmt.Errorf("procs: path %q is not absolute", p)
+			return nil, nil, nil, false, fmt.Errorf("procs: path %q is not absolute", p)
 		}
 		p = filepath.Clean(p)
 		if _, seen := res[p]; seen {
 			continue
 		}
 		res[p] = false
-		info, statErr := os.Lstat(p)
+		isDir, exists, ok := statPath(ctx, p)
 		switch {
-		case statErr != nil:
-			// Missing or unreadable paths cannot be open by a process we
-			// could find, so they stay false without an error.
-		case info.IsDir():
+		case !ok:
+			unchecked = true
+		case !exists:
+		case isDir:
 			dirs = append(dirs, p)
 		default:
 			files = append(files, p)
 		}
 	}
-	return files, dirs, res, nil
+	return files, dirs, res, unchecked, nil
+}
+
+// statPath Lstats p unless the budget is already spent. ok is false when the
+// answer is unknown (budget exhausted or an error other than "does not
+// exist"); a missing path is ok with exists false.
+func statPath(ctx context.Context, p string) (isDir, exists, ok bool) {
+	if ctx.Err() != nil {
+		return false, false, false
+	}
+	info, err := os.Lstat(p)
+	switch {
+	case err == nil:
+		return info.IsDir(), true, true
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
+		return false, false, true
+	}
+	return false, false, false
 }
 
 // dirPrefix returns dir with a trailing separator so that "/a/b" does not

@@ -3,7 +3,9 @@ package procs
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -100,18 +102,28 @@ func exitError(t *testing.T, code int) error {
 	return err
 }
 
+// testPath builds an absolute path from slash separated elements below an
+// OS-appropriate root, so tests that compare against dirPrefix and
+// filepath.Clean behave the same on every OS.
+func testPath(elem string) string {
+	root := filepath.VolumeName(os.TempDir()) + string(filepath.Separator)
+	return filepath.Join(root, filepath.FromSlash(elem))
+}
+
 func TestLsofOpenFilesMapsNames(t *testing.T) {
-	files := []string{"/tmp/Open.log", "/tmp/closed.log", "/tmp/exact.log"}
-	dirs := []string{"/tmp/busy", "/tmp/idle"}
+	openLog, closedLog, exactLog := testPath("tmp/Open.log"), testPath("tmp/closed.log"), testPath("tmp/exact.log")
+	busy, idle := testPath("tmp/busy"), testPath("tmp/idle")
+	files := []string{openLog, closedLog, exactLog}
+	dirs := []string{busy, idle}
 	f := &fakeLsof{reply: func(args []string) ([]byte, error) {
 		if args[len(args)-2] == "+D" {
-			if args[len(args)-1] == "/tmp/busy" {
-				return []byte("p1\x00\nf3\x00n/TMP/busy/x.log\x00\n"), nil
+			if args[len(args)-1] == busy {
+				return []byte("p1\x00\nf3\x00n" + strings.ToUpper(testPath("tmp/busy/x.log")) + "\x00\n"), nil
 			}
 			return nil, nil
 		}
 		// lsof spells the first file in another case (case-insensitive FS).
-		return []byte("p1\x00\nf3\x00n/tmp/open.log\x00\nf4\x00n/tmp/exact.log\x00\n"), exitErrorNoSkip()
+		return []byte("p1\x00\nf3\x00n" + testPath("tmp/open.log") + "\x00\nf4\x00n" + exactLog + "\x00\n"), exitErrorNoSkip()
 	}}
 	res := map[string]bool{}
 	for _, p := range append(append([]string{}, files...), dirs...) {
@@ -121,8 +133,8 @@ func TestLsofOpenFilesMapsNames(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := map[string]bool{
-		"/tmp/Open.log": true, "/tmp/closed.log": false, "/tmp/exact.log": true,
-		"/tmp/busy": true, "/tmp/idle": false,
+		openLog: true, closedLog: false, exactLog: true,
+		busy: true, idle: false,
 	}
 	if !reflect.DeepEqual(res, want) {
 		t.Errorf("got %v, want %v", res, want)
@@ -169,24 +181,90 @@ func TestLsofOpenFilesExitStatuses(t *testing.T) {
 func TestLsofDirectoryTimeoutIsIncompleteButContinues(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	slow, fast := testPath("slow"), testPath("fast")
 	run := func(c context.Context, args []string) ([]byte, error) {
-		if args[len(args)-1] == "/slow" {
+		if args[len(args)-1] == slow {
 			<-c.Done() // the per-directory slice must expire
 			return nil, c.Err()
 		}
-		return []byte("p1\x00\nf3\x00n/fast/x\x00\n"), nil
+		return []byte("p1\x00\nf3\x00n" + filepath.Join(fast, "x") + "\x00\n"), nil
 	}
-	res := map[string]bool{"/slow": false, "/fast": false}
+	res := map[string]bool{slow: false, fast: false}
 	start := time.Now()
-	err := lsofOpenFiles(ctx, run, nil, []string{"/slow", "/fast"}, res)
+	err := lsofOpenFiles(ctx, run, nil, []string{slow, fast}, res)
 	if !errors.Is(err, ErrIncomplete) {
 		t.Fatalf("got %v, want ErrIncomplete", err)
 	}
 	if time.Since(start) > 3*time.Second {
 		t.Errorf("slice did not bound the slow directory: %v", time.Since(start))
 	}
-	if !res["/fast"] || res["/slow"] {
+	if !res[fast] || res[slow] {
 		t.Errorf("unexpected result %v", res)
+	}
+}
+
+// A timeout must not discard the names lsof printed before it was killed:
+// true entries stay reliable and are returned together with ErrIncomplete.
+func TestLsofTimeoutKeepsPartialOutput(t *testing.T) {
+	file, dir := testPath("tmp/held.log"), testPath("tmp/dir")
+	partial := func(name string) []byte { return []byte("p1\x00\nf3\x00n" + name + "\x00\n") }
+
+	t.Run("file batch", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		run := func(c context.Context, _ []string) ([]byte, error) {
+			<-c.Done()
+			return partial(file), c.Err()
+		}
+		res := map[string]bool{file: false}
+		err := lsofOpenFiles(ctx, run, []string{file}, nil, res)
+		if !errors.Is(err, ErrIncomplete) || !res[file] {
+			t.Errorf("err = %v, res = %v; want ErrIncomplete and true", err, res)
+		}
+	})
+	t.Run("directory", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		run := func(c context.Context, _ []string) ([]byte, error) {
+			<-c.Done()
+			return partial(filepath.Join(dir, "x.log")), c.Err()
+		}
+		res := map[string]bool{dir: false}
+		err := lsofOpenFiles(ctx, run, nil, []string{dir}, res)
+		if !errors.Is(err, ErrIncomplete) || !res[dir] {
+			t.Errorf("err = %v, res = %v; want ErrIncomplete and true", err, res)
+		}
+	})
+}
+
+// Real lsof prints a newline in a name as a backslash and an n even with
+// -F0, so the escaped spelling of each requested path must match.
+func TestLsofEscapedNamesMatch(t *testing.T) {
+	tests := []struct {
+		name, path, printed string
+	}{
+		{"newline", "/tmp/new\nline.log", `/tmp/new\nline.log`},
+		{"tab and cr", "/tmp/a\tb\rc", `/tmp/a\tb\rc`},
+		{"other control", "/tmp/a\x01b", "/tmp/a^Ab"},
+		{"non-ASCII as hex", "/tmp/café", `/tmp/caf\xc3\xa9`},
+		{"non-ASCII verbatim", "/tmp/café", "/tmp/café"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := []byte("p1\x00\nf3\x00n" + tt.printed + "\x00\n")
+			res := map[string]bool{tt.path: false}
+			markFileNames(parseLsof(out), []string{tt.path}, res)
+			if !res[tt.path] {
+				t.Errorf("%q not matched by lsof output %q", tt.path, tt.printed)
+			}
+		})
+	}
+}
+
+func TestLsofEscapedDirectoryPrefixMatches(t *testing.T) {
+	names := parseLsof([]byte("p1\x00\nf3\x00n" + `/tmp/new\ndir/x.log` + "\x00\n"))
+	if !anyBelow(names, "/tmp/new\ndir/") {
+		t.Errorf("escaped directory name not matched: %q", names)
 	}
 }
 
