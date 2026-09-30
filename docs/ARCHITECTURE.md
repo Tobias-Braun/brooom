@@ -315,7 +315,12 @@ and before `ForTarget`, so root overrides and the tighten-only `.brooom.json`
 still act on top of it. Findings below the confidence floor are dropped in
 `execute`, before reporting and planning; blocked findings are not treated
 specially and stay blocked. Age thresholds are set as `min(current, preset)`
-and lowered values live in one table (`presets.AggressiveAges`). Overlays never
+and lowered values live in one table (`presets.AggressiveAges`). The aggressive git
+expiries follow the same rule (`shorterExpiry`): the preset's `90.days.ago`
+replaces a configured `reflog_expire` / `prune_expire` only when it is shorter
+in the restricted comparison of `now`, `never`, `N.days.ago` and `N.weeks.ago`;
+longer, equal and unparseable values are kept, so the default `2.weeks.ago`
+prune expiry is never raised. Overlays never
 touch `RecentDays`, protected branches, the trash strategy or `AllowDelete`,
 and never switch `ai-artifacts.user_locations` on. `--detector` is intersected
 with the preset; naming one outside it is a usage error. Preset detectors that
@@ -328,13 +333,25 @@ are not linked into the build are skipped with a verbose note
 
 `internal/action/gitmaint*.go` holds `git-gc` (`git gc --quiet --prune=<date>`),
 `git-prune` (`git prune --expire=<date>`) and `git-reflog-expire`
-(`git reflog expire --expire=<date> --all`). They destroy data that is
+(`git -c gc.refs/stash.reflogExpire=never -c gc.refs/stash.reflogExpireUnreachable=never
+-c gc.reflogExpire=<date> reflog expire --all`, see `gitx.ReflogExpireArgs`). They destroy data that is
 otherwise recoverable, so each is opt-in (`brooom git purge --gc|--prune|
 --reflog-expire`), never restorable (`Restorable=false`, `Undo` returns an
 error wrapping `trash.ErrNotRestorable` with the explanation) and every
 entry carries a `RecoveryHint` saying what was lost. Never `--force`,
 `--aggressive` or `--cruft`; gc's own reflog expiry follows the user's git
 config and is documented in the plan and help text.
+
+Stashes are uncommitted user work: `git stash list` is the reflog of
+`refs/stash` and the stash commits are reachable only through it, so expiring
+that reflog deletes work. Git's per-ref settings `gc.refs/stash.reflogExpire`
+and `...Unreachable` (the latter hits older entries) are therefore set to
+`never` with `-c` for `reflog expire` and `gc` (`gitx.StashProtection`); they
+only apply when no `--expire` option is given, so the date is passed as
+`gc.reflogExpire`. Git's built-in default already spares stashes in gc, but a
+user setting must not be able to change that. Plans count the older stash
+entries that are kept (`gitx.StashExpiring`, a dry run) and never mention them
+when there are none.
 
 `Plan` (and `Apply` again) re-validates: action type, blocking risk flags,
 `Guard.Resolve`, the path being a working-tree root, the date and operations

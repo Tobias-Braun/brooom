@@ -10,7 +10,10 @@ package presets
 
 import (
 	"fmt"
+	"math"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
@@ -62,8 +65,8 @@ var AggressiveAges = struct {
 	InactiveDays:    30,
 }
 
-// AggressiveExpiry is the git expiry the aggressive preset sets for reflog
-// expiry and pruning of unreachable objects.
+// AggressiveExpiry is the git expiry the aggressive preset shortens reflog
+// expiry and pruning of unreachable objects to (see shorterExpiry).
 const AggressiveExpiry = "90.days.ago"
 
 // safeDetectors is what every preset runs. Standard and aggressive extend it,
@@ -122,7 +125,7 @@ func all() []Preset {
 				fmt.Sprintf("lower age thresholds: stale branches %d days, worktrees %d days, minimum age %d days, inactive projects %d days (never raised above your own values)",
 					AggressiveAges.StaleBranchDays, AggressiveAges.WorktreeDays, AggressiveAges.MinAgeDays, AggressiveAges.InactiveDays),
 				"large untracked and ignored files",
-				"git gc, reflog expiry and pruning with " + AggressiveExpiry + " expiry",
+				"git gc, reflog expiry and pruning; expiries longer than " + AggressiveExpiry + " are shortened to it, shorter ones are kept",
 			},
 		},
 	}
@@ -214,7 +217,8 @@ func overlayStandard(c *config.Config) {
 }
 
 // overlayAggressive lowers the age thresholds (never raising one), reports
-// ignored files as well and sets the git expiry. It deliberately leaves
+// ignored files as well and shortens the git expiries to AggressiveExpiry
+// where they are longer (shorter or unknown values stay). It deliberately leaves
 // RecentDays, ProtectedBranches, AllowDelete and the trash strategy alone.
 func overlayAggressive(c *config.Config) {
 	overlayStandard(c)
@@ -223,8 +227,58 @@ func overlayAggressive(c *config.Config) {
 	lower(&c.Thresholds.MinAgeDays, AggressiveAges.MinAgeDays)
 	lower(&c.Detectors.BuildArtifacts.InactiveDays, AggressiveAges.InactiveDays)
 	c.Detectors.LargeUntracked.IncludeIgnored = true
-	c.Detectors.GitBloat.ReflogExpire = AggressiveExpiry
-	c.Detectors.GitBloat.PruneExpire = AggressiveExpiry
+	c.Detectors.GitBloat.ReflogExpire = shorterExpiry(c.Detectors.GitBloat.ReflogExpire, AggressiveExpiry)
+	c.Detectors.GitBloat.PruneExpire = shorterExpiry(c.Detectors.GitBloat.PruneExpire, AggressiveExpiry)
+}
+
+// maxExpiryDays stands for "never" in expiryDays comparisons.
+const maxExpiryDays = math.MaxInt32
+
+// expiryPattern is the only date form the preset comparison understands.
+var expiryPattern = regexp.MustCompile(`^(\d{1,9})\.(day|days|week|weeks)\.ago$`)
+
+// expiryDays converts the restricted git expiry forms "now", "never",
+// "N.days.ago" and "N.weeks.ago" into days. Brooom has no general git date
+// parser (git validates dates), so anything else, such as an absolute date,
+// is unknown and reported as not ok.
+func expiryDays(s string) (int, bool) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "now":
+		return 0, true
+	case "never":
+		return maxExpiryDays, true
+	}
+	m := expiryPattern.FindStringSubmatch(s)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0, false
+	}
+	if strings.HasPrefix(m[2], "week") {
+		n *= 7
+	}
+	return n, true
+}
+
+// shorterExpiry returns preset when it expires sooner than the configured
+// value and the configured value otherwise, like lower does for ages. A value
+// that cannot be compared is kept: a preset must not guess about a date the
+// user wrote in a form it does not understand, and a longer preset value
+// (the aggressive 90 days against the default 2.weeks.ago prune expiry) would
+// make the run prune less than the user configured.
+func shorterExpiry(configured, preset string) string {
+	have, ok := expiryDays(configured)
+	if !ok {
+		return configured
+	}
+	want, ok := expiryDays(preset)
+	if !ok || want >= have {
+		return configured
+	}
+	return preset
 }
 
 // lower sets *v to preset when that is lower, so a threshold the user already

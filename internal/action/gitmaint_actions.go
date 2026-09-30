@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
@@ -40,22 +41,43 @@ func (gitGC) Plan(ctx context.Context, env *Env, f findings.Finding) (Step, erro
 	if err != nil {
 		return Step{}, fmt.Errorf("git count-objects in %s: %w", m.repo.Dir, err)
 	}
+	stashes, err := gitx.StashExpiring(ctx, env.Git, m.repo.Dir, "")
+	if err != nil {
+		return Step{}, skipf("counting stash entries in %s: %v", m.repo.Dir, err)
+	}
 	return Step{
 		Finding: f,
 		Description: fmt.Sprintf("git gc in %s: repack %d loose objects and %d packs, delete unreachable objects older than %s, "+
-			"expire old reflog entries per gc.reflogExpire / gc.reflogExpireUnreachable (NOT restorable)",
-			filepath.Base(m.repo.Dir), stats.Count, stats.Packs, m.date),
+			"expire old reflog entries per gc.reflogExpire / gc.reflogExpireUnreachable (NOT restorable)%s",
+			filepath.Base(m.repo.Dir), stats.Count, stats.Packs, m.date, gcStashNote(stashes)),
 		Command: gcCommand(m),
 	}, nil
 }
 
-func gcCommand(m *maintCtx) string { return "git -C " + m.repo.Dir + " gc --quiet --prune=" + m.date }
+// gcStashNote says that gc would expire stash entries by its own settings
+// (older entries count as unreachable after 30 days) and that Brooom keeps them.
+func gcStashNote(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return "; " + stashEntries(n) + " that gc would expire by its settings " +
+		"are kept (Brooom sets gc.refs/stash.reflogExpire=never for the run)"
+}
+
+func gcCommand(m *maintCtx) string {
+	return "git -C " + m.repo.Dir + " " + strings.Join(gcArgs(m.date), " ")
+}
+
+// gcArgs is the gc invocation with the stash reflog protected: gc runs
+// `reflog expire --all` internally, so without the protection old stash
+// entries are dropped and their commits pruned.
+func gcArgs(date string) []string {
+	return append(gitx.StashProtection(), "gc", "--quiet", "--prune="+date)
+}
 
 // Apply implements Action.
 func (gitGC) Apply(ctx context.Context, env *Env, s Step) (session.Entry, error) {
-	return applyMaint(ctx, env, gcBase, s, true, gcHint, func(date string) []string {
-		return []string{"gc", "--quiet", "--prune=" + date}
-	})
+	return applyMaint(ctx, env, gcBase, s, true, gcHint, gcArgs)
 }
 
 // Undo implements Action.
@@ -149,12 +171,35 @@ func (gitReflogExpire) Plan(ctx context.Context, env *Env, f findings.Finding) (
 	if n == 0 {
 		return Step{}, skipf("nothing to do: no reflog entries older than %s", m.date)
 	}
+	stashes, err := gitx.StashExpiring(ctx, env.Git, m.repo.Dir, m.date)
+	if err != nil {
+		return Step{}, skipf("counting stash entries in %s: %v", m.repo.Dir, err)
+	}
 	return Step{
 		Finding: f,
-		Description: fmt.Sprintf("git reflog expire in %s: remove %s older than %s (NOT restorable)",
-			filepath.Base(m.repo.Dir), reflogCount(n), m.date),
-		Command: "git -C " + m.repo.Dir + " reflog expire --expire=" + m.date + " --all",
+		Description: fmt.Sprintf("git reflog expire in %s: remove %s older than %s (NOT restorable)%s",
+			filepath.Base(m.repo.Dir), reflogCount(n), m.date, stashKept(stashes)),
+		Command: "git -C " + m.repo.Dir + " " + strings.Join(gitx.ReflogExpireArgs(m.date, false), " "),
 	}, nil
+}
+
+// stashKept is the plan note for stash entries that the run would have
+// expired but Brooom protects: stashes are uncommitted user work, not a
+// recovery point, so no maintenance action may expire them. It is empty when
+// there are none.
+func stashKept(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return "; " + stashEntries(n) + " older than that are kept (stashes are never expired)"
+}
+
+// stashEntries pluralizes "stash entry" correctly, which plural does not.
+func stashEntries(n int) string {
+	if n == 1 {
+		return "1 stash entry"
+	}
+	return fmt.Sprintf("%d stash entries", n)
 }
 
 // reflogCount pluralizes "entry" correctly, which plural does not.
@@ -168,7 +213,7 @@ func reflogCount(n int) string {
 // Apply implements Action.
 func (gitReflogExpire) Apply(ctx context.Context, env *Env, s Step) (session.Entry, error) {
 	return applyMaint(ctx, env, reflogBase, s, true, reflogHint, func(date string) []string {
-		return []string{"reflog", "expire", "--expire=" + date, "--all"}
+		return gitx.ReflogExpireArgs(date, false)
 	})
 }
 

@@ -118,9 +118,10 @@ func sumBatchCheck(out string) (total int64, n int) {
 }
 
 // dryRunReflog counts the entries `git reflog expire --dry-run --verbose`
-// reports as "would prune".
+// reports as "would prune", with the stash reflog protected exactly like the
+// real run.
 func dryRunReflog(ctx context.Context, env *Env, repo *gitx.Repo, date string) (int, error) {
-	out, err := env.Git.Run(ctx, repo.Dir, "reflog", "expire", "--dry-run", "--verbose", "--expire="+date, "--all")
+	out, err := env.Git.Run(ctx, repo.Dir, gitx.ReflogExpireArgs(date, true)...)
 	if err != nil {
 		return 0, dateRejected(err, date)
 	}

@@ -112,7 +112,7 @@ them.
 | --- | --- | --- | --- |
 | `safe` | merged-branch, worktrees, log-and-runtime-files, build-artifacts | high | prunable and merged clean worktrees only, OS junk and old logs, build artifacts of inactive projects |
 | `standard` | safe + stale-branch, ai-artifacts | medium | project-level AI artifacts only, all log and cache categories |
-| `aggressive` | standard + large-untracked, git-bloat | medium | lowers age thresholds (never above your own values), includes ignored files, gc/reflog expire/prune with `90.days.ago` |
+| `aggressive` | standard + large-untracked, git-bloat | medium | lowers age thresholds (never above your own values), includes ignored files, gc/reflog expire/prune (a configured expiry is only ever shortened to `90.days.ago`, never lengthened, so the default `prune_expire` of `2.weeks.ago` stays) |
 
 Output formats: `table` (default), `tree`, `json`, `ndjson`, `plain`,
 `summary`.
