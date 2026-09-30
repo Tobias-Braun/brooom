@@ -30,11 +30,15 @@
 //
 // # Active worktrees
 //
-// A worktree an agent is working in must never look removable. The newest
+// A worktree an agent is working in (open files, current directory) must
+// never look removable. The newest
 // modification time comes from a Fresh walk.DirSize (the cache would miss
 // in-place writes). A candidate modified within thresholds.recent_days gets
-// the informational recently_modified flag and one lower confidence level
-// (high to medium), which keeps it out of the safe preset. A worktree that
+// the informational recently_modified flag and evidence only: agent runs
+// leave hundreds of fresh worktrees that must be removable right away, so
+// neither confidence nor action change. A worktree whose branch was just created (unstarted, see
+// gitx.Repo.Unstarted) is never "merged", and one whose branch ref is missing
+// is reported with low confidence and no action. A worktree that
 // contains the working directory of this process, or that a process has open
 // or stands in (procs, best effort per OS), gets the blocking
 // file_open_by_process flag and no action, also with --force. An unavailable
@@ -132,8 +136,10 @@ type scan struct {
 	main string
 	base gitx.Base
 	// bases lists every candidate a merge counts against, base first.
-	bases    []gitx.Base
-	hasBase  bool
+	bases   []gitx.Base
+	hasBase bool
+	// baseTip is the commit of the base ref, "" when unknown.
+	baseTip  string
 	squash   bool
 	branches map[string]gitx.Branch
 	// open is the batched open-file check, nil until prefetchOpen ran.
@@ -170,6 +176,7 @@ func newScan(ctx context.Context, env *detect.Env, target scope.Target) (*scan, 
 	// classifications still work, so this is not an error.
 	if bases, err := repo.BaseCandidates(ctx, cfg.Git.BaseBranches); err == nil {
 		s.base, s.bases, s.hasBase = bases[0], bases, true
+		s.baseTip, _ = repo.ResolveCommit(ctx, s.base.FullRef)
 	}
 	branches, err := repo.ListBranches(ctx)
 	if err != nil {

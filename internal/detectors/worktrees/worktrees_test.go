@@ -156,7 +156,7 @@ func TestRegistered(t *testing.T) {
 
 func TestMergedBranchWorktree(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	wt := repo.AddWorktree("merged", "feat-merged")
+	wt := repo.AddStartedWorktree("merged", "feat-merged")
 	// Files created now are "in the future" of the fixed scan time and would
 	// carry recently_modified; this test is about the untouched shape.
 	ageTree(t, wt, testutil.BaseTime)
@@ -191,7 +191,7 @@ func TestMergedBranchWorktree(t *testing.T) {
 
 func TestSizeAndTimes(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	wt := repo.AddWorktree("sized", "feat-sized")
+	wt := repo.AddStartedWorktree("sized", "feat-sized")
 	h := wtHarness(t, repo, wt)
 	f := one(t, h.detect())
 
@@ -209,7 +209,7 @@ func TestSizeAndTimes(t *testing.T) {
 
 func TestSquashMergedWorktree(t *testing.T) {
 	repo := testutil.NewRepoWithRemote(t)
-	wt := repo.AddWorktree("squash", "feat-squash")
+	wt := repo.AddStartedWorktree("squash", "feat-squash")
 	commitIn(t, repo, wt, "squash.txt")
 	repo.SquashMerge("feat-squash", "squash feat", testutil.BaseTime.Add(time.Hour))
 	repo.Push("main")
@@ -235,7 +235,7 @@ func TestBaseBranchWorktreeIsNotMerged(t *testing.T) {
 	// definition; it must not be reported as a merged feature branch.
 	repo := testutil.NewRepoWithRemote(t)
 	repo.Git("switch", "-q", "-c", "elsewhere")
-	wt := repo.AddWorktree("on-main", "main")
+	wt := repo.AddStartedWorktree("on-main", "main")
 	h := wtHarness(t, repo, wt)
 	if fs := h.detect(); len(fs) != 0 {
 		t.Errorf("reported %+v", fs)
@@ -244,7 +244,7 @@ func TestBaseBranchWorktreeIsNotMerged(t *testing.T) {
 
 func TestMissingDirectory(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	wt := repo.AddWorktree("gone", "feat-gone")
+	wt := repo.AddStartedWorktree("gone", "feat-gone")
 	h := wtHarness(t, repo, wt)
 	if err := os.RemoveAll(wt); err != nil {
 		t.Fatal(err)
@@ -283,7 +283,7 @@ func TestMissingDirectory(t *testing.T) {
 func TestMissingDetachedWorktree(t *testing.T) {
 	t.Run("unique commit is never pruned", func(t *testing.T) {
 		repo := testutil.NewRepo(t)
-		wt := repo.AddWorktree("det-gone", "")
+		wt := repo.AddStartedWorktree("det-gone", "")
 		commitIn(t, repo, wt, "unique.txt")
 		h := wtHarness(t, repo, wt)
 		if err := os.RemoveAll(wt); err != nil {
@@ -307,7 +307,7 @@ func TestMissingDetachedWorktree(t *testing.T) {
 	})
 	t.Run("head contained in the base is pruned", func(t *testing.T) {
 		repo := testutil.NewRepo(t)
-		wt := repo.AddWorktree("det-gone", "")
+		wt := repo.AddStartedWorktree("det-gone", "")
 		h := wtHarness(t, repo, wt)
 		if err := os.RemoveAll(wt); err != nil {
 			t.Fatal(err)
@@ -331,7 +331,7 @@ func TestMissingDirectoryOutsideGuard(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := testutil.NewRepo(t)
-			wt := repo.AddWorktree("gone", "feat-gone")
+			wt := repo.AddStartedWorktree("gone", "feat-gone")
 			if err := os.RemoveAll(wt); err != nil {
 				t.Fatal(err)
 			}
@@ -356,7 +356,7 @@ func TestMissingDirectoryOutsideGuard(t *testing.T) {
 
 func TestMissingAndLocked(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	wt := repo.AddWorktree("gone-locked", "feat-gl")
+	wt := repo.AddStartedWorktree("gone-locked", "feat-gl")
 	repo.Git("worktree", "lock", "--reason", "external drive", wt)
 	h := wtHarness(t, repo, wt)
 	if err := os.RemoveAll(wt); err != nil {
@@ -382,7 +382,7 @@ func TestLockedWorktrees(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := testutil.NewRepo(t)
-			wt := repo.AddWorktree("locked", "feat-locked")
+			wt := repo.AddStartedWorktree("locked", "feat-locked")
 			repo.Git("worktree", "lock", "--reason", "on usb stick", wt)
 			h := wtHarness(t, repo, wt)
 			h.env.Force = tt.force
@@ -410,7 +410,7 @@ func TestLockedWorktrees(t *testing.T) {
 
 func TestLockedNonCandidateIsNotReported(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	wt := repo.AddWorktree("locked-wip", "feat-wip")
+	wt := repo.AddStartedWorktree("locked-wip", "feat-wip")
 	commitIn(t, repo, wt, "wip.txt")
 	repo.Git("worktree", "lock", wt)
 	h := wtHarness(t, repo, wt)
@@ -436,7 +436,7 @@ func TestDirtyWorktrees(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := testutil.NewRepo(t)
-			wt := repo.AddWorktree("dirty", "feat-dirty")
+			wt := repo.AddStartedWorktree("dirty", "feat-dirty")
 			testutil.WriteFile(t, wt, "scratch.txt", "not committed\n")
 			if tt.lock {
 				repo.Git("worktree", "lock", wt)
@@ -494,7 +494,7 @@ func TestUpstreamGone(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := testutil.NewRepoWithRemote(t)
-			wt := repo.AddWorktree("gone-up", "feat-up")
+			wt := repo.AddStartedWorktree("gone-up", "feat-up")
 			commitIn(t, repo, wt, "up.txt")
 			gitIn(t, repo, wt, "push", "-q", "-u", "origin", "feat-up")
 			// A second remote branch keeps the commits reachable on the
@@ -537,6 +537,9 @@ func TestStale(t *testing.T) {
 			testutil.WriteFile(t, wt, "recent.txt", "x")
 			testutil.SetMTime(t, p, now.AddDate(0, 0, -1))
 		}, false},
+		{"no age threshold (default 0) leaves the rule off", func(t *testing.T, wt string, h *harness) {
+			h.env.Config.Detectors.Worktrees.MinAgeDays = 0
+		}, false},
 		{"include_stale=false disables the rule", func(t *testing.T, wt string, h *harness) {
 			h.env.Config.Detectors.Worktrees.IncludeStale = false
 		}, false},
@@ -547,10 +550,11 @@ func TestStale(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := testutil.NewRepo(t)
-			wt := repo.AddWorktree("stale", "feat-stale")
+			wt := repo.AddStartedWorktree("stale", "feat-stale")
 			commitIn(t, repo, wt, "old.txt")
 			ageTree(t, wt, testutil.BaseTime)
 			h := wtHarness(t, repo, wt)
+			h.env.Config.Detectors.Worktrees.MinAgeDays = 30
 			tt.setup(t, wt, h)
 
 			fs := h.detect()
@@ -580,7 +584,7 @@ func TestStale(t *testing.T) {
 func TestDetachedHead(t *testing.T) {
 	t.Run("contained in the base is medium", func(t *testing.T) {
 		repo := testutil.NewRepo(t)
-		wt := repo.AddWorktree("det", "")
+		wt := repo.AddStartedWorktree("det", "")
 		h := wtHarness(t, repo, wt)
 		f := one(t, h.detect())
 		if f.Ref != "" || f.Meta["branch"] != "" {
@@ -599,7 +603,7 @@ func TestDetachedHead(t *testing.T) {
 		repo.Commit("r.txt", "r", "remote work", testutil.BaseTime.Add(time.Hour))
 		repo.Push("feat-remote")
 		repo.Git("switch", "-q", "main")
-		wt := repo.AddWorktree("det-remote", "")
+		wt := repo.AddStartedWorktree("det-remote", "")
 		gitIn(t, repo, wt, "checkout", "-q", "--detach", "feat-remote")
 		h := wtHarness(t, repo, wt)
 		f := one(t, h.detect())
@@ -609,7 +613,7 @@ func TestDetachedHead(t *testing.T) {
 	})
 	t.Run("unique commit is not reported while fresh", func(t *testing.T) {
 		repo := testutil.NewRepo(t)
-		wt := repo.AddWorktree("det-unique", "")
+		wt := repo.AddStartedWorktree("det-unique", "")
 		commitIn(t, repo, wt, "unique.txt")
 		h := wtHarness(t, repo, wt)
 		if fs := h.detect(); len(fs) != 0 {
@@ -618,10 +622,11 @@ func TestDetachedHead(t *testing.T) {
 	})
 	t.Run("unique commit that is stale is reported but never suggested", func(t *testing.T) {
 		repo := testutil.NewRepo(t)
-		wt := repo.AddWorktree("det-unique-stale", "")
+		wt := repo.AddStartedWorktree("det-unique-stale", "")
 		commitIn(t, repo, wt, "unique.txt")
 		ageTree(t, wt, testutil.BaseTime)
 		h := wtHarness(t, repo, wt)
+		h.env.Config.Detectors.Worktrees.MinAgeDays = 30
 		h.env.Force = true
 		f := one(t, h.detect())
 		if f.SuggestedAction.Type != findings.ActionNone || !f.HasRisk(findings.RiskUnpushedCommits) {
@@ -646,8 +651,8 @@ func TestMainWorktreeIsNeverReported(t *testing.T) {
 
 func TestScopeWorktreeIsSkipped(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	a := repo.AddWorktree("a", "feat-a")
-	b := repo.AddWorktree("b", "feat-b")
+	a := repo.AddStartedWorktree("a", "feat-a")
+	b := repo.AddStartedWorktree("b", "feat-b")
 	h := wtHarness(t, repo, a, b)
 
 	// Default mode: the user stands in a, so a is the scope and never listed.
@@ -672,8 +677,8 @@ func TestScopeWorktreeIsSkipped(t *testing.T) {
 
 func TestIdenticalIDsFromMainAndLinkedTargets(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	a := repo.AddWorktree("a", "feat-a")
-	b := repo.AddWorktree("b", "feat-b")
+	a := repo.AddStartedWorktree("a", "feat-a")
+	b := repo.AddStartedWorktree("b", "feat-b")
 	h := wtHarness(t, repo, a, b)
 	root := filepath.Dir(a)
 
@@ -696,6 +701,7 @@ func TestAgentLocationEvidence(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	wt := filepath.Join(repo.Dir, ".claude", "worktrees", "agent-1")
 	repo.Git("worktree", "add", "-q", "-b", "agent-1", wt)
+	repo.MarkStarted("agent-1")
 	h := newHarness(t, repo)
 	wt, err := filepath.EvalSymlinks(wt)
 	if err != nil {
@@ -717,7 +723,7 @@ func TestAgentLocationEvidence(t *testing.T) {
 
 func TestNoLocationEvidenceForPlainWorktree(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	wt := repo.AddWorktree("plain", "feat-plain")
+	wt := repo.AddStartedWorktree("plain", "feat-plain")
 	h := wtHarness(t, repo, wt)
 	f := one(t, h.detect())
 	if slices.Contains(codes(f), "agent_worktree_location") {
@@ -727,7 +733,7 @@ func TestNoLocationEvidenceForPlainWorktree(t *testing.T) {
 
 func TestSkippedTargetsAndSettings(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	wt := repo.AddWorktree("x", "feat-x")
+	wt := repo.AddStartedWorktree("x", "feat-x")
 	h := wtHarness(t, repo, wt)
 
 	project := repoTarget(repo.Dir)
@@ -744,7 +750,7 @@ func TestSkippedTargetsAndSettings(t *testing.T) {
 
 func TestCancelledContext(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	wt := repo.AddWorktree("c", "feat-c")
+	wt := repo.AddStartedWorktree("c", "feat-c")
 	h := wtHarness(t, repo, wt)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -14,9 +14,16 @@ func newWorktreesCmd(a *app) *cobra.Command {
 		Example: `  brooom worktrees
   brooom worktrees --apply
   brooom worktrees --workspaces --format tree`,
-		Long: `Report worktrees whose branch is merged, stale or deleted, and worktree
-metadata whose directory is gone. Dirty or locked worktrees are reported but
-never suggested for removal. Linked worktrees outside the scanned scope (for
+		Long: `Report worktrees whose branch is merged or stale, worktrees whose branch
+ref is missing (reported without an action) and worktree metadata whose
+directory is gone. Worktrees are removable whatever their age, so the command
+can run right after a large agent run: clean merged worktrees and detached
+worktrees whose commits all landed on the base under other ids (rebased or
+squashed) are removed, and worktrees left at a not yet started branch are
+kept. Dirty or locked worktrees are reported but not suggested for removal
+(--force lifts the dirty protection), and a worktree in use is never removed.
+Recent activity is shown as an informational flag only. Linked worktrees
+outside the scanned scope (for
 example ../repo-wt) are listed as informational findings with the hint to run
 'brooom roots add <parent>' or use --workspaces; they are never examined or
 removed. The plain format is a bare path list for pipes and omits these

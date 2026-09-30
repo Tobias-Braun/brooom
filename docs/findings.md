@@ -78,7 +78,7 @@ on them without `--force`. `--force` never overrides `file_open_by_process`,
 | `current_branch` | yes | Branch is checked out in some worktree. |
 | `protected_branch` | yes | Branch matches a protected pattern. |
 | `tracked_files` | yes | Path contains files tracked by git. |
-| `recently_modified` | no | Changed within `thresholds.recent_days`. |
+| `recently_modified` | no | Changed within `thresholds.recent_days`. Informational only: for `worktrees` it never withholds the removal or lowers the confidence, because worktrees left by an agent run must be removable right away (evidence `recently_modified`). |
 | `gitignored` | no | Path is ignored by git. |
 | `never_pushed` | no | Branch was never pushed. |
 | `upstream_gone` | no | Upstream tracking branch was deleted. |

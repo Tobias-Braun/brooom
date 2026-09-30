@@ -310,6 +310,41 @@ func (r *Repo) BranchCreatedOnly(ctx context.Context, branch string) (bool, erro
 	return false, nil
 }
 
+// ResolveCommit resolves a fully qualified ref to its commit SHA. It is the
+// exported form of the memoized resolver so detectors can compare a base tip
+// without listing every branch.
+func (r *Repo) ResolveCommit(ctx context.Context, ref string) (string, error) {
+	return r.resolveCommit(ctx, ref)
+}
+
+// Unstarted reports a freshly created branch that was never pushed, still
+// sits on the base tip and whose reflog shows nothing but its creation: not
+// clutter, deleting it (or its worktree) would only annoy. The reflog is what
+// tells it apart from an agent branch that was committed on and then
+// fast-forward merged, which also sits on the base tip and was never pushed
+// under its own name. baseTip is the tip of the base branch, "" when unknown
+// (then nothing is unstarted). The returned error is the failing check; the
+// result is then true, the conservative side, so callers may record the error
+// and still skip the branch. It is shared by merged-branch and worktrees so
+// both detectors agree on the same repository.
+func (r *Repo) Unstarted(ctx context.Context, b Branch, baseTip string) (bool, error) {
+	if baseTip == "" || b.Tip != baseTip {
+		return false, nil
+	}
+	never, err := r.NeverPushed(ctx, b)
+	if err != nil {
+		return true, fmt.Errorf("check pushes of branch %q: %w", b.Name, err)
+	}
+	if !never {
+		return false, nil
+	}
+	created, err := r.BranchCreatedOnly(ctx, b.Name)
+	if err != nil {
+		return true, fmt.Errorf("read reflog of branch %q: %w", b.Name, err)
+	}
+	return created, nil
+}
+
 // ContainedInRemotes reports whether every commit of ref is contained in some
 // remote-tracking branch, i.e. deleting ref loses nothing that is not also on
 // a remote.

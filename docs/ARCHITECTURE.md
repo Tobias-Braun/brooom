@@ -406,9 +406,23 @@ answers all directories of a call from a single lsof listing, so the lsof runs
 do not grow with the number of candidates): a candidate
 containing the current directory or open by a process gets the blocking
 `file_open_by_process` flag (evidence `worktree_in_use`, action `none`), and a
-candidate modified within `thresholds.recent_days` (fresh mtimes) gets
-`recently_modified` and one lower confidence level, which keeps it out of the
-`safe` preset (high only). The directory always goes through the configured trasher
+candidate modified within `thresholds.recent_days` (fresh mtimes) gets the
+informational `recently_modified` flag and evidence only: no age threshold
+applies to worktree removal (agent runs leave hundreds of fresh worktrees that
+must be removable at once), so neither confidence nor action change.
+`detectors.worktrees.min_age_days` defaults to 0 and no preset raises it; it
+only feeds the stale (abandoned checkout) rule, which stays off at 0. A
+detached HEAD that no ref contains counts as merged when all its commits are
+patch-equivalent to the base (`gitx.Repo.MergedInto` on the HEAD sha, evidence
+`head_patch_equivalent`, medium confidence, only in `ancestor+squash` mode);
+`remove-worktree` re-verifies this at apply time (`checkDetachedRemovable`:
+held by a ref, or patch-equivalent) and refuses genuinely unique commits, also
+with `--force`. A worktree whose branch sits on the base tip, was never pushed and
+only has its creation in the reflog ("unstarted", `gitx.Repo.Unstarted`, shared
+with merged-branch) is never reported as merged. A worktree whose branch ref
+does not resolve (all-zero HEAD) gets a low-confidence finding without action
+(evidence `branch_ref_missing`, hint `git branch <name> <sha>` or
+`git worktree repair`); an unborn `--orphan` worktree stays quiet. The directory always goes through the configured trasher
 (`Trasher.Remove`), because `git worktree remove` would permanently delete files
 git ignores (`.env`, agent settings, logs, build output). The plan flags
 uncommitted and ignored content (`Repo.IgnoredEntries`, `git ls-files -o -i
@@ -529,7 +543,7 @@ prune expiry is never raised. `standard` leaves the log
 categories as configured (it never switches one on, so a category the user
 disabled stays disabled; only `safe` limits them to OS junk and old logs).
 Overlays never
-touch `RecentDays`, protected branches, the trash strategy or `AllowDelete`,
+touch `RecentDays`, the worktree age threshold (default 0, never raised), protected branches, the trash strategy or `AllowDelete`,
 and never switch `ai-artifacts.user_locations` on. `--detector` is intersected
 with the preset; naming one outside it is a usage error. Preset detectors that
 are not linked into the build are skipped with a verbose note

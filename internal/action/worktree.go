@@ -159,6 +159,9 @@ func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeE
 	if err := checkStillSafe(ctx, env, repo, wt, path, f); err != nil {
 		return nil, err
 	}
+	if err := checkDetachedRemovable(ctx, env, repo, wt, f); err != nil {
+		return nil, err
+	}
 	ev := &removeEval{repo: repo, wt: wt, path: path}
 	if err := ev.inspect(ctx, env); err != nil {
 		return nil, err
@@ -568,4 +571,38 @@ func readdHint(undo map[string]string) string {
 		return "git worktree add " + path + " " + findings.Quote(b)
 	}
 	return "git worktree add --detach " + path + " " + undo[undoHead]
+}
+
+// checkDetachedRemovable re-verifies at apply time that removing a detached
+// worktree loses no commit: HEAD must be held by a branch, remote branch or
+// tag (checkDetachedHead), or all its commits must be patch-equivalent to
+// commits on the base branch, which is what an agent worktree left at a
+// pre-rebase commit looks like once its work landed. A commit that is
+// genuinely unique, or a check that cannot answer, refuses, and --force does
+// not lift that.
+func checkDetachedRemovable(ctx context.Context, env *Env, repo *gitx.Repo, wt gitx.Worktree, f findings.Finding) error {
+	err := checkDetachedHead(ctx, env, repo, wt)
+	if err == nil || !errors.Is(err, ErrSkipped) {
+		return err
+	}
+	if patchEquivalentToBase(ctx, env, repo, wt.Head, f) {
+		return nil
+	}
+	return err
+}
+
+// patchEquivalentToBase reports whether every commit reachable from head but
+// not from the base branch has an equal patch on the base (see
+// gitx.Repo.MergedInto). Any error or unknown base counts as no.
+func patchEquivalentToBase(ctx context.Context, env *Env, repo *gitx.Repo, head string, f findings.Finding) bool {
+	cfg, err := effectiveConfig(env, f)
+	if err != nil {
+		return false
+	}
+	base, err := repo.DefaultBase(ctx, cfg.Git.BaseBranches)
+	if err != nil {
+		return false
+	}
+	res, err := repo.MergedInto(ctx, base.FullRef, head, cfg.Detectors.MergedBranch.Mode == config.MergeAncestorSquash)
+	return err == nil && res.Merged
 }

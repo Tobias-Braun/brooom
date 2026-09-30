@@ -1,7 +1,9 @@
 package testutil
 
 import (
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +87,42 @@ func (r *Repo) AddWorktree(rel, branch string) string {
 		r.Git("worktree", "add", "-q", "-b", branch, p)
 	}
 	return p
+}
+
+// AddStartedWorktree is AddWorktree for a branch that counts as worked on:
+// an extra reflog entry (same commit) stops the branch from looking like a
+// freshly created, unstarted one, which merged-branch and worktrees skip.
+// Use it for fixtures that stand for a finished or in-progress agent branch.
+// git does not log a ref update that keeps the value, so the entry is
+// appended to the reflog file directly.
+func (r *Repo) AddStartedWorktree(rel, branch string) string {
+	r.t.Helper()
+	p := r.AddWorktree(rel, branch)
+	if branch != "" {
+		r.MarkStarted(branch)
+	}
+	return p
+}
+
+// MarkStarted appends the reflog entry that makes an existing branch count as
+// worked on (see AddStartedWorktree), for fixtures that create the worktree
+// with a raw git call.
+func (r *Repo) MarkStarted(branch string) {
+	r.t.Helper()
+	sha := r.Git("rev-parse", "refs/heads/"+branch)
+	log := r.Git("rev-parse", "--git-path", "logs/refs/heads/"+branch)
+	if !filepath.IsAbs(log) {
+		log = filepath.Join(r.Dir, log)
+	}
+	f, err := os.OpenFile(log, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	defer f.Close()
+	entry := sha + " " + sha + " Brooom Test <test@brooom.invalid> " + strconv.FormatInt(BaseTime.Unix(), 10) + " +0000\tcommit: started\n"
+	if _, err := f.WriteString(entry); err != nil {
+		r.t.Fatal(err)
+	}
 }
 
 func (r *Repo) branchExists(name string) bool {

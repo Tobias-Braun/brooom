@@ -52,15 +52,12 @@ type Preset struct {
 var AggressiveAges = struct {
 	// StaleBranchDays is detectors.stale-branch.min_age_days.
 	StaleBranchDays int
-	// WorktreeDays is detectors.worktrees.min_age_days.
-	WorktreeDays int
 	// MinAgeDays is thresholds.min_age_days.
 	MinAgeDays int
 	// InactiveDays is detectors.build-artifacts.inactive_days.
 	InactiveDays int
 }{
 	StaleBranchDays: 30,
-	WorktreeDays:    14,
 	MinAgeDays:      7,
 	InactiveDays:    30,
 }
@@ -122,8 +119,8 @@ func all() []Preset {
 			Overlay:       overlayAggressive,
 			Includes: []string{
 				"everything in standard",
-				fmt.Sprintf("lower age thresholds: stale branches %d days, worktrees %d days, minimum age %d days, inactive projects %d days (never raised above your own values)",
-					AggressiveAges.StaleBranchDays, AggressiveAges.WorktreeDays, AggressiveAges.MinAgeDays, AggressiveAges.InactiveDays),
+				fmt.Sprintf("lower age thresholds: stale branches %d days, minimum age %d days, inactive projects %d days (never raised above your own values)",
+					AggressiveAges.StaleBranchDays, AggressiveAges.MinAgeDays, AggressiveAges.InactiveDays),
 				"large untracked and ignored files",
 				"git gc, reflog expiry and pruning; expiries longer than " + AggressiveExpiry + " are shortened to it, shorter ones are kept",
 			},
@@ -219,11 +216,10 @@ func overlayStandard(c *config.Config) {
 // overlayAggressive lowers the age thresholds (never raising one), reports
 // ignored files as well and shortens the git expiries to AggressiveExpiry
 // where they are longer (shorter or unknown values stay). It deliberately leaves
-// RecentDays, ProtectedBranches, AllowDelete and the trash strategy alone.
+// the worktree age threshold at its default 0 (no presets raise it), RecentDays, ProtectedBranches, AllowDelete and the trash strategy alone.
 func overlayAggressive(c *config.Config) {
 	overlayStandard(c)
 	lower(&c.Detectors.StaleBranch.MinAgeDays, AggressiveAges.StaleBranchDays)
-	lower(&c.Detectors.Worktrees.MinAgeDays, AggressiveAges.WorktreeDays)
 	lower(&c.Thresholds.MinAgeDays, AggressiveAges.MinAgeDays)
 	lower(&c.Detectors.BuildArtifacts.InactiveDays, AggressiveAges.InactiveDays)
 	c.Detectors.LargeUntracked.IncludeIgnored = true

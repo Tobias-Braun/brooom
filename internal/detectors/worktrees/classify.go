@@ -13,19 +13,20 @@ import (
 // Evidence codes of this detector. The merge codes are shared with the
 // branch detectors so output and actions treat them identically.
 const (
-	evMissing      = "worktree_missing"
-	evMerged       = "merged_into"
-	evSquashMerged = "squash_merged_into"
-	evHeadIn       = "head_contained_in"
-	evUpstreamGone = "upstream_gone"
-	evStale        = "worktree_stale"
-	evHeadUnpushed = "head_not_pushed"
-	evDirty        = "worktree_dirty"
-	evLocked       = "worktree_locked"
-	evOperation    = "worktree_operation_in_progress"
-	evSubmodules   = "worktree_has_submodules"
-	evLocation     = "agent_worktree_location"
-	evOutsideScope = "outside_scope"
+	evMissing             = "worktree_missing"
+	evMerged              = "merged_into"
+	evSquashMerged        = "squash_merged_into"
+	evHeadIn              = "head_contained_in"
+	evHeadPatchEquivalent = "head_patch_equivalent"
+	evUpstreamGone        = "upstream_gone"
+	evStale               = "worktree_stale"
+	evHeadUnpushed        = "head_not_pushed"
+	evDirty               = "worktree_dirty"
+	evLocked              = "worktree_locked"
+	evOperation           = "worktree_operation_in_progress"
+	evSubmodules          = "worktree_has_submodules"
+	evLocation            = "agent_worktree_location"
+	evOutsideScope        = "outside_scope"
 )
 
 // entry is one linked worktree under examination together with the lazily
@@ -86,6 +87,9 @@ func (s *scan) classify(ctx context.Context, e *entry) (verdict, bool, error) {
 	if e.missing {
 		v, err := s.missingVerdict(ctx, e)
 		return v, err == nil, err
+	}
+	if v, ok, handled := s.missingRefRule(e); handled {
+		return v, ok, nil
 	}
 	for _, r := range []rule{s.mergedRule, s.detachedRule, s.upstreamGoneRule, s.staleRule} {
 		v, ok, err := r(ctx, e)
@@ -152,6 +156,9 @@ func (s *scan) mergedRule(ctx context.Context, e *entry) (verdict, bool, error) 
 	if e.wt.Detached || b == "" || !s.hasBase || gitx.IsBaseBranch(s.base, s.cfg.Git.BaseBranches, b) {
 		return verdict{}, false, nil
 	}
+	if s.unstarted(ctx, e) {
+		return verdict{}, false, ctxErr(ctx)
+	}
 	base, res, err := s.repo.MergedIntoAny(ctx, s.bases, e.wt.BranchRef, s.squash)
 	if err != nil || !res.Merged {
 		return verdict{}, false, ctxErr(ctx)
@@ -162,6 +169,20 @@ func (s *scan) mergedRule(ctx context.Context, e *entry) (verdict, bool, error) 
 		ev = findings.Evidence{Code: evSquashMerged, Message: fmt.Sprintf("branch %s was squash- or rebase-merged into %s", b, into), Value: into}
 	}
 	return s.removeVerdict(findings.ConfidenceHigh, "branch is merged; removing the worktree keeps the branch and its commits", ev), true, nil
+}
+
+// unstarted reports a worktree pre-created for a task that has not begun: its
+// branch sits on the base tip, was never pushed and has only its creation in
+// the reflog. It is "merged" only in the vacuous sense, and merged-branch
+// already ignores such a branch, so both detectors must agree (shared
+// gitx.Unstarted). A failing check counts as unstarted, the conservative side.
+func (s *scan) unstarted(ctx context.Context, e *entry) bool {
+	b, ok := s.branches[e.wt.Branch]
+	if !ok {
+		return false
+	}
+	unstarted, _ := s.repo.Unstarted(ctx, b, s.baseTip)
+	return unstarted
 }
 
 // detachedRule handles a detached HEAD: contained in the base or a remote
@@ -177,11 +198,36 @@ func (s *scan) detachedRule(ctx context.Context, e *entry) (verdict, bool, error
 		return verdict{}, false, err
 	}
 	if where == "" {
-		e.unpushedDetached = true
-		return verdict{}, false, nil
+		return s.patchEquivalentRule(ctx, e)
 	}
 	ev := findings.Evidence{Code: evHeadIn, Message: "detached HEAD is contained in " + where, Value: where}
 	return s.removeVerdict(findings.ConfidenceMedium, "detached HEAD commits are contained elsewhere", ev), true, nil
+}
+
+// patchEquivalentRule accepts a detached HEAD that no ref contains but whose
+// commits all landed on the base under other ids (rebased or squashed), the
+// typical leftover of an agent run whose branch was rebased before merging.
+// It reuses the patch-id detection of gitx.MergedInto, so a commit that is
+// genuinely unique still marks the entry as unpushed and yields no action.
+// Unknown answers (errors, exceeded caps, squash detection off) count as
+// unique, the conservative side.
+func (s *scan) patchEquivalentRule(ctx context.Context, e *entry) (verdict, bool, error) {
+	if s.hasBase && s.squash {
+		res, err := s.repo.MergedInto(ctx, s.base.FullRef, e.wt.Head, true)
+		if err == nil && res.Merged {
+			ev := findings.Evidence{
+				Code:    evHeadPatchEquivalent,
+				Message: fmt.Sprintf("all detached HEAD commits are patch-equivalent to commits on %s (%s merge)", s.base.Ref, res.Method),
+				Value:   s.base.Ref,
+			}
+			return s.removeVerdict(findings.ConfidenceMedium, "detached HEAD commits already landed on the base branch", ev), true, nil
+		}
+		if err := ctxErr(ctx); err != nil {
+			return verdict{}, false, err
+		}
+	}
+	e.unpushedDetached = true
+	return verdict{}, false, nil
 }
 
 // containedIn returns the base ref or remote branch that contains sha, or ""
@@ -244,6 +290,10 @@ func (s *scan) staleRule(ctx context.Context, e *entry) (verdict, bool, error) {
 	}
 	commitAge, fileAge := s.env.AgeDays(head), s.env.AgeDays(e.sum.NewestModTime)
 	minAge := max(wcfg.MinAgeDays, s.cfg.Thresholds.AgeFloor())
+	if minAge <= 0 {
+		// Without a threshold every checkout would count as abandoned.
+		return verdict{}, false, nil
+	}
 	if commitAge < minAge || fileAge < minAge {
 		return verdict{}, false, nil
 	}

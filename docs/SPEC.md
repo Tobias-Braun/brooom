@@ -153,10 +153,16 @@ Git:
 - **merged-branch**: tip is ancestor of main/master/origin/HEAD, or
   squash-merge detected via patch-id / `git cherry` against the base branch.
   Merge detection mode configurable (ancestor-only, ancestor+squash).
-- **worktrees**: worktrees whose branch is merged/stale/deleted, worktrees
-  whose directory is missing (prunable), worktrees in use or modified
-  recently (agents still working) protected, dirty worktrees flagged not
-  suggested.
+- **worktrees**: worktrees whose branch is merged (not merely freshly
+  created) or stale, or whose branch ref or upstream is gone (the missing ref
+  is reported without suggested action), worktrees
+  whose directory is missing (prunable). Detached worktrees whose commits
+  all landed on the base under other ids (rebased or squashed, patch-id
+  detection) count as merged. There is no age threshold for removal: a
+  cleanup right after a large agent run removes the fresh clean merged
+  worktrees at once (`recently_modified` is informational only). Worktrees in
+  use are protected, dirty worktrees need `--force`, and removed worktrees go
+  to the trash or quarantine and stay undoable.
 - **git-bloat**: loose object count, reflog size, pack count, large blobs;
   suggests `git gc`, `git prune`, reflog expiry, with configurable expiry
   dates, exposed as separate "purge" options with clear explanations.

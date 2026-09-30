@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -326,6 +327,84 @@ func TestWorktreesCleanup(t *testing.T) {
 	}
 	if list := f.repo.Git("worktree", "list", "--porcelain"); strings.Contains(list, "gone") {
 		t.Errorf("missing-directory worktree was not pruned:\n%s", list)
+	}
+}
+
+// detachedWorktree adds a worktree detached at the tip of a fresh feature
+// branch, the way an agent leaves it behind. With landed, the branch commit is
+// then rebase-merged into main under a new id and the branch deleted, so the
+// worktree HEAD is reachable from no ref but patch-equivalent to the base.
+func (f *cleanupFixture) detachedWorktree(name string, landed bool) string {
+	f.t.Helper()
+	branch := "feat/" + name
+	f.feature(branch)
+	p := filepath.Join(f.repo.Dir, ".worktrees", name)
+	f.repo.Git("worktree", "add", "-q", "--detach", p, branch)
+	if landed {
+		f.repo.RebaseMerge(branch, f.at())
+	}
+	f.repo.Git("branch", "-D", branch)
+	return p
+}
+
+// TestWorktreesApplyAfterAgentRun covers issue #255: right after a large agent
+// run every worktree is seconds old, and the cleanup must still remove the
+// clean merged ones and the detached ones whose commits already landed under
+// other ids, while dirty worktrees and detached ones with unique commits stay.
+// undo brings the removed ones back.
+func TestWorktreesApplyAfterAgentRun(t *testing.T) {
+	f := newCleanupFixture(t, nil)
+	removed := map[string]bool{}
+	kept := map[string]bool{}
+	for i := 0; i < 7; i++ {
+		name := "clean" + strconv.Itoa(i)
+		f.feature("feat/" + name)
+		removed[f.worktreeInRepo(name, "feat/"+name)] = true
+		f.mergeCommit("feat/" + name)
+	}
+	for i := 0; i < 5; i++ {
+		name := "dirty" + strconv.Itoa(i)
+		f.feature("feat/" + name)
+		p := f.worktreeInRepo(name, "feat/"+name)
+		f.mergeCommit("feat/" + name)
+		testutil.WriteFile(t, p, "scratch.txt", "uncommitted\n")
+		kept[p] = true
+	}
+	for i := 0; i < 5; i++ {
+		removed[f.detachedWorktree("rebased"+strconv.Itoa(i), true)] = true
+	}
+	for i := 0; i < 3; i++ {
+		kept[f.detachedWorktree("unique"+strconv.Itoa(i), false)] = true
+	}
+	f.publish()
+
+	code, out, errOut := brooom(t, "", append([]string{"worktrees", "--apply", "--yes"}, quarantine...)...)
+	if code != ExitOK {
+		t.Fatalf("apply: code %d, stderr %q\n%s", code, errOut, out)
+	}
+	for p := range removed {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s should be removed (%v)", filepath.Base(p), err)
+		}
+	}
+	for p := range kept {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s must stay: %v", filepath.Base(p), err)
+		}
+	}
+
+	code, out, errOut = brooom(t, "", "undo", "--apply", "--yes")
+	if code != ExitOK {
+		t.Fatalf("undo: code %d, stderr %q\n%s", code, errOut, out)
+	}
+	list := f.repo.Git("worktree", "list", "--porcelain")
+	for p := range removed {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("%s not restored: %v", filepath.Base(p), err)
+		}
+		if !strings.Contains(list, p) {
+			t.Errorf("%s is not a registered worktree again", filepath.Base(p))
+		}
 	}
 }
 

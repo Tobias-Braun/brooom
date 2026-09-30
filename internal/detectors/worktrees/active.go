@@ -23,8 +23,7 @@ const (
 
 // markActivity adds the signals that a worktree is being worked in right now
 // to a candidate: an in-use worktree is blocked (never overridable, like a
-// locked one) and a recently modified one is lowered one confidence level,
-// which takes it out of the safe preset (high only). Worktrees without a
+// locked one) and a recently modified one is flagged informationally. Worktrees without a
 // removal to suggest need neither, and missing directories have no activity.
 func (s *scan) markActivity(ctx context.Context, e *entry, v *verdict) error {
 	if e.missing || v.action != findings.ActionRemoveWorktree {
@@ -129,11 +128,12 @@ func unknownOpenEvidence(err error) findings.Evidence {
 }
 
 // markRecent flags a worktree whose newest file (or, without a readable
-// directory, HEAD commit) changed within thresholds.recent_days. A freshly
-// created worktree at the base tip is "merged" by definition, and a worktree
-// modified minutes ago has an agent in it; both drop one confidence level.
-// The flag is informational, not blocking. recent_days 0 disables it, and an
-// unknown time is not recent.
+// directory, HEAD commit) changed within thresholds.recent_days. The flag is
+// purely informational: agent runs leave hundreds of fresh worktrees that must
+// be removable right away, so it never withholds the action and never lowers
+// the confidence. Real protection comes from the dirty, locked, in-use and
+// unstarted checks. recent_days 0 disables the flag, and an unknown time is
+// not recent.
 func (s *scan) markRecent(ctx context.Context, e *entry, v *verdict) {
 	days := s.cfg.Thresholds.RecentDays
 	last := s.lastModified(ctx, e)
@@ -143,16 +143,7 @@ func (s *scan) markRecent(ctx context.Context, e *entry, v *verdict) {
 	v.risks = append(v.risks, findings.RiskRecentlyModified)
 	v.evidence = append(v.evidence, findings.Evidence{
 		Code:    evRecent,
-		Message: fmt.Sprintf("modified %d days ago, within the last %d days; someone may still be working here", s.env.AgeDays(last), days),
+		Message: fmt.Sprintf("modified %d days ago, within the last %d days (informational, does not block removal)", s.env.AgeDays(last), days),
 		Value:   s.env.AgeDays(last),
 	})
-	v.conf = lowered(v.conf)
-}
-
-// lowered returns the next lower confidence level.
-func lowered(c findings.Confidence) findings.Confidence {
-	if c == findings.ConfidenceHigh {
-		return findings.ConfidenceMedium
-	}
-	return findings.ConfidenceLow
 }

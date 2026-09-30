@@ -53,7 +53,7 @@ func assertOutsideFinding(t *testing.T, fs []findings.Finding, path string) {
 // names the way forward instead of leaving the scan looking empty.
 func TestOutOfScopeWorktreeIsReportedAsFinding(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	outside := repo.AddWorktree("outside", "feat-outside")
+	outside := repo.AddStartedWorktree("outside", "feat-outside")
 	// The guard only allows the repository, like default single-repo mode;
 	// the linked worktree lives in another temp directory.
 	h := newHarness(t, repo)
@@ -70,7 +70,7 @@ func TestOutOfScopeWorktreeIsReportedAsFinding(t *testing.T) {
 // gets no removal action while it is outside the guard.
 func TestMergedOutOfScopeWorktreeIsNeverSuggested(t *testing.T) {
 	repo := testutil.NewRepo(t)
-	outside := repo.AddWorktree("outside", "feat-merged")
+	outside := repo.AddStartedWorktree("outside", "feat-merged")
 	h := newHarness(t, repo)
 
 	fs, err := h.runErr(repoTarget(repo.Dir))
@@ -91,7 +91,8 @@ func TestInScopeAndMissingWorktreesGetNoNote(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	inside := filepath.Join(repo.Dir, ".claude", "worktrees", "in")
 	repo.Git("worktree", "add", "-q", "-b", "in", inside)
-	gone := repo.AddWorktree("gone", "feat-gone")
+	repo.MarkStarted("in")
+	gone := repo.AddStartedWorktree("gone", "feat-gone")
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +120,7 @@ func metaHarness(t *testing.T) (h *harness, own, sibling string) {
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}
-	own = repo.AddWorktree("own", "own")
+	own = repo.AddStartedWorktree("own", "own")
 	h = newHarness(t, repo)
 	g, err := scope.NewGuard(own)
 	if err != nil {

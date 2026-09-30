@@ -42,7 +42,7 @@ func TestOperationInProgressBlocksRemoval(t *testing.T) {
 			}
 			t.Run(name, func(t *testing.T) {
 				repo := testutil.NewRepo(t)
-				wt := repo.AddWorktree("paused", "")
+				wt := repo.AddStartedWorktree("paused", "")
 				h := wtHarness(t, repo, wt)
 				h.env.Force = force
 				marker := filepath.Join(adminDir(t, repo, wt), tt.marker)
@@ -75,7 +75,7 @@ func TestSubmoduleWorktreeIsReportedWithoutAction(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	repo.Git("-c", "protocol.file.allow=always", "submodule", "add", "-q", sub.Dir, "sub")
 	repo.CommitAll("add submodule", testutil.BaseTime)
-	wt := repo.AddWorktree("with-sub", "feat-sub")
+	wt := repo.AddStartedWorktree("with-sub", "feat-sub")
 	gitIn(t, repo, wt, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
 	h := wtHarness(t, repo, wt)
 
