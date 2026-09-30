@@ -38,7 +38,7 @@ The landing page is an Astro project in `site/` (Node 22 LTS, see
 image to ghcr.io (see "Site releases" in [docs/releasing.md](docs/releasing.md)).
 
 ```sh
-cd site && npm ci && npm run dev   # local dev server on http://localhost:4321/
+cd site && npm ci --ignore-scripts && npm run dev   # local dev server on http://localhost:4321/
 npm run check && npm test && npm run build   # what CI runs
 
 # The image CI publishes: nginx serving the built site on port 8080.
