@@ -3,6 +3,7 @@ package catalog
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -363,5 +364,122 @@ func TestSeedDataUserProtection(t *testing.T) {
 	}
 	if c.UserProtection(env).Protected(filepath.Join(home, ".claude", "todos", "a.json")) {
 		t.Error("todos must not be protected")
+	}
+}
+
+// TestUserProtectionThroughSymlinks proves that a rule is matched under its
+// lexical and its symlink-resolved spelling, whichever spelling the caller
+// holds (detectors scan lexically, the trash action compares guard-resolved
+// paths).
+func TestUserProtectionThroughSymlinks(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	if err := os.MkdirAll(filepath.Join(real, "dot", "tool", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(real, ".tool"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	homeLink := filepath.Join(root, "homelink")
+	if err := os.Symlink(real, homeLink); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	c := userCatalog(t, "linux")
+	env := func(home string) PathEnv { return PathEnv{GOOS: "linux", Home: home} }
+
+	t.Run("symlinked home, resolved path", func(t *testing.T) {
+		if !c.UserProtection(env(homeLink)).Protected(filepath.Join(real, ".tool", "skills", "a.md")) {
+			t.Error("resolved spelling of a protected path must be protected")
+		}
+	})
+	t.Run("real home, path through the link", func(t *testing.T) {
+		if !c.UserProtection(env(real)).Protected(filepath.Join(homeLink, ".tool", "skills", "a.md")) {
+			t.Error("lexical spelling through a symlink must be protected")
+		}
+	})
+	t.Run("symlinked tool directory", func(t *testing.T) {
+		// A separate home keeps the shared fixture above untouched.
+		home := filepath.Join(root, "home2")
+		target := filepath.Join(real, "dot", "tool")
+		if err := os.MkdirAll(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filepath.Join(home, ".tool")); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		p := c.UserProtection(env(home))
+		if !p.Protected(filepath.Join(target, "skills", "a.md")) {
+			t.Error("target of a symlinked ~/.tool must be protected")
+		}
+		if p.Protected(filepath.Join(target, "todos", "a.json")) {
+			t.Error("unprotected sibling must stay unprotected")
+		}
+		lexical := filepath.Join(home, ".tool", "settings.json")
+		if got := p.Patterns(); !slices.Contains(got, lexical) {
+			t.Errorf("Patterns must list the lexical spelling %q, got %v", lexical, got)
+		}
+		for _, pat := range p.Patterns() {
+			if strings.HasPrefix(pat, target) {
+				t.Errorf("Patterns must not list resolved spellings, got %q", pat)
+			}
+		}
+	})
+}
+
+// TestUserRootsKeepUNCVolumes runs the Windows path shapes on any host by
+// simulating the Windows environment: the leading "//" of a UNC share must
+// survive expansion instead of collapsing into a path on the current drive.
+func TestUserRootsKeepUNCVolumes(t *testing.T) {
+	tests := []struct {
+		name, appData, want string
+	}{
+		{"UNC share", `\\srv\profiles$\u\AppData\Roaming`, "//srv/profiles$/u/AppData/Roaming/tool/config"},
+		{"UNC share with trailing separator", `\\srv\profiles$\u\Roaming\`, "//srv/profiles$/u/Roaming/tool/config"},
+		{"UNC share with dot segments", `\\srv\share\a\..\Roaming`, "//srv/share/Roaming/tool/config"},
+		{"extended-length drive", `\\?\C:\Users\u\AppData\Roaming`, "//?/C:/Users/u/AppData/Roaming/tool/config"},
+		{"extended-length UNC", `\\?\UNC\srv\share\Roaming`, "//?/UNC/srv/share/Roaming/tool/config"},
+		{"drive letter", `C:\Users\u\AppData\Roaming`, "C:/Users/u/AppData/Roaming/tool/config"},
+	}
+	c := userCatalog(t, "windows")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := PathEnv{GOOS: "windows", Home: `C:\Users\u`, Getenv: func(k string) string {
+				if k == "APPDATA" {
+					return tt.appData
+				}
+				return ""
+			}}
+			p := c.UserProtection(env)
+			want := filepath.FromSlash(tt.want)
+			var found bool
+			for _, pat := range p.Patterns() {
+				found = found || pat == want
+			}
+			if !found {
+				t.Fatalf("Patterns = %q, want one to be %q", p.Patterns(), want)
+			}
+			// The protected spelling as the guard would hand it over.
+			if !p.Protected(filepath.FromSlash(tt.want + "/x")) {
+				t.Errorf("path below %q must be protected", want)
+			}
+		})
+	}
+}
+
+func TestSplitVolume(t *testing.T) {
+	tests := []struct{ in, vol, rest string }{
+		{"//srv/share/a/b", "//srv/share", "/a/b"},
+		{`\\srv\share`, "//srv/share", ""},
+		{"//?/C:/x", "//?/C:", "/x"},
+		{"//?/UNC/srv/share/x", "//?/UNC/srv/share", "/x"},
+		{"C:/x", "C:", "/x"},
+		{"/home/u", "", "/home/u"},
+		{"rel/x", "", "rel/x"},
+	}
+	for _, tt := range tests {
+		vol, rest := splitVolume(tt.in)
+		if vol != tt.vol || rest != tt.rest {
+			t.Errorf("splitVolume(%q) = %q, %q; want %q, %q", tt.in, vol, rest, tt.vol, tt.rest)
+		}
 	}
 }

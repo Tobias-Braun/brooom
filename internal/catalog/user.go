@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/Tobias-Braun/brooom/internal/scope"
 )
 
 // maxUserDepth bounds how deep below Base a "**" in a user pattern may
@@ -146,9 +148,9 @@ func expandUser(env PathEnv, pat string) (expanded, bool) {
 	for lit < len(segs) && !hasWildcard(segs[lit]) {
 		lit++
 	}
-	base := path.Join(root, strings.Join(segs[:lit], "/"))
+	base := joinSlash(root, strings.Join(segs[:lit], "/"))
 	return expanded{
-		pattern: filepath.FromSlash(path.Join(root, rest)),
+		pattern: filepath.FromSlash(joinSlash(root, rest)),
 		base:    filepath.FromSlash(base),
 		rel:     strings.Join(segs[lit:], "/"),
 	}, true
@@ -187,7 +189,7 @@ func xdgDir(env PathEnv, name, fallback string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return path.Join(home, fallback), true
+	return joinSlash(home, fallback), true
 }
 
 // slashDir normalises a directory to forward slashes; an empty value is
@@ -196,14 +198,74 @@ func slashDir(dir string) (string, bool) {
 	if dir == "" {
 		return "", false
 	}
-	return path.Clean(filepath.ToSlash(dir)), true
+	return cleanSlash(filepath.ToSlash(dir)), true
+}
+
+// splitVolume separates a Windows volume from the rest of a path, normalising
+// backslashes when the path starts with two separators. It is deliberately
+// independent of the host OS so that Windows layouts (UNC shares, "\\?\"
+// prefixes, drive letters) are handled identically when simulated on another
+// machine. The flip side is that on POSIX hosts a path such as "//a/b/c" or
+// "c:/x" is split as a volume too; those spellings do not occur in real
+// homes and the split only serves consistent cleaning and comparison. The
+// volume is one of "//server/share", "//?/UNC/server/share",
+// "//?/C:" (and the "//./" device spelling) or "X:"; it is empty for ordinary
+// paths.
+func splitVolume(p string) (vol, rest string) {
+	if len(p) >= 2 && isSep(p[0]) && isSep(p[1]) {
+		return splitUNC(strings.ReplaceAll(p, `\`, "/"))
+	}
+	if len(p) >= 2 && p[1] == ':' && (p[0]|0x20 >= 'a' && p[0]|0x20 <= 'z') {
+		return p[:2], p[2:]
+	}
+	return "", p
+}
+
+func isSep(c byte) bool { return c == '/' || c == '\\' }
+
+// splitUNC splits a forward-slash path that starts with "//" into its
+// "//server/share" or "//?/..." volume and the rest.
+func splitUNC(p string) (vol, rest string) {
+	parts := strings.SplitN(p[2:], "/", 5)
+	n := 2 // server and share
+	if parts[0] == "?" || parts[0] == "." {
+		if len(parts) > 1 && strings.EqualFold(parts[1], "UNC") {
+			n = 4
+		}
+	}
+	if len(parts) < n {
+		return p, ""
+	}
+	vol = "//" + strings.Join(parts[:n], "/")
+	return vol, p[len(vol):]
+}
+
+// cleanSlash is path.Clean that keeps a Windows volume intact: only the part
+// after the volume is cleaned, because path.Clean would collapse the leading
+// "//" of a UNC path into a single slash and thereby point at the current
+// drive instead of the share.
+func cleanSlash(p string) string {
+	vol, rest := splitVolume(p)
+	if vol == "" {
+		return path.Clean(rest)
+	}
+	rest = strings.ReplaceAll(rest, `\`, "/")
+	if c := path.Clean("/" + rest); c != "/" {
+		return vol + c
+	}
+	return vol
+}
+
+// joinSlash joins forward-slash elements below root, volume-aware.
+func joinSlash(root string, elem ...string) string {
+	return cleanSlash(strings.Join(append([]string{root}, elem...), "/"))
 }
 
 // relBelow returns abs relative to base (forward slashes) when abs lies
 // strictly below base. Both sides are compared as plain strings so that glob
 // metacharacters in the home directory name cannot matter.
 func relBelow(base, abs string, fold bool) (string, bool) {
-	b, a := path.Clean(filepath.ToSlash(base)), path.Clean(filepath.ToSlash(abs))
+	b, a := cleanSlash(filepath.ToSlash(base)), cleanSlash(filepath.ToSlash(abs))
 	if fold {
 		if !strings.HasPrefix(foldCase(a), foldCase(b)+"/") {
 			return "", false
@@ -224,6 +286,9 @@ type UserProtection struct {
 type userProtect struct {
 	base, rel string
 	pattern   string
+	// alias marks the symlink-resolved twin of a rule; it only exists for
+	// matching and is never listed by Patterns.
+	alias bool
 }
 
 // UserProtection expands the user-scope protect patterns of all tools for
@@ -237,8 +302,17 @@ func (c *Catalog) UserProtection(env PathEnv) *UserProtection {
 				continue
 			}
 			for _, pat := range p.Patterns {
-				if x, ok := expandUser(env, pat); ok {
-					up.rules = append(up.rules, userProtect{base: x.base, rel: x.rel, pattern: x.pattern})
+				x, ok := expandUser(env, pat)
+				if !ok {
+					continue
+				}
+				up.rules = append(up.rules, userProtect{base: x.base, rel: x.rel, pattern: x.pattern})
+				// A symlinked HOME, a stow/chezmoi-managed ~/.claude or a
+				// junction below %APPDATA% makes the same location reachable
+				// under a second spelling; the trash action compares the
+				// guard-resolved one.
+				if rb := resolveExisting(x.base); rb != x.base {
+					up.rules = append(up.rules, userProtect{base: rb, rel: x.rel, alias: true})
 				}
 			}
 		}
@@ -248,16 +322,33 @@ func (c *Catalog) UserProtection(env PathEnv) *UserProtection {
 
 // Patterns returns the expanded absolute protect patterns (native separators).
 func (u *UserProtection) Patterns() []string {
-	out := make([]string, len(u.rules))
-	for i, r := range u.rules {
-		out[i] = r.pattern
+	out := make([]string, 0, len(u.rules))
+	for _, r := range u.rules {
+		if !r.alias {
+			out = append(out, r.pattern)
+		}
 	}
 	return out
 }
 
 // Protected reports whether abs matches a protect pattern or lies below a
-// protected path.
+// protected path. abs is tried as given and symlink-resolved, against every
+// rule in its lexical and resolved spelling, so it does not matter which
+// spelling the caller holds.
 func (u *UserProtection) Protected(abs string) bool {
+	if u.coveredBy(abs) {
+		return true
+	}
+	// Symlink resolution touches the disk, so it only happens when the
+	// lexical spelling did not already match.
+	if r := resolveExisting(abs); r != abs {
+		return u.coveredBy(r)
+	}
+	return false
+}
+
+// coveredBy reports whether any rule, in either spelling, covers abs.
+func (u *UserProtection) coveredBy(abs string) bool {
 	for _, r := range u.rules {
 		if r.covers(abs, u.fold) {
 			return true
@@ -266,8 +357,21 @@ func (u *UserProtection) Protected(abs string) bool {
 	return false
 }
 
+// resolveExisting resolves symlinks and Windows junctions in the existing
+// prefix of p and keeps the part that does not exist, so locations that are
+// not there yet still get a comparable spelling. It uses the scope guard's
+// resolver, because filepath.EvalSymlinks no longer follows junctions (Go
+// 1.23, winsymlink=1) and the trash action compares guard-resolved paths.
+// When p cannot be resolved it is returned unchanged.
+func resolveExisting(p string) string {
+	if r, err := scope.Resolve(p); err == nil {
+		return r
+	}
+	return p
+}
+
 func (r userProtect) covers(abs string, fold bool) bool {
-	a, b := filepath.ToSlash(abs), filepath.ToSlash(r.base)
+	a, b := cleanSlash(filepath.ToSlash(abs)), cleanSlash(filepath.ToSlash(r.base))
 	if r.rel == "" {
 		// Wildcard-free: the path itself or anything below it.
 		if fold {

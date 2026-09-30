@@ -2,6 +2,7 @@ package logs
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -222,6 +223,28 @@ func TestUserProtectWins(t *testing.T) {
 	tg := targetFor(t, cfg, "wild-tool")
 	env := newEnv(t, cfg, tg.Path)
 	got := relPaths(t, mustScan(t, env, tg), tg.Path)
+	if want := []string{"r1"}; !slices.Equal(got, want) {
+		t.Errorf("paths = %v, want %v", got, want)
+	}
+}
+
+// TestUserProtectWinsWithSymlinkedHome: HOME is a symlink to the real home, as
+// with dotfile managers. Protected data must still be filtered whichever
+// spelling the walk and the protect rules use.
+func TestUserProtectWinsWithSymlinkedHome(t *testing.T) {
+	real := userHome(t)
+	link := filepath.Join(filepath.Dir(real), "homelink")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	t.Setenv("HOME", link)
+	t.Setenv("USERPROFILE", link)
+	cfg := userCfg(true)
+	tg := targetFor(t, cfg, "wild-tool")
+	env := newEnv(t, cfg, tg.Path)
+	// Findings carry the guard-resolved spelling, so compare against the real
+	// base rather than the symlinked one.
+	got := relPaths(t, mustScan(t, env, tg), filepath.Join(real, ".wildtool", "runs"))
 	if want := []string{"r1"}; !slices.Equal(got, want) {
 		t.Errorf("paths = %v, want %v", got, want)
 	}

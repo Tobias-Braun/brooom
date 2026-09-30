@@ -101,6 +101,14 @@ type resolver struct {
 // root returns the root directory of the resolver's volume.
 func (r *resolver) root() string { return r.vol + string(os.PathSeparator) }
 
+// Resolve returns path spelled the way the Guard compares paths: absolute,
+// every symlink and junction in the existing prefix followed, the
+// non-existent tail kept. Code that matches its own paths against
+// guard-resolved ones (user-level protect rules) uses it so both sides agree
+// on one spelling; filepath.EvalSymlinks does not, because since Go 1.23 it
+// leaves Windows junctions alone and fails on a missing tail.
+func Resolve(path string) (string, error) { return resolveFull(path) }
+
 // resolveFull turns path into an absolute path in which every existing
 // component is symlink free. It is deliberately not filepath.EvalSymlinks:
 // dangling links must be followed to their (non-existent) target, and the
