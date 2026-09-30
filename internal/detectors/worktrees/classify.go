@@ -140,6 +140,14 @@ func (s *scan) missingVerdict(ctx context.Context, e *entry) (verdict, error) {
 	return v, nil
 }
 
+// fail records a non-fatal problem; cancellation is reported by the engine.
+func (s *scan) fail(ctx context.Context, what string, err error) {
+	if ctx.Err() != nil {
+		return
+	}
+	s.errs = append(s.errs, fmt.Errorf("worktrees: %s: %w", what, err))
+}
+
 func (s *scan) removeVerdict(conf findings.Confidence, reason string, ev findings.Evidence) verdict {
 	return verdict{conf: conf, action: findings.ActionRemoveWorktree, reason: reason, evidence: []findings.Evidence{ev}}
 }
@@ -175,13 +183,17 @@ func (s *scan) mergedRule(ctx context.Context, e *entry) (verdict, bool, error) 
 // branch sits on the base tip, was never pushed and has only its creation in
 // the reflog. It is "merged" only in the vacuous sense, and merged-branch
 // already ignores such a branch, so both detectors must agree (shared
-// gitx.Unstarted). A failing check counts as unstarted, the conservative side.
+// gitx.Unstarted). A failing check counts as unstarted, the conservative side,
+// and is recorded as a scan error like merged-branch does.
 func (s *scan) unstarted(ctx context.Context, e *entry) bool {
 	b, ok := s.branches[e.wt.Branch]
 	if !ok {
 		return false
 	}
-	unstarted, _ := s.repo.Unstarted(ctx, b, s.baseTip)
+	unstarted, err := s.repo.Unstarted(ctx, b, s.baseTip)
+	if err != nil {
+		s.fail(ctx, fmt.Sprintf("check whether branch %q is unstarted in worktree %q", b.Name, e.wt.Path), err)
+	}
 	return unstarted
 }
 
@@ -273,7 +285,10 @@ func (s *scan) upstreamGoneRule(ctx context.Context, e *entry) (verdict, bool, e
 }
 
 // staleRule reports abandoned checkouts: both the HEAD commit and the newest
-// file are older than the threshold. An unknown age is never stale. Unpushed
+// file are older than the threshold. The threshold defaults to 0, which turns
+// the rule off even with include_stale (so cleanup can run right after an
+// agent run); set detectors.worktrees.min_age_days to opt in. An unknown age
+// is never stale. Unpushed
 // branch commits do not matter (removal never deletes the branch), but a
 // detached HEAD with unique commits is reported without an action.
 func (s *scan) staleRule(ctx context.Context, e *entry) (verdict, bool, error) {
@@ -356,9 +371,9 @@ func (s *scan) headCommitTime(ctx context.Context, e *entry) (time.Time, error) 
 
 // flagBlocking adds the locked, operation, submodule and dirty classification
 // to a candidate. Locked and an operation in progress always win and are never
-// overridden. Dirty blocks unless --force is
-// set and the candidate is otherwise removable, in which case the removal
-// stays suggested with an explicit reason (the action trashes the directory).
+// overridden. Dirty blocks unless --force is set and the candidate is
+// otherwise removable, in which case the removal stays suggested with an
+// explicit reason (the action trashes the directory).
 func (s *scan) flagBlocking(ctx context.Context, e *entry, v *verdict) error {
 	locked := e.wt.Locked
 	if locked {

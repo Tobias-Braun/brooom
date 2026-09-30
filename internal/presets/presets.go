@@ -215,8 +215,9 @@ func overlayStandard(c *config.Config) {
 
 // overlayAggressive lowers the age thresholds (never raising one), reports
 // ignored files as well and shortens the git expiries to AggressiveExpiry
-// where they are longer (shorter or unknown values stay). It deliberately leaves
-// the worktree age threshold at its default 0 (no presets raise it), RecentDays, ProtectedBranches, AllowDelete and the trash strategy alone.
+// where they are longer (shorter or unknown values stay). It deliberately
+// leaves the worktree age threshold at its default 0 (no preset raises it),
+// RecentDays, ProtectedBranches, AllowDelete and the trash strategy alone.
 func overlayAggressive(c *config.Config) {
 	overlayStandard(c)
 	lower(&c.Detectors.StaleBranch.MinAgeDays, AggressiveAges.StaleBranchDays)

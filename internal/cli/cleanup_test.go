@@ -370,6 +370,13 @@ func TestWorktreesApplyAfterAgentRun(t *testing.T) {
 		testutil.WriteFile(t, p, "scratch.txt", "uncommitted\n")
 		kept[p] = true
 	}
+	// An edit hidden from git status by skip-worktree is still uncommitted work.
+	f.feature("feat/hidden")
+	hidden := f.worktreeInRepo("hidden", "feat/hidden")
+	f.mergeCommit("feat/hidden")
+	f.repo.Git("-C", hidden, "update-index", "--skip-worktree", "feat_hidden.txt")
+	testutil.WriteFile(t, hidden, "feat_hidden.txt", "local override\n")
+	kept[hidden] = true
 	for i := 0; i < 5; i++ {
 		removed[f.detachedWorktree("rebased"+strconv.Itoa(i), true)] = true
 	}
@@ -405,6 +412,38 @@ func TestWorktreesApplyAfterAgentRun(t *testing.T) {
 		if !strings.Contains(list, p) {
 			t.Errorf("%s is not a registered worktree again", filepath.Base(p))
 		}
+	}
+}
+
+// TestSweepPresetsTreatPatchEquivalentWorktrees pins the confidence split of
+// detached worktrees: one whose commits landed under other ids is a medium
+// confidence finding, so the safe preset (high only) keeps it while standard
+// removes it. A merged branch worktree is high confidence and goes with safe.
+func TestSweepPresetsTreatPatchEquivalentWorktrees(t *testing.T) {
+	f := newCleanupFixture(t, nil)
+	f.feature("feat/merged")
+	merged := f.worktreeInRepo("merged", "feat/merged")
+	f.mergeCommit("feat/merged")
+	rebased := f.detachedWorktree("rebased", true)
+	f.publish()
+
+	code, out, errOut := brooom(t, "", append([]string{"sweep", "--preset", "safe", "--apply", "--yes"}, quarantine...)...)
+	if code != ExitOK {
+		t.Fatalf("safe: code %d, stderr %q\n%s", code, errOut, out)
+	}
+	if _, err := os.Stat(merged); !os.IsNotExist(err) {
+		t.Errorf("the merged worktree should be removed by safe (%v)", err)
+	}
+	if _, err := os.Stat(rebased); err != nil {
+		t.Fatalf("safe must keep the medium confidence patch-equivalent worktree: %v", err)
+	}
+
+	code, out, errOut = brooom(t, "", append([]string{"sweep", "--preset", "standard", "--apply", "--yes"}, quarantine...)...)
+	if code != ExitOK {
+		t.Fatalf("standard: code %d, stderr %q\n%s", code, errOut, out)
+	}
+	if _, err := os.Stat(rebased); !os.IsNotExist(err) {
+		t.Errorf("standard should remove the patch-equivalent worktree (%v)", err)
 	}
 }
 

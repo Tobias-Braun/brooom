@@ -53,6 +53,12 @@ func (s *scan) lastLoggedHead(e *entry) (sha string, found bool) {
 // the finding explains how to restore the ref instead. An unborn orphan
 // branch is normal for a worktree that has not committed yet and stays quiet
 // (ok false, but handled so no other rule misreads the zero HEAD).
+//
+// The two cases are told apart by a heuristic: a deleted ref leaves a HEAD
+// reflog in the worktree's admin directory (the worktree once had a commit),
+// an unborn branch has none. If that reflog is missing or unreadable for a
+// deleted ref (for example after manual cleanup), the worktree is treated as
+// unborn and stays quiet, the quiet side of a report-only rule.
 func (s *scan) missingRefRule(e *entry) (v verdict, ok, handled bool) {
 	if !branchRefUnresolved(e) {
 		return verdict{}, false, false

@@ -471,7 +471,7 @@ func TestHiddenEditsMarkWorktreeDirty(t *testing.T) {
 	for _, flag := range []string{"--skip-worktree", "--assume-unchanged"} {
 		t.Run(flag, func(t *testing.T) {
 			repo := testutil.NewRepo(t)
-			wt := repo.AddWorktree("hidden", "feat-hidden")
+			wt := repo.AddStartedWorktree("hidden", "feat-hidden")
 			repo.Git("-C", wt, "update-index", flag, "README.md")
 			testutil.WriteFile(t, wt, "README.md", "local override\n")
 			f := one(t, wtHarness(t, repo, wt).detect())

@@ -36,14 +36,14 @@
 // in-place writes). A candidate modified within thresholds.recent_days gets
 // the informational recently_modified flag and evidence only: agent runs
 // leave hundreds of fresh worktrees that must be removable right away, so
-// neither confidence nor action change. A worktree whose branch was just created (unstarted, see
+// neither confidence nor action change. A worktree whose branch was just
+// created (unstarted, see
 // gitx.Repo.Unstarted) is never "merged", and one whose branch ref is missing
-// is reported with low confidence and no action. A worktree that
-// contains the working directory of this process, or that a process has open
-// or stands in (procs, best effort per OS), gets the blocking
-// file_open_by_process flag and no action, also with --force. An unavailable
-// open-file check is unknown, not safe: it is noted as evidence and the
-// action re-checks at apply time.
+// is reported with low confidence and no action. A worktree that contains the
+// working directory of this process, or that a process has open or stands in
+// (procs, best effort per OS), gets the blocking file_open_by_process flag and
+// no action, also with --force. An unavailable open-file check is unknown, not
+// safe: it is noted as evidence and the action re-checks at apply time.
 package worktrees
 
 import (
@@ -101,7 +101,9 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 			return err
 		}
 	}
-	return nil
+	// Non-fatal problems (see scan.fail) surface like merged-branch's, so the
+	// two detectors are equally visible about a failed unstarted check.
+	return errors.Join(s.errs...)
 }
 
 // visit examines one worktree entry and emits its finding, if any. The main
@@ -142,6 +144,8 @@ type scan struct {
 	baseTip  string
 	squash   bool
 	branches map[string]gitx.Branch
+	// errs collects non-fatal per-worktree problems.
+	errs []error
 	// open is the batched open-file check, nil until prefetchOpen ran.
 	open *openBatch
 }
@@ -176,6 +180,10 @@ func newScan(ctx context.Context, env *detect.Env, target scope.Target) (*scan, 
 	// classifications still work, so this is not an error.
 	if bases, err := repo.BaseCandidates(ctx, cfg.Git.BaseBranches); err == nil {
 		s.base, s.bases, s.hasBase = bases[0], bases, true
+		// A failing resolve leaves baseTip empty, so no branch counts as
+		// unstarted and the other rules classify the worktree as usual. The
+		// ref just resolved as a base, so this is unlikely and not worth
+		// aborting the scan.
 		s.baseTip, _ = repo.ResolveCommit(ctx, s.base.FullRef)
 	}
 	branches, err := repo.ListBranches(ctx)
