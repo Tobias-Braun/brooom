@@ -249,7 +249,7 @@ func (s *scan) inspectOne(ctx context.Context, e entry) *candidate {
 	c := &candidate{entry: e}
 	switch {
 	case e.dir:
-		if !fi.IsDir() || hasGitEntry(abs) {
+		if !walk.IsDirNoFollow(abs) || hasGitEntry(abs) {
 			return nil
 		}
 		// Fresh, so a cached NewestModTime cannot hide a recent change.

@@ -70,6 +70,10 @@ git branches, leftover worktrees, bloated git histories and build artifacts.
 
 Safety first: every command is a dry run unless you pass --apply, removed
 files go to the trash by default, and every applied session can be undone.
+Brooom never removes a directory that contains version control metadata (.git,
+.hg, .jj, .svn) or a Windows junction, and the delete strategy is refused
+outside a git repository and whenever git cannot confirm that a path holds no
+untracked files.
 
 Without flags Brooom only looks at the git repository you are in. Use
 --workspaces to scan every repository below your configured roots.
@@ -134,7 +138,7 @@ brooom ai --user --apply
 | --- | --- | --- |
 | `--apply` | - | execute the plan (default is a dry run) |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `--user` | - | also scan user-level tool locations (caches, logs) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
@@ -167,7 +171,7 @@ brooom artifacts --apply --yes
 | --- | --- | --- |
 | `--apply` | - | execute the plan (default is a dry run) |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
@@ -204,7 +208,7 @@ brooom branches --merged --apply
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
 | `--merged` | - | only merged branches |
 | `--stale` | - | only stale branches |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
@@ -259,7 +263,7 @@ brooom scan --format json | brooom clean --from - --apply
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
 | `--from` | - | findings file ('-' for stdin) |
 | `--id` | - | only act on these finding IDs (repeatable, comma-separated) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `--user` | - | also accept findings in user-level tool locations |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
@@ -693,7 +697,7 @@ brooom git purge --reflog-expire 90.days.ago --prune 2.weeks.ago --apply
 | `--gc` | - | run git gc on repositories with a loose-object or pack finding (repos without one are not touched) |
 | `--prune` | - | delete unreachable objects older than this git date, e.g. 2.weeks.ago (permanent) |
 | `--reflog-expire` | - | expire reflog entries older than this git date, e.g. 90.days.ago (removes recovery points) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
@@ -726,7 +730,7 @@ brooom logs --workspaces --format json
 | --- | --- | --- |
 | `--apply` | - | execute the plan (default is a dry run) |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `--user` | - | also scan user-level tool locations (pip, npm, Go caches and logs) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
@@ -968,7 +972,7 @@ brooom sweep --workspaces --root ~/code --detector build-artifacts
 | `--apply` | - | execute the plan (default is a dry run) |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
 | `-p`, `--preset` | - | preset: safe, standard, aggressive (default: sweep.preset from the config, else safe) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
@@ -1011,7 +1015,7 @@ brooom undo --apply
 | --- | --- | --- |
 | `--apply` | - | execute the plan (default is a dry run) |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
@@ -1086,5 +1090,5 @@ brooom worktrees --workspaces --format tree
 | --- | --- | --- |
 | `--apply` | - | execute the plan (default is a dry run) |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete |
+| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |

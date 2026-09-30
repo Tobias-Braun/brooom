@@ -193,7 +193,8 @@ reason at the first failure:
 1. `Guard.ResolveParent` (the final element is kept, so symlinks are removed
    as links and never followed); outside the allowed roots is refused.
 2. Static refusals on the resolved path: filesystem/volume roots, allowed
-   roots, repository roots, `.git` or anything inside it, the Brooom home
+   roots, repository roots, VCS metadata (`.git`, `.hg`, `.jj`, `.svn`, by
+   `walk.IsVCSName`) or anything inside it, the Brooom home
    (and anything containing it) and its `sessions` and `quarantine` dirs, and
    the user's home directory (and anything containing it).
 3. Existence and contents: one `walk.Walk` pass with `Fresh: true` sums the
@@ -237,7 +238,16 @@ path and its ancestors with `.git`, the Brooom home, the user's home and the
 sessions/quarantine dirs; `brooom clean --from` vetting runs it too. Step 3
 treats reparse-point directories that are not name surrogates (OneDrive,
 ProjFS) as directories (`walk` decides by the reparse tag); a junction or other
-directory the walker cannot inspect is refused.
+directory the walker cannot inspect is refused, so trashing a junction is never
+possible. Detectors classify entries with the same rule through
+`walk.IsDirNoFollow` / `walk.IsDirEntry` instead of `os.Lstat(...).IsDir()`.
+`walk.Walk` never descends into any VCS metadata directory. The identity check
+fails closed: an entry that exists but cannot be stat'ed counts as an alias
+and refuses the removal; only a missing entry is "not the same".
+
+The `delete` strategy is refused outside a git repository and whenever git
+cannot answer the untracked-files check (step 7 and `Apply`); it never falls
+back to allowing the removal.
 
 Resolving the trasher in `Plan` has no side effects. The one-time delete
 warning (and its `.delete-warned` marker in the Brooom home) is emitted by

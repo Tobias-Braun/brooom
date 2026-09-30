@@ -17,6 +17,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/scope"
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 // Messages of the usage errors of target selection. They say how to fix the
@@ -279,11 +280,12 @@ func resolveExistingDir(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fi, err := os.Stat(resolved)
-	if err != nil {
+	// resolved is already symlink-free, so classify it the way walk and trash
+	// do (reparse-aware) instead of by a following Stat.
+	if _, err := os.Lstat(resolved); err != nil {
 		return "", err
 	}
-	if !fi.IsDir() {
+	if !walk.IsDirNoFollow(resolved) {
 		return "", errors.New("not a directory")
 	}
 	return resolved, nil

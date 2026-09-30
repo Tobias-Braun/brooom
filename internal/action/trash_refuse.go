@@ -11,6 +11,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/scope"
+	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
 // foldPaths reports whether path comparison is case-insensitive on this OS
@@ -33,11 +34,13 @@ func covers(outer, inner string) bool {
 // case-sensitive filesystem costs nothing, missing one on macOS would.
 func isGitName(name string) bool { return strings.EqualFold(name, ".git") }
 
-// insideGitDir reports whether path is a .git entry or lies below one.
-func insideGitDir(path string) bool {
+// insideVCSDir reports whether path is a VCS metadata entry (.git, .hg, .jj,
+// .svn; walk.IsVCSName) or lies below one. .git additionally always folds
+// case via isGitName, the other names follow the filesystem's case rule.
+func insideVCSDir(path string) bool {
 	vol := filepath.VolumeName(path)
 	for _, part := range strings.Split(path[len(vol):], string(filepath.Separator)) {
-		if isGitName(part) {
+		if isGitName(part) || walk.IsVCSName(part) {
 			return true
 		}
 	}
@@ -124,8 +127,8 @@ func refusePath(env *Env, path string, refuseRepoRoot bool) error {
 		return skipf("refusing to remove a filesystem root")
 	case env.Guard.IsAllowedRoot(path):
 		return skipf("refusing to remove an allowed root")
-	case insideGitDir(path):
-		return skipf("refusing to remove .git or anything inside it")
+	case insideVCSDir(path):
+		return skipf("refusing to remove VCS metadata (.git, .hg, .jj, .svn) or anything inside it")
 	case refuseRepoRoot && isRepoRoot(path):
 		return skipf("refusing to remove a repository root")
 	}
@@ -196,8 +199,8 @@ func restoreForbiddenDirs() []string {
 // roots remain the defence for everything else. The error is not a skip: a
 // manifest asking for this is corrupt or forged.
 func refuseRestoreTarget(dest string) error {
-	if insideGitDir(dest) {
-		return fmt.Errorf("trash undo: refusing to restore to %s: inside .git", dest)
+	if insideVCSDir(dest) {
+		return fmt.Errorf("trash undo: refusing to restore to %s: inside VCS metadata (.git, .hg, .jj, .svn)", dest)
 	}
 	for _, p := range restoreForbiddenDirs() {
 		if covers(p, dest) {

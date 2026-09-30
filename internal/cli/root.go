@@ -161,6 +161,10 @@ git branches, leftover worktrees, bloated git histories and build artifacts.
 
 Safety first: every command is a dry run unless you pass --apply, removed
 files go to the trash by default, and every applied session can be undone.
+Brooom never removes a directory that contains version control metadata (.git,
+.hg, .jj, .svn) or a Windows junction, and the delete strategy is refused
+outside a git repository and whenever git cannot confirm that a path holds no
+untracked files.
 
 Without flags Brooom only looks at the git repository you are in. Use
 --workspaces to scan every repository below your configured roots.`,
@@ -255,5 +259,5 @@ func addApplyFlags(cmd *cobra.Command, f *applyFlags) {
 	cmd.Flags().BoolVar(&f.apply, "apply", false, "execute the plan (default is a dry run)")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "do not ask for confirmation (for scripts)")
 	cmd.Flags().BoolVar(&f.force, "force", false, "also act on findings with blocking risk flags (e.g. git branch -D)")
-	cmd.Flags().StringVar(&f.trashStrategy, "trash-strategy", "", "override the trash strategy: trash, quarantine, delete")
+	cmd.Flags().StringVar(&f.trashStrategy, "trash-strategy", "", "override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files)")
 }
