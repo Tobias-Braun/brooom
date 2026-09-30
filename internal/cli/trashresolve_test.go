@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-
 	"github.com/Tobias-Braun/brooom/internal/action"
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/testutil"
