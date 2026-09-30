@@ -2,28 +2,6 @@ package cli
 
 import "github.com/spf13/cobra"
 
-func newCleanCmd(a *app) *cobra.Command {
-	var af applyFlags
-	var from string
-	var ids []string
-	cmd := &cobra.Command{
-		Use:   "clean --from <findings.json>",
-		Short: "Act on a reviewed findings file (from --format json)",
-		Long: `Apply the suggested actions of a findings file produced with
-'brooom scan --format json'. Edit or filter the file (or pass --id) to choose
-what gets cleaned. Every finding is re-validated before anything is done.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return errNotImplemented
-		},
-	}
-	cmd.Flags().StringVar(&from, "from", "", "findings file ('-' for stdin)")
-	cmd.Flags().StringSliceVar(&ids, "id", nil, "only act on these finding IDs (repeatable)")
-	_ = cmd.MarkFlagRequired("from")
-	addApplyFlags(cmd, &af)
-	return cmd
-}
-
 func newUndoCmd(a *app) *cobra.Command {
 	var af applyFlags
 	cmd := &cobra.Command{
