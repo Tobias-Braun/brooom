@@ -18,7 +18,7 @@ func missingConfigArgs(t *testing.T) []string {
 }
 
 func TestExplicitMissingConfigIsAnError(t *testing.T) {
-	for _, cmd := range [][]string{{"config", "validate"}, {"config", "show"}, {"roots", "list"}} {
+	for _, cmd := range [][]string{{"config", "validate"}, {"config", "show"}} {
 		t.Run(strings.Join(cmd, " "), func(t *testing.T) {
 			args := append(missingConfigArgs(t), cmd...)
 			code, out, errOut := run(t, args...)
@@ -94,22 +94,6 @@ func TestSessionsSummaryStaysUnsupported(t *testing.T) {
 	}
 }
 
-func TestRootsListNDJSON(t *testing.T) {
-	t.Setenv(config.HomeEnv, t.TempDir())
-	dir := t.TempDir()
-	if code, _, errOut := run(t, "roots", "add", dir); code != ExitOK {
-		t.Fatal(errOut)
-	}
-	code, out, errOut := run(t, "roots", "list", "-f", "ndjson")
-	if code != ExitOK {
-		t.Fatalf("code=%d err=%q", code, errOut)
-	}
-	var info map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &info); err != nil || info["path"] == nil {
-		t.Errorf("out %q: %v", out, err)
-	}
-}
-
 func TestScanOnlyFlagsRejectedElsewhere(t *testing.T) {
 	t.Setenv(config.HomeEnv, t.TempDir())
 	tests := []struct {
@@ -121,7 +105,6 @@ func TestScanOnlyFlagsRejectedElsewhere(t *testing.T) {
 		{"validate -w", []string{"config", "validate", "-w"}, false},
 		{"validate --root", []string{"config", "validate", "--root", "x"}, false},
 		{"validate -f", []string{"config", "validate", "-f", "json"}, false},
-		{"roots add -d", []string{"roots", "add", "-d", "x", "."}, false},
 		{"purge -d", []string{"purge", "-d", "x"}, false},
 		{"version -w", []string{"version", "-w"}, false},
 		{"sessions -d", []string{"sessions", "-d", "x"}, false},

@@ -69,12 +69,7 @@ type scan struct {
 	target scope.Target
 	root   string
 	m      *matcher
-	// rootPrefix is the scan root relative to cfg.RootPath (slash form, ""
-	// when they are equal or no root applies); it turns walk-relative paths
-	// into the paths RootExclude patterns are written against.
-	rootPrefix string
-	hasRoot    bool
-	acts       *activityCache
+	acts   *activityCache
 }
 
 // Detect implements detect.Detector.
@@ -96,11 +91,7 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 // newScan resolves the effective configuration and the guarded root. It
 // returns nil when the detector is disabled for this target.
 func newScan(env *detect.Env, target scope.Target) (*scan, error) {
-	hint := ""
-	if target.Scope.Type == findings.ScopeRoot {
-		hint = target.Scope.Path
-	}
-	cfg, err := env.Config.ForTarget(hint, target.Path)
+	cfg, err := env.Config.ForTarget(target.Path)
 	if err != nil {
 		return nil, fmt.Errorf("build-artifacts: config for %s: %w", target.Path, err)
 	}
@@ -116,24 +107,7 @@ func newScan(env *detect.Env, target scope.Target) (*scan, error) {
 		return nil, err
 	}
 	s := &scan{env: env, cfg: cfg, target: target, root: root, m: m, acts: newActivityCache()}
-	s.rootPrefix, s.hasRoot = relativeTo(cfg.RootPath, root)
 	return s, nil
-}
-
-// relativeTo returns dir relative to base in slash form ("" for equal
-// paths) and whether dir lies inside base.
-func relativeTo(base, dir string) (string, bool) {
-	if base == "" {
-		return "", false
-	}
-	rel, err := filepath.Rel(base, dir)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", false
-	}
-	if rel == "." {
-		return "", true
-	}
-	return filepath.ToSlash(rel), true
 }
 
 // walkOptions are shared by the candidate walk and the activity walk. The
@@ -187,22 +161,12 @@ func (s *scan) visit(e walk.Entry, rel string) (*candidate, walk.Decision) {
 }
 
 // pruned reports whether a directory is never looked at: configured skip
-// names and the exclude globs of the root and of the repository.
+// names and the exclude globs of the repository.
 func (s *scan) pruned(name, rel string) bool {
 	if slices.ContainsFunc(s.cfg.Scan.SkipDirs, func(n string) bool { return sameName(n, name) }) {
 		return true
 	}
-	if scope.Excluded(s.cfg.RepoExclude, rel) {
-		return true
-	}
-	if !s.hasRoot || len(s.cfg.RootExclude) == 0 {
-		return false
-	}
-	full := rel
-	if s.rootPrefix != "" {
-		full = s.rootPrefix + "/" + rel
-	}
-	return scope.Excluded(s.cfg.RootExclude, full)
+	return scope.Excluded(s.cfg.RepoExclude, rel)
 }
 
 func sameName(a, b string) bool {

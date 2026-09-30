@@ -41,7 +41,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -98,7 +97,7 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	if target.Kind != scope.TargetRepo {
 		return nil
 	}
-	cfg, err := env.Config.ForTarget(target.Scope.Path, target.Path)
+	cfg, err := env.Config.ForTarget(target.Path)
 	if err != nil {
 		return err
 	}
@@ -180,18 +179,11 @@ func (s *scan) prefilter(entries []entry) []entry {
 	return out
 }
 
-// excluded applies the root and repo exclude globs. scope.Excluded matches
-// the base name of the path it is given, so every ancestor prefix is tested
-// too: excluding "data" must also hide data/big.bin.
+// excluded applies the repo exclude globs. scope.Excluded matches the base
+// name of the path it is given, so every ancestor prefix is tested too:
+// excluding "data" must also hide data/big.bin.
 func (s *scan) excluded(e entry) bool {
-	rootRel := ""
-	if s.cfg.RootPath != "" {
-		abs := e.abs(s.target.Path)
-		if r, err := filepath.Rel(s.cfg.RootPath, abs); err == nil && safeRel(filepath.ToSlash(r)) {
-			rootRel = filepath.ToSlash(r)
-		}
-	}
-	return anyPrefixExcluded(s.cfg.RootExclude, rootRel) || anyPrefixExcluded(s.cfg.RepoExclude, e.rel)
+	return anyPrefixExcluded(s.cfg.RepoExclude, e.rel)
 }
 
 func anyPrefixExcluded(patterns []string, rel string) bool {

@@ -127,9 +127,5 @@ func effectiveConfig(env *detect.Env, target scope.Target) (*config.Config, erro
 	if target.Kind == scope.TargetUser {
 		return env.Config, nil
 	}
-	hint := ""
-	if target.Scope.Type == findings.ScopeRoot {
-		hint = target.Scope.Path
-	}
-	return env.Config.ForTarget(hint, target.Path)
+	return env.Config.ForTarget(target.Path)
 }

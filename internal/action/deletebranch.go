@@ -426,7 +426,7 @@ func effectiveConfig(env *Env, f findings.Finding) (*config.Config, error) {
 	if env.Config == nil {
 		return nil, errors.New("delete-branch: no configuration")
 	}
-	cfg, err := env.Config.ForTarget(f.Scope.Path, f.Path)
+	cfg, err := env.Config.ForTarget(f.Path)
 	if err != nil {
 		return nil, skipf("cannot load configuration: %v", err)
 	}

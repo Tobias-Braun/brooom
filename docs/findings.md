@@ -92,7 +92,7 @@ on them without `--force`. `--force` never overrides `file_open_by_process`,
 | `schema_version` | Schema version (1). |
 | `brooom_version` | Version of the binary that produced the report. |
 | `generated_at` | Scan time (UTC). |
-| `scopes` | Scanned repos/roots/user locations. |
+| `scopes` | Scanned repos, walked folders (type `root`) and user locations. |
 | `findings` | Sorted by detector, path, ref. Never `null`. |
 | `totals` | `{findings, actionable, reclaimable_bytes, by_detector}`; nested paths are counted once. |
 | `errors` | Problems that did not abort the scan `{detector?, path?, message, fatal?}`. `fatal: true` means a detector failed on the target (the report may be incomplete; `scan` exits 4); without it the entry is a note (something skipped or partly checked). |

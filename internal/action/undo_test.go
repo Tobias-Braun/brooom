@@ -290,7 +290,7 @@ func TestPlanUndoScopeGuard(t *testing.T) {
 			t.Errorf("%s: %+v", s.Entry.Path, s)
 		}
 	}
-	if !strings.Contains(fx.out.String(), "or with --workspaces") {
+	if !strings.Contains(fx.out.String(), "or with --path") {
 		t.Fatalf("scope hint missing:\n%s", fx.out.String())
 	}
 }

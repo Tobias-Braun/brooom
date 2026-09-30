@@ -432,7 +432,7 @@ func TestSweepOverlayReachesTheScanConfig(t *testing.T) {
 
 	dir := t.TempDir()
 	testutil.WriteFile(t, dir, config.RepoConfigFileName, `{"thresholds": {"min_age_days": 21}}`)
-	eff, err := req.cfg.ForTarget("", dir)
+	eff, err := req.cfg.ForTarget(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

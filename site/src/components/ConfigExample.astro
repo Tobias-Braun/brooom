@@ -7,10 +7,11 @@ import { configJson } from '../lib/config-example';
   <div class="wrap">
     <h2 id="config-title">Zero config, fully configurable</h2>
     <p class="section-intro">
-      All fields have safe defaults, so Brooom works inside a repository without any config. To
-      sweep several projects with <code>--workspaces</code>, add roots and tune the rest in
-      <code>~/.brooom/config.json</code>. This excerpt adds one root, raises the minimum age to 30
-      days, turns one detector off and moves removed files to quarantine.
+      All fields have safe defaults, so Brooom works inside a repository without any config, and
+      <code>br sweep ~/code</code> covers every repository below a folder. Tune the rest in
+      <code>~/.brooom/config.json</code>. This excerpt makes <code>br sweep</code> run the
+      after-agents preset, raises the minimum age to 30 days, turns one detector off and moves
+      removed files to quarantine.
     </p>
     <div data-slot="config-copy" class="code-block">
       <div class="toolbar">

@@ -9,115 +9,35 @@ import (
 	"testing"
 )
 
-// overlayFixture builds a directory tree with two nested configured roots
-// (ws and ws/nested), a sibling ws2 and a lookalike wsx, and returns the
-// (symlink-resolved) base plus a config with those roots.
-func overlayFixture(t *testing.T) (string, *Config) {
+// overlayTarget returns a fresh, symlink-resolved target directory and the
+// default configuration with thresholds.min_age_days raised to 30.
+func overlayTarget(t *testing.T) (string, *Config) {
 	t.Helper()
-	base, err := filepath.EvalSymlinks(t.TempDir())
+	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
-	}
-	for _, d := range []string{"ws/nested/repo", "ws/repo", "ws2/repo", "wsx/repo", "other/repo"} {
-		if err := os.MkdirAll(filepath.Join(base, d), 0o755); err != nil {
-			t.Fatal(err)
-		}
 	}
 	cfg := Default()
-	cfg.Roots = []Root{
-		{
-			Path:       filepath.Join(base, "ws"),
-			Exclude:    []string{"node_modules"},
-			Thresholds: &ThresholdOverrides{MinAgeDays: intp(30)},
-			Detectors:  map[string]bool{"build-artifacts": false},
-		},
-		{
-			Path:       filepath.Join(base, "ws", "nested"),
-			Exclude:    []string{"vendor"},
-			Thresholds: &ThresholdOverrides{MinAgeDays: intp(60), RecentDays: intp(5)},
-		},
-	}
-	return base, cfg
+	cfg.Thresholds.MinAgeDays = 30
+	return dir, cfg
 }
 
-func TestForTargetRootSelection(t *testing.T) {
-	base, cfg := overlayFixture(t)
-	ws := filepath.Join(base, "ws")
-	nested := filepath.Join(ws, "nested")
-	tests := []struct {
-		name, hint, target string
-		wantRoot           string
-		wantExclude        []string
-		wantMinAge         int
-		buildArtifacts     bool
-	}{
-		{"hint equals configured root", ws, filepath.Join(ws, "repo"), ws, []string{"node_modules"}, 30, false},
-		{"hint equals nested root", nested, filepath.Join(nested, "repo"), nested, []string{"vendor"}, 60, true},
-		{"empty hint picks longest containing root", "", filepath.Join(nested, "repo"), nested, []string{"vendor"}, 60, true},
-		{"repo mode hint inside root but not configured", filepath.Join(ws, "repo"), filepath.Join(ws, "repo"), ws, []string{"node_modules"}, 30, false},
-		{"repo mode equals empty hint result", "", filepath.Join(ws, "repo"), ws, []string{"node_modules"}, 30, false},
-		{"user location hint outside all roots skips root layer", filepath.Join(base, "other"), filepath.Join(base, "other", "repo"), "", nil, 14, true},
-		{"non matching hint is not an error", filepath.Join(base, "other"), filepath.Join(ws, "repo"), ws, []string{"node_modules"}, 30, false},
-		{"sibling with shared prefix is not contained", "", filepath.Join(base, "wsx", "repo"), "", nil, 14, true},
-		{"ws2 not contained in ws", "", filepath.Join(base, "ws2", "repo"), "", nil, 14, true},
-		{"target equals root", "", ws, ws, []string{"node_modules"}, 30, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			eff, err := cfg.ForTarget(tt.hint, tt.target)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if eff.RootPath != tt.wantRoot {
-				t.Errorf("RootPath = %q, want %q", eff.RootPath, tt.wantRoot)
-			}
-			if !slices.Equal(eff.RootExclude, tt.wantExclude) {
-				t.Errorf("RootExclude = %v, want %v", eff.RootExclude, tt.wantExclude)
-			}
-			if eff.Thresholds.MinAgeDays != tt.wantMinAge {
-				t.Errorf("MinAgeDays = %d, want %d", eff.Thresholds.MinAgeDays, tt.wantMinAge)
-			}
-			if eff.Detectors.BuildArtifacts.Enabled != tt.buildArtifacts {
-				t.Errorf("build-artifacts enabled = %v", eff.Detectors.BuildArtifacts.Enabled)
-			}
-		})
-	}
-}
-
-func TestForTargetRepoModeMatchesWorkspaceMode(t *testing.T) {
-	base, cfg := overlayFixture(t)
-	target := filepath.Join(base, "ws", "repo")
-	a, err := cfg.ForTarget(target, target)
+func TestForTargetWithoutRepoConfigIsACopy(t *testing.T) {
+	dir, cfg := overlayTarget(t)
+	eff, err := cfg.ForTarget(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := cfg.ForTarget("", target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(a, b) {
-		t.Error("repo mode and workspace mode must produce the same overlay")
-	}
-}
-
-func TestForTargetRootOverridesNeedNotTighten(t *testing.T) {
-	base, cfg := overlayFixture(t)
-	cfg.Roots[0].Thresholds = &ThresholdOverrides{MinAgeDays: intp(0), MinSizeBytes: int64p(7), RecentDays: intp(0)}
-	eff, err := cfg.ForTarget("", filepath.Join(base, "ws", "repo"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if eff.Thresholds != (Thresholds{MinAgeDays: 0, MinSizeBytes: 7, RecentDays: 0}) {
-		t.Errorf("root overrides not applied: %+v", eff.Thresholds)
+	if !reflect.DeepEqual(eff, cfg) || eff == cfg {
+		t.Error("without .brooom.json the effective config must be an equal copy")
 	}
 }
 
 func TestForTargetDoesNotMutateReceiver(t *testing.T) {
-	base, cfg := overlayFixture(t)
-	target := filepath.Join(base, "ws", "repo")
+	target, cfg := overlayTarget(t)
 	writeRepoConfig(t, target, `{"disable":["worktrees"],"thresholds":{"min_age_days":100},"protected_branches":["keep"],"exclude":["gen"]}`)
 	before := cfg.clone()
-	eff, err := cfg.ForTarget("", target)
+	eff, err := cfg.ForTarget(target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,90 +46,36 @@ func TestForTargetDoesNotMutateReceiver(t *testing.T) {
 	}
 	// Mutating the result must not leak back either (no aliasing).
 	eff.Git.ProtectedBranches[0] = "changed"
-	eff.Roots[0].Exclude[0] = "changed"
-	*eff.Roots[0].Thresholds.MinAgeDays = 999
-	eff.Roots[0].Detectors["build-artifacts"] = true
 	if !reflect.DeepEqual(cfg, before) {
 		t.Fatal("effective config aliases the receiver")
 	}
 }
 
 func TestForTargetAppliesRepoConfig(t *testing.T) {
-	base, cfg := overlayFixture(t)
-	target := filepath.Join(base, "ws", "repo")
+	target, cfg := overlayTarget(t)
 	writeRepoConfig(t, target, `{"disable":["worktrees"],"thresholds":{"min_age_days":100},"protected_branches":["keep"],"exclude":["gen"]}`)
-	eff, err := cfg.ForTarget("", target)
+	eff, err := cfg.ForTarget(target)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if eff.Detectors.Worktrees.Enabled || eff.Thresholds.MinAgeDays != 100 {
 		t.Errorf("repo config not applied: %+v", eff.Thresholds)
 	}
-	if !slices.Equal(eff.RepoExclude, []string{"gen"}) || !slices.Equal(eff.RootExclude, []string{"node_modules"}) {
-		t.Errorf("excludes: repo %v root %v", eff.RepoExclude, eff.RootExclude)
+	if !slices.Equal(eff.RepoExclude, []string{"gen"}) {
+		t.Errorf("excludes: repo %v", eff.RepoExclude)
 	}
 	if !slices.Contains(eff.Git.ProtectedBranches, "keep") {
 		t.Error("protected branch not added")
 	}
 }
 
-func TestForTargetRepoConfigCannotLowerRootThreshold(t *testing.T) {
-	base, cfg := overlayFixture(t)
-	target := filepath.Join(base, "ws", "repo")
+func TestForTargetRepoConfigCannotLowerThreshold(t *testing.T) {
+	target, cfg := overlayTarget(t)
 	writeRepoConfig(t, target, `{"thresholds":{"min_age_days":7}}`)
-	_, err := cfg.ForTarget("", target)
+	_, err := cfg.ForTarget(target)
 	want := ".brooom.json: thresholds.min_age_days: 7 is lower than the effective value 30; repo config may only tighten"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("want %q, got %v", want, err)
-	}
-}
-
-func TestForTargetSymlinks(t *testing.T) {
-	base, cfg := overlayFixture(t)
-	link := filepath.Join(t.TempDir(), "link")
-	if err := os.Symlink(filepath.Join(base, "ws"), link); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
-	}
-	// Target reached through a symlink into a configured root.
-	eff, err := cfg.ForTarget("", filepath.Join(link, "repo"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if eff.RootPath != filepath.Join(base, "ws") {
-		t.Errorf("symlinked target: RootPath = %q", eff.RootPath)
-	}
-	// Root configured through a symlink, target given by its real path.
-	cfg.Roots = []Root{{Path: link, Exclude: []string{"x"}}}
-	eff, err = cfg.ForTarget("", filepath.Join(base, "ws", "repo"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if eff.RootPath != filepath.Join(base, "ws") || !slices.Equal(eff.RootExclude, []string{"x"}) {
-		t.Errorf("symlinked root: %q %v", eff.RootPath, eff.RootExclude)
-	}
-	// The hint may also be spelled through the link.
-	eff, err = cfg.ForTarget(link, filepath.Join(base, "other", "repo"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if eff.RootPath != filepath.Join(base, "ws") {
-		t.Errorf("symlinked hint: RootPath = %q", eff.RootPath)
-	}
-}
-
-func TestForTargetUnresolvableRootIsError(t *testing.T) {
-	cfg := Default()
-	cfg.Roots = []Root{{Path: "$BROOOM_TEST_UNSET_VAR/x"}}
-	if _, err := cfg.ForTarget("", t.TempDir()); err == nil || !strings.Contains(err.Error(), "roots[0].path") {
-		t.Fatalf("got %v", err)
-	}
-}
-
-func TestForTargetUnknownRootDetector(t *testing.T) {
-	base, cfg := overlayFixture(t)
-	cfg.Roots[0].Detectors = map[string]bool{"typo": false}
-	if _, err := cfg.ForTarget("", filepath.Join(base, "ws", "repo")); err == nil || !strings.Contains(err.Error(), "typo") {
-		t.Fatalf("got %v", err)
 	}
 }
 
@@ -390,12 +256,12 @@ func TestLoadRepoConfigSizeCap(t *testing.T) {
 	}
 }
 
-// A relative target cannot be matched against the absolute roots, so it must
-// be rejected instead of silently skipping the root overlay.
+// A relative target would read the .brooom.json of the working directory, so
+// it must be rejected.
 func TestForTargetRejectsRelativeTarget(t *testing.T) {
 	cfg := Default()
 	for _, target := range []string{"repo", "./repo", "../repo", ""} {
-		if _, err := cfg.ForTarget("", target); err == nil || !strings.Contains(err.Error(), "not an absolute path") {
+		if _, err := cfg.ForTarget(target); err == nil || !strings.Contains(err.Error(), "not an absolute path") {
 			t.Errorf("ForTarget(%q): want absolute-path error, got %v", target, err)
 		}
 	}

@@ -415,9 +415,6 @@ func TestExcludes(t *testing.T) {
 			// The exclude comes from the repository's own .brooom.json.
 			h.repo.WriteFile(".brooom.json", `{"exclude": ["skipme"]}`)
 		}},
-		{"root", func(h *harness) {
-			h.env.Config.Roots = []config.Root{{Path: filepath.Dir(h.repo.Dir), Exclude: []string{"**/skipme"}}}
-		}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

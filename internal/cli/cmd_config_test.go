@@ -61,7 +61,7 @@ func useFakeEditor(t *testing.T, content *string, exit int) {
 }
 
 func TestConfigPath(t *testing.T) {
-	cfg, _, _ := rootsEnv(t)
+	cfg, _, _ := configEnv(t)
 	code, out, _ := run(t, "config", "path")
 	if code != ExitOK || strings.TrimSpace(out) != cfg {
 		t.Fatalf("path = %q, want %q", out, cfg)
@@ -76,7 +76,7 @@ func TestConfigPath(t *testing.T) {
 }
 
 func TestConfigInit(t *testing.T) {
-	cfg, _, _ := rootsEnv(t)
+	cfg, _, _ := configEnv(t)
 	code, out, errOut := run(t, "config", "init")
 	if code != ExitOK || !strings.Contains(out, cfg) {
 		t.Fatalf("code=%d out=%q err=%q", code, out, errOut)
@@ -86,7 +86,7 @@ func TestConfigInit(t *testing.T) {
 	if err := json.Unmarshal([]byte(readFile(t, cfg)), &doc); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"version", "roots", "thresholds", "git", "detectors", "trash", "output", "scan"} {
+	for _, k := range []string{"version", "thresholds", "git", "detectors", "trash", "output", "scan"} {
 		if _, ok := doc[k]; !ok {
 			t.Errorf("written file lacks %q", k)
 		}
@@ -109,7 +109,7 @@ func TestConfigInit(t *testing.T) {
 }
 
 func TestConfigInitCreatesDirAndHonoursConfigFlag(t *testing.T) {
-	rootsEnv(t)
+	configEnv(t)
 	target := filepath.Join(t.TempDir(), "a", "b", "c.json")
 	if code, _, e := run(t, "--config", target, "config", "init"); code != ExitOK {
 		t.Fatal(e)
@@ -120,7 +120,7 @@ func TestConfigInitCreatesDirAndHonoursConfigFlag(t *testing.T) {
 }
 
 func TestConfigShow(t *testing.T) {
-	cfg, _, _ := rootsEnv(t)
+	cfg, _, _ := configEnv(t)
 	writeFile(t, cfg, `{"version":1,"detectors":{"stale-branch":{"min_age_days":45}},"git":{"protected_branches":["main","rel/*"]}}`)
 
 	for _, args := range [][]string{{"config", "show"}, {"config", "show", "--format", "json"}} {
@@ -158,7 +158,7 @@ func TestConfigShow(t *testing.T) {
 }
 
 func TestConfigShowInvalid(t *testing.T) {
-	cfg, _, _ := rootsEnv(t)
+	cfg, _, _ := configEnv(t)
 	writeFile(t, cfg, `{"version":1,"scan":{"max_depth":-1},"trash":{"strategy":"shred"}}`)
 	code, _, errOut := run(t, "config", "show")
 	if code != ExitError || !strings.Contains(errOut, "scan.max_depth") || !strings.Contains(errOut, "trash.strategy") {
@@ -167,7 +167,7 @@ func TestConfigShowInvalid(t *testing.T) {
 }
 
 func TestConfigValidate(t *testing.T) {
-	cfg, _, _ := rootsEnv(t)
+	cfg, _, _ := configEnv(t)
 
 	code, out, _ := run(t, "config", "validate")
 	if code != ExitOK || !strings.Contains(out, "ok") || !strings.Contains(out, "defaults apply") {
@@ -180,13 +180,13 @@ func TestConfigValidate(t *testing.T) {
 		t.Fatalf("valid: code=%d out=%q", code, out)
 	}
 
-	writeFile(t, cfg, `{"version":1,"scan":{"max_depth":-1},"trash":{"strategy":"shred"},"roots":[{"path":"relative"}]}`)
+	writeFile(t, cfg, `{"version":1,"scan":{"max_depth":-1},"trash":{"strategy":"shred"},"output":{"format":"xml"}}`)
 	code, _, errOut := run(t, "config", "validate")
 	if code != ExitError {
 		t.Fatalf("code = %d", code)
 	}
 	lines := 0
-	for _, want := range []string{"scan.max_depth", "trash.strategy", "roots[0].path"} {
+	for _, want := range []string{"scan.max_depth", "trash.strategy", "output.format"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errOut)
 		}
@@ -207,7 +207,7 @@ func TestConfigValidate(t *testing.T) {
 }
 
 func TestConfigEdit(t *testing.T) {
-	cfg, _, _ := rootsEnv(t)
+	cfg, _, _ := configEnv(t)
 	valid := `{"version":1,"update_check":true}`
 	useFakeEditor(t, &valid, 0)
 	code, _, errOut := run(t, "config", "edit")
@@ -220,7 +220,7 @@ func TestConfigEdit(t *testing.T) {
 }
 
 func TestConfigEditCreatesDefaultsFirst(t *testing.T) {
-	cfg, _, _ := rootsEnv(t)
+	cfg, _, _ := configEnv(t)
 	useFakeEditor(t, nil, 0) // editor leaves the file as it finds it
 	if code, _, e := run(t, "config", "edit"); code != ExitOK {
 		t.Fatal(e)
@@ -231,7 +231,7 @@ func TestConfigEditCreatesDefaultsFirst(t *testing.T) {
 }
 
 func TestConfigEditInvalidKeepsFile(t *testing.T) {
-	cfg, _, _ := rootsEnv(t)
+	cfg, _, _ := configEnv(t)
 	bad := `{"version":1,"scan":{"max_depth":-5},"trash":{"strategy":"shred"}}`
 	useFakeEditor(t, &bad, 0)
 	code, _, errOut := run(t, "config", "edit")
@@ -244,7 +244,7 @@ func TestConfigEditInvalidKeepsFile(t *testing.T) {
 }
 
 func TestConfigEditEditorFailures(t *testing.T) {
-	rootsEnv(t)
+	configEnv(t)
 	useFakeEditor(t, nil, 7)
 	code, _, errOut := run(t, "config", "edit")
 	if code != ExitError || !strings.Contains(errOut, "editor") || !strings.Contains(errOut, "exit status 7") {
@@ -258,7 +258,7 @@ func TestConfigEditEditorFailures(t *testing.T) {
 }
 
 func TestConfigEditPassesEditorArguments(t *testing.T) {
-	rootsEnv(t)
+	configEnv(t)
 	useFakeEditor(t, nil, 0)
 	exe, _ := os.Executable()
 	argsFile := filepath.Join(t.TempDir(), "args")
@@ -273,7 +273,7 @@ func TestConfigEditPassesEditorArguments(t *testing.T) {
 }
 
 func TestConfigEditConfigFlag(t *testing.T) {
-	def, _, _ := rootsEnv(t)
+	def, _, _ := configEnv(t)
 	target := filepath.Join(t.TempDir(), "other.json")
 	valid := `{"version":1}`
 	useFakeEditor(t, &valid, 0)

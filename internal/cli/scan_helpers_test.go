@@ -106,6 +106,13 @@ func (r *recorder) record(env *detect.Env, t scope.Target) {
 	r.allowed = env.Guard.Allowed()
 }
 
+// reset forgets what was recorded, for a second run in the same test.
+func (r *recorder) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.targets, r.allowed, r.envs = nil, nil, nil
+}
+
 func (r *recorder) paths() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -157,15 +164,6 @@ func writeConfig(t *testing.T, home string, v any) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-// rootsConfig returns a config value with the given roots.
-func rootsConfig(paths ...string) map[string]any {
-	roots := make([]map[string]any, len(paths))
-	for i, p := range paths {
-		roots[i] = map[string]any{"path": p}
-	}
-	return map[string]any{"roots": roots}
 }
 
 // runCtx executes the CLI in-process and returns code, stdout and stderr.

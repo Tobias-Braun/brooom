@@ -134,8 +134,8 @@ func TestScanHint(t *testing.T) {
 			"nothing was changed; run `brooom sweep` to review and clean these"},
 		{"bare command", nil, "", []findings.Finding{merged},
 			"nothing was changed; run `brooom sweep` to review and clean these"},
-		{"scope flags", []string{"scan", "-w", "--root", "/r", "--config", "c.json"}, "", []findings.Finding{merged},
-			"nothing was changed; run `brooom sweep --config c.json --workspaces --root /r` to review and clean these"},
+		{"scope flags", []string{"scan", "/r", "--config", "c.json"}, "", []findings.Finding{merged},
+			"nothing was changed; run `brooom sweep everything /r --config c.json` to review and clean these"},
 		{"detector kept when the preset runs it", []string{"scan", "-d", "merged-branch,stale-branch"}, "", []findings.Finding{merged, stale},
 			"nothing was changed; run `brooom sweep --detector merged-branch` to review and clean these (1 of 2; the rest are in no sweep preset)"},
 		{"configured preset covers nothing", []string{"scan"}, "tidy", []findings.Finding{merged},
@@ -156,6 +156,7 @@ func TestScanHint(t *testing.T) {
 			if err := cmd.ParseFlags(rest); err != nil {
 				t.Fatal(err)
 			}
+			a.setPath(cmd.Flags().Args())
 			cfg := config.Default()
 			if tt.preset != "" {
 				cfg.Sweep.Preset = tt.preset

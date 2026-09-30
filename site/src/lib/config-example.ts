@@ -1,6 +1,6 @@
 /**
  * Every key below exists in internal/config/config.go and the values are
- * valid: roots[].path, thresholds.min_age_days, detectors.<name>.enabled and
+ * valid: sweep.preset, thresholds.min_age_days, detectors.<name>.enabled and
  * trash.strategy / trash.quarantine_retention_days. If Default() changes,
  * the code wins and this excerpt must follow.
  *
@@ -9,7 +9,7 @@
  */
 export const configJson = `{
   "version": 1,
-  "roots": [{ "path": "~/code" }],
+  "sweep": { "preset": "after-agents" },
   "thresholds": { "min_age_days": 30 },
   "detectors": {
     "git-bloat": { "enabled": false }

@@ -295,7 +295,7 @@ func TestUndoRefusesForgedOutOfScopePath(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
-	if !strings.Contains(out, "outside the current scope; re-run from ") || !strings.Contains(out, "or with --workspaces") {
+	if !strings.Contains(out, "outside the current scope; re-run from ") || !strings.Contains(out, "or with --path") {
 		t.Fatalf("scope reason missing:\n%s", out)
 	}
 	if _, err := os.Lstat(forged); err == nil {
@@ -320,13 +320,12 @@ func TestUndoOutsideRepoIsUsageError(t *testing.T) {
 	}
 }
 
-func TestUndoWithWorkspacesRestoresFromAnywhere(t *testing.T) {
+func TestUndoWithPathRestoresFromAnywhere(t *testing.T) {
 	f := newUndoFixture(t)
 	p := f.write("a.txt", "a")
 	f.session(sid1, time.Now(), p)
-	writeConfig(t, f.home, rootsConfig(filepath.Dir(f.repo.Dir)))
 	t.Chdir(testutil.ResolvedTempDir(t))
-	code, out, errOut := runApp(t, "", false, time.Time{}, "undo", "--workspaces", "--yes")
+	code, out, errOut := runApp(t, "", false, time.Time{}, "undo", "--path", filepath.Dir(f.repo.Dir), "--yes")
 	if code != ExitOK || fileContent(t, p) != "a" {
 		t.Fatalf("code=%d out=%s err=%s", code, out, errOut)
 	}

@@ -38,9 +38,9 @@ type Manifest struct {
 	FinishedAt time.Time `json:"finished_at,omitzero"`
 	// Command is the command line that created the session (for display).
 	Command string `json:"command"`
-	// Workspaces records that the run used --workspaces. `brooom undo` then
-	// resolves its scope from the configured roots without being told again;
-	// the guard still only allows those roots, never paths the manifest names.
+	// Workspaces records that a run of an earlier release used the removed
+	// --workspaces flag. It is only read, so `brooom undo` can say that such
+	// a session needs --path to reach the repositories it touched.
 	Workspaces bool    `json:"workspaces,omitempty"`
 	Entries    []Entry `json:"entries"`
 	// ReclaimedBytes sums SizeBytes of applied entries.

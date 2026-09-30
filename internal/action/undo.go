@@ -79,7 +79,7 @@ func planUndoEntry(env *Env, idx int, e session.Entry) UndoStep {
 	}
 	if p := outsideScope(env, e); p != "" {
 		st.Kind, st.OutsideScope = UndoOutside, true
-		st.Reason = fmt.Sprintf("outside the current scope; re-run from %s or with --workspaces", repoHint(p))
+		st.Reason = fmt.Sprintf("outside the current scope; re-run from %s or with --path", repoHint(p))
 		return st
 	}
 	if reason := storedCopyGone(e); reason != "" {

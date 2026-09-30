@@ -11,9 +11,10 @@ packages and the same findings schema.
    plan, `--yes` skips the question, and without a terminal an unanswered
    question is a usage error. Nothing is ever deleted silently, and `sweep`
    never acts on unmerged or uncommitted work.
-2. **Scoped by default.** Without flags only the git repository containing
-   the working directory is scanned. `--workspaces` scans every repository and
-   project folder below the configured roots. Every path is made absolute,
+2. **Scoped by default.** Without a path only the git repository containing
+   the working directory is scanned. A folder given as the path argument is
+   walked and every repository and project folder below it is scanned. Every
+   path is made absolute,
    symlink-resolved and checked against the allowed locations by
    `scope.Guard`; anything outside is refused.
 3. **Detectors find, actions act.** Detectors never modify anything (no file
@@ -30,9 +31,9 @@ packages and the same findings schema.
 ## Data flow
 
 ```
-             ┌──────────── config (~/.brooom/config.json + per-root + .brooom.json)
+             ┌──────────── config (~/.brooom/config.json + .brooom.json)
              │
- cwd / roots ─┴─► scope (FindRepoRoot / Discover) ─► []Target
+ cwd / path ─┴─► scope (FindRepoRoot / Discover) ─► []Target
                                                         │
                    detectors (internal/detectors/*) ◄───┤  detect.Run: parallel
                    read-only, use gitx + walk + Guard   │  (target × detector)
@@ -56,7 +57,7 @@ packages and the same findings schema.
 | `cmd/brooom` | `main`: calls `cli.Main`. Nothing else. |
 | `internal/cli` | Cobra commands, one file per command (`cmd_<name>.go`). Flag parsing, wiring, exit codes. No detection or cleanup logic. |
 | `internal/buildinfo` | Version/commit/date via ldflags, fallback to embedded VCS info. |
-| `internal/config` | Config types, `Default()`, load/save/validate, per-root overrides, tighten-only `.brooom.json`, `~/.brooom` layout (`BROOOM_HOME` overrides). |
+| `internal/config` | Config types, `Default()`, load/save/validate, tighten-only `.brooom.json`, `~/.brooom` layout (`BROOOM_HOME` overrides), notes for keys of earlier releases (`Config.Deprecated`). |
 | `internal/scope` | Repo detection, workspace discovery (`[]Target`), `Guard` path validation (symlinks, `..`, case-insensitive filesystems, Windows drive letters/UNC). |
 | `internal/walk` | Parallel walker with skip lists, `DirSize`, optionally with an mtime-invalidated cache in `~/.brooom/cache` for callers that accept lower-bound ages (no detector does today). |
 | `internal/gitx` | Read-only-safe git runner (`gitx.Env`: repository-selecting `GIT_*` variables such as `GIT_DIR`/`GIT_INDEX_FILE` and inherited `GIT_CONFIG_*` are stripped, `GIT_OPTIONAL_LOCKS=0`, `GIT_NO_LAZY_FETCH=1` (git >= 2.44), `core.fsmonitor=false`, C locale, no prompts, a 10 minute default timeout for contexts without a deadline, also for `Pipe`/`PipeLimit`, 6 hours for maintenance via `gitx.WithTimeout`; a passed bound is a `*TimeoutError` that matches `context.DeadlineExceeded`; only promisor/lazy-fetch errors in `MergedInto` mean not merged, other object errors such as corruption are returned; `gh` runs with the same sanitized environment) and git helpers behind a per-repo `Repo` handle (branches and upstreams, base detection, merge detection incl. squash/rebase via patch-id, remote containment, worktrees, dirty check, open PRs via `gh`), `Pipe`/`PipeLimit` (stream one git command into another without buffering, for history scans; `PipeLimit` and `ExecRunner.MaxOutput` kill the process(es) past a byte cap and return `ErrOutputLimit`; squash detection streams `log -p`/`diff` into `patch-id` this way, capped at 64 MiB, and rebase detection never matches a branch containing merge commits, only the squash net-diff check can) and `Repo.Memo` (per-repo memoization of expensive measurements); `Cache` shares memoized handles per scan (`detect.Env.Repos`), uncached `Open` is for actions. On cached handles ancestry is answered for all branches by one `for-each-ref --merged`, patch ids are computed once per commit, and one scan-wide breaker stops calling `gh` after its first timeout or network failure, also after earlier successes; every external command has a `WaitDelay` so a grandchild holding a pipe cannot outlive a deadline. |
@@ -468,21 +469,27 @@ restores trashed ones via a `--no-checkout` placeholder, `Trasher.Restore`,
 `git worktree repair` and a mixed `reset` (staged/unstaged split is not kept).
 `Entry.Undo` carries `worktree`, `branch`, `head` and `repo`.
 
-Scope of a run from a linked worktree: the guard allows that worktree only.
-The main worktree is registered with `Guard.WithRepoMeta` and is accepted by
-`Guard.ResolveRepoMeta` as that exact directory, never anything below it
-(sibling worktrees, files). `ResolveRepoMeta` is used only to locate the
-repository: the branch and worktree detectors (`merged-branch`, `stale-branch`,
-`worktrees`), `delete-branch`, the worktree actions and `clean --from` vetting
-of a git finding's repository. Git maintenance (`git-bloat`, `git-gc` and
-friends) uses `Resolve`; `brooom git purge` from a linked worktree runs in the
-linked worktree itself (same shared repository). A linked worktree the guard
-does not allow (a sibling below main, or one outside the repository, which is
-git's default for `git worktree add ../x`) is never examined or offered;
-`worktrees` reports each existing one as an informational finding (action
-`none`, low confidence, evidence code `outside_scope`, message carrying
-`scope.OutsideWorktreeHint`: "outside the allowed scope; run `brooom roots add
-<parent>` or use --workspaces"), so it is visible without `--verbose` in every
+Scope of a run from a linked worktree (#287): the whole repository. The linked
+worktree and the main worktree are both repo targets and allowed locations
+(`repoTargets`, `allowMainWorktree`), so a sweep run from one of the worktrees
+an agent left behind also sees its siblings below the main checkout; branch
+findings reached through both targets carry one ID and the engine keeps one,
+and the worktree the command runs in is in use and never removed. A bare
+repository (the `.bare` of a bare plus linked worktrees layout) has no working
+tree and stays a metadata location only. The main worktree is also registered
+with `Guard.WithRepoMeta`; `Guard.ResolveRepoMeta` accepts such a location as
+that exact directory, never anything below it. `ResolveRepoMeta` is used only
+to locate the repository: the branch and worktree detectors (`merged-branch`,
+`stale-branch`, `worktrees`), `delete-branch`, the worktree actions and
+`clean --from` vetting of a git finding's repository. Git maintenance
+(`git-bloat`, `git-gc` and friends) uses `Resolve`, one operation per common
+git dir. A linked worktree the guard does not allow (one outside the
+repository, which is git's default for `git worktree add ../x`) is never
+examined or offered; `worktrees` reports each existing one as an
+informational finding (action `none`, low confidence, evidence code
+`outside_scope`, message carrying `scope.OutsideWorktreeHint`: pass the folder
+that holds the repository and its worktrees as the path), so it is visible
+without `--verbose` in every
 format that lists non-actionable findings (`plain` stays a path pipe of
 actionable findings only). `Guard.OutsideNote` gives the hint only for a
 non-empty path that fails with `ErrOutsideScope`. The `current_branch`
@@ -509,10 +516,10 @@ A findings file is untrusted input. `findings.ReadReport` only checks the
 envelope (size cap 256 MiB, one JSON value, `schema_version` 1..current;
 unknown fields are tolerated). Everything else comes from the invocation: the
 scope is rebuilt like a scan (`buildTargets`: the repository around the working
-directory, or the configured roots with `--workspaces`/`--root`), never from the
+directory, or the repository or folder `--path` names), never from the
 report's `scopes` or a finding's `scope` (a note in `--verbose` only).
 
-Three guards are built: `project` (repo or roots), `user` (the
+Three guards are built: `project` (repo or folder), `user` (the
 `detect.TargetSource` locations, only with `--user`) and their union, which the
 actions receive. A finding claiming `scope.type` `user` must resolve in `user`,
 all others in `project`, so a finding cannot pick the wider guard. Trash
@@ -727,15 +734,14 @@ is the read-only view.
 it. Entries are planned and undone in reverse order; each is classified
 `restore`, `conflict`, `cannot-restore`, `outside-scope` or `already-restored`.
 A scope refusal is its own kind and summary bucket ("N skipped (outside scope;
-re-run with -w)"), never "not restorable", because the data is intact.
+re-run with --path)"), never "not restorable", because the data is intact.
 
-Undo scope (#192): `session.Manifest.Workspaces` records that the run used
-`--workspaces`. `brooom undo` of such a session resolves the workspace scope
-without the flag (`adoptSessionScope`); only that fact is taken from the
-manifest, the guard is still built from the configured roots and every entry
-path is still checked against it. The undo hint printed after an apply
-(`Result.UndoFlags`, from `app.scopeFlags`) repeats `--workspaces`, `--root`
-and `--config` of the original invocation. Guard checks use
+Undo scope (#192, #287): the scope is the invocation's, never the manifest's:
+the repository around the working directory, or `--path`. The undo hint
+printed after an apply (`Result.UndoFlags`, from `app.scopeFlags`) repeats
+`--path` and `--config` of the original invocation, so it works from any
+directory. `session.Manifest.Workspaces` is only read: a session of an
+earlier release that used `--workspaces` gets a note that `--path` is needed. Guard checks use
 the entry's original paths (never trusted); the CLI builds the guard like
 `scan` does (usage error outside a repository) and adds the user locations of
 `detect.TargetSource` detectors only when an entry falls outside it. Conflicts
@@ -936,10 +942,7 @@ prompts and summaries, undo plans, error printing) passes untrusted text
 replaces control runes with visible escapes (`\n`, `\x1b`, `\u2028`). Backslashes
 are left alone so Windows paths stay readable. `json` and `ndjson` are machine
 formats and are never altered, and neither is the `plain` output of findings
-(paths and refs as they are). `roots list -f plain` is the one exception: it
-sanitizes each path, because a newline inside a root path would otherwise forge
-a second entry in a format that is one path per line. New human output must
-use it too.
+(paths and refs as they are). New human output must use it too.
 
 The displayed shell command of a plan step (`Step.Command`) goes through
 `output.Sanitize` as well: shell quoting keeps a command copy-pasteable but
@@ -982,7 +985,8 @@ interactive stdout terminal for its background colour once at process start
 
 `completion.go` registers the dynamic shell completions (`--detector` with
 comma lists, `--format`, the sweep preset argument, `--trash-strategy`,
-`--root`, session ids, `roots remove`) by walking the tree in `newRootCmd`; they only read registries,
+session ids, and directories for the path argument and `--path`) by walking
+the tree in `newRootCmd`; they only read registries,
 config and manifests and degrade to an empty list. `completion_cmd.go` keeps
 cobra's `completion` command visible with per-shell install instructions.
 `docs/cli.md` is generated by `go run ./internal/tools/gendocs` from
@@ -1003,8 +1007,7 @@ sessions/     <session-id>.json manifests
 quarantine/   <session-id>/... quarantined files
 ```
 
-Per-root overrides live in `roots[].thresholds` / `roots[].detectors`. A
-repository may contain `.brooom.json` that can only tighten rules (disable
+A repository may contain `.brooom.json` that can only tighten rules (disable
 detectors, raise thresholds, add protected branches and excludes).
 
 The full key reference, merge semantics, validation rules and the

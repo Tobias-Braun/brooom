@@ -33,12 +33,14 @@ cleanup safe, fast and reviewable.
    scripted use, and without a terminal an unanswered question is an error.
    Nothing is ever deleted silently, and `sweep` never removes unmerged or
    uncommitted work.
-2. **Scoped by default.** With no flags, Brooom operates only on the current
-   git repo (detected by walking up to the nearest `.git`). `--workspaces`
-   runs over all configured workspace roots, walking the tree recursively and
-   finding every repo and project folder inside them. Every path is
-   symlink-resolved and validated to lie inside the current repo or a
-   configured root; anything outside is refused.
+2. **Scoped by default.** Without a path, Brooom operates only on the current
+   git repo (detected by walking up to the nearest `.git`); run from a linked
+   worktree, that is the whole repository with all its worktrees. A folder
+   given as the path argument (`brooom sweep tidy ~/code`) is walked
+   recursively and every repo and project folder inside it is covered; a
+   filesystem root is refused. Every path is symlink-resolved and validated to
+   lie inside the current repo or the given folder; anything outside is
+   refused.
 3. **Detectors find, actions act.** Detectors never modify anything and
    produce structured findings. Actions consume findings, are individually
    configurable, and always have a dry-run mode.
@@ -79,9 +81,9 @@ cleanup safe, fast and reviewable.
 - JSON config in `~/.brooom/config.json`, with sensible defaults so the tool
   works with zero config inside a repo. Scan cache, session manifests and
   quarantine live there too (`cache/`, `sessions/`, `quarantine/`).
-- Config covers: workspace roots, thresholds (age, size) globally and per
-  root, detector toggles, custom patterns and locations, trash strategy,
-  output defaults, agent settings.
+- Config covers: thresholds (age, size), detector toggles, custom patterns
+  and locations, trash strategy, output defaults, the default sweep preset,
+  agent settings.
 - Two layers of configurability, both first-class:
   - Intent presets: `brooom sweep [after-agents|tidy|everything]`
     (default `everything`).
@@ -132,17 +134,16 @@ Every listing/dry-run command that reports findings supports `--format`:
 - `summary` (just counts and reclaimable bytes per detector)
 
 Commands that list something other than findings support the formats that
-make sense for their rows: `sessions` and `roots list` take `table` (default),
+make sense for their rows: `sessions` takes `table` (default),
 `plain`, `json` and `ndjson`; `config show` takes `json` and `table`;
 `version` and `update-check` take `table`, `plain` and `json`. `tree` and
-`summary` describe findings only. `--format`, `--detector`, `--workspaces` and
-`--root` are rejected (usage error, exit 2) on commands that would ignore them.
+`summary` describe findings only. `--format` and `--detector` are rejected
+(usage error, exit 2) on commands that would ignore them.
 The exceptions to "every dry-run command supports `--format`" are the commands
 whose output is a plan or a confirmation and not a list of findings: `undo`,
 `clean` and `purge` (including `git purge`) print their plan as text, and
-`config init`, `config edit`, `config path`, `config validate` and
-`roots add`/`remove` report a result line instead. Of the scan flags,
-`undo` accepts only `--workspaces` and `--root`. `completion` and `help` accept every global
+`config init`, `config edit`, `config path` and `config validate` report a
+result line instead. `completion` and `help` accept every global
 flag, because the shell hands them the flags of the words it completes.
 
 Respect `NO_COLOR`, detect TTY vs pipe, and support `--quiet`.
@@ -219,13 +220,13 @@ the end, manifest written per session.
 
 ```
 brooom                          # scan current repo, table output, suggests a sweep
-brooom scan [--workspaces] [--detector X] [--format F]
-brooom sweep [PRESET] [--dry-run] [-y]     # plan, ask once, clean
-brooom git purge [--gc] [--reflog-expire D] [--prune D] [--dry-run] [-y]
-brooom clean --from findings.json [--dry-run] [-y]
-brooom undo [session-id] [--dry-run] [-y] # default: latest session
+brooom [PATH]                   # the same for the repo or folder PATH
+brooom scan [PATH] [--detector X] [--format F]
+brooom sweep [PRESET] [PATH] [--dry-run] [-y]   # plan, ask once, clean
+brooom git purge [PATH] [--gc] [--reflog-expire D] [--prune D] [--dry-run] [-y]
+brooom clean --from findings.json [--path P] [--dry-run] [-y]
+brooom undo [session-id] [--path P] [--dry-run] [-y] # default: latest session
 brooom sessions / brooom purge [--dry-run] [-y]
-brooom roots add|remove|list
 brooom config init|show|edit|validate
 brooom version / brooom update-check
 ```
@@ -238,7 +239,7 @@ overwritten: an existing original path or branch is reported as a conflict.
 It then asks `Restore N items? [y/N]` (unless `--yes` or `--dry-run`; without a terminal and
 without `--yes` it exits 2), saves the manifest after every entry and exits 1
 if a restorable entry conflicted or failed. Entries are only restored inside
-the current scope (the repository you are in, or `--workspaces`), because
+the current scope (the repository you are in, or `--path`), because
 manifests are editable files. Running it again skips restored entries.
 `brooom purge` never touches the OS trash or session manifests; manifests of
 purged sessions are marked as not restorable.

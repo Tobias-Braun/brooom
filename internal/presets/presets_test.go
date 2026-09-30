@@ -304,7 +304,7 @@ func TestRepoConfigStillTightensPresetValue(t *testing.T) {
 	}
 	cfg := Apply(config.Default(), mustGet(t, Everything))
 	write(`{"thresholds": {"min_age_days": 20}}`)
-	eff, err := cfg.ForTarget("", dir)
+	eff, err := cfg.ForTarget(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestRepoConfigStillTightensPresetValue(t *testing.T) {
 		t.Errorf("repo config did not tighten: %d", eff.Thresholds.MinAgeDays)
 	}
 	write(`{"thresholds": {"min_age_days": 1}}`)
-	if _, err := cfg.ForTarget("", dir); err == nil {
+	if _, err := cfg.ForTarget(dir); err == nil {
 		t.Error("a repo config below the effective value must be rejected")
 	}
 }

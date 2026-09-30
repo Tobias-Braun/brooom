@@ -22,8 +22,7 @@ func TestRepoTargetsBareAnchor(t *testing.T) {
 	}
 
 	t.Run("anchor folder", func(t *testing.T) {
-		t.Chdir(l.Root)
-		_, err := repoTargets(context.Background(), runner)
+		_, err := repoTargets(context.Background(), runner, l.Root)
 		var ue usageError
 		if !errors.As(err, &ue) || !errors.Is(err, errBareAnchor) {
 			t.Fatalf("err = %v, want the bare anchor usage error", err)
@@ -31,13 +30,15 @@ func TestRepoTargetsBareAnchor(t *testing.T) {
 	})
 
 	t.Run("linked worktree", func(t *testing.T) {
-		t.Chdir(l.Feat)
-		ts, err := repoTargets(context.Background(), runner)
+		ts, err := repoTargets(context.Background(), runner, l.Feat)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(ts.errs) != 0 || len(ts.repoMeta) != 1 || ts.repoMeta[0] != l.Bare {
 			t.Errorf("errs %+v repoMeta %v, want the bare anchor %q", ts.errs, ts.repoMeta, l.Bare)
+		}
+		if len(ts.targets) != 1 {
+			t.Errorf("the bare repository must not become a scan target: %+v", ts.targets)
 		}
 	})
 }

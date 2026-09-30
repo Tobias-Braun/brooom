@@ -41,9 +41,9 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
 - Files go to your **OS trash** (or a quarantine folder); branches are
   deleted with `git branch -d`; worktrees are moved to the trash and then deregistered from git.
   Linked worktrees outside the scanned repository (such as `../repo-wt`) are
-  never touched; `br scan` lists them with a hint to run
-  `br roots add <parent>` or use `--workspaces` (not in `--format plain`,
-  which stays a bare path list).
+  never touched; `br scan` lists them with a hint to pass the folder that
+  holds them as the path (not in `--format plain`, which stays a bare path
+  list).
   On Windows the Recycle Bin cannot take paths longer than 259 characters
   (the shell API rejects `\\?\` paths) or items larger than the bin limit;
   Brooom refuses those instead of letting Windows delete them permanently and
@@ -131,10 +131,12 @@ br                      # scan the current repo and suggest what to sweep
 br sweep                # show everything worth cleaning, ask once, then clean
 br sweep after-agents   # merged worktrees and branches, agent leftovers
 br sweep tidy           # logs, OS junk, test caches, coverage output
+br sweep tidy ~/code    # every repository below ~/code
 br sweep --dry-run      # only show what it would do
 br sweep --yes          # no question (scripts)
 br scan -d stale-branch # findings no preset acts on, for your review
 br undo                 # show what the last session removed, ask, restore
+                        # (a sweep of a folder prints `br undo <id> --path <folder>`)
 br purge                # delete quarantined sessions past their retention
 ```
 

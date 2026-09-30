@@ -46,9 +46,9 @@ type cleanScope struct {
 }
 
 // newCleanScope resolves the scope like the scan command: the repository
-// around the working directory, or with --workspaces the configured roots
-// narrowed by --root. Outside a repository without --workspaces it fails
-// with scope.ErrNotInRepo and the same explanation the scan gives.
+// around the working directory, or what --path names. Outside a repository
+// without --path it fails with scope.ErrNotInRepo and the same explanation
+// the scan gives.
 func (a *app) newCleanScope(ctx context.Context, cfg *config.Config, user bool) (*cleanScope, error) {
 	if user {
 		cfg.Detectors.AIArtifacts.UserLocations = true
@@ -62,7 +62,7 @@ func (a *app) newCleanScope(ctx context.Context, cfg *config.Config, user bool) 
 	if sc.project, err = ts.newGuard(); err != nil {
 		return nil, fmt.Errorf("build scope: %w", err)
 	}
-	sc.repos = repoDirs(ts, a.flags.workspaces)
+	sc.repos = repoDirs(ts)
 	userAllowed := sc.userLocations(ctx, cfg)
 	if err := sc.buildGuards(ts, userAllowed); err != nil {
 		return nil, err
@@ -101,10 +101,11 @@ func (sc *cleanScope) buildGuards(ts *targetSet, user []string) error {
 
 // repoDirs returns the repositories of the scope. In repository mode every
 // allowed location is one (the repository and, for a linked worktree, its
-// main worktree as a metadata location); with --workspaces the discovered repository targets are.
-func repoDirs(ts *targetSet, workspaces bool) []string {
+// main worktree); below a walked folder the discovered repository targets
+// are.
+func repoDirs(ts *targetSet) []string {
 	var out []string
-	if !workspaces {
+	if !ts.discovered {
 		out = append(out, ts.allowed...)
 		out = append(out, ts.repoMeta...)
 	}

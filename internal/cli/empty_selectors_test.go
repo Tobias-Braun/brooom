@@ -10,9 +10,6 @@ import (
 // may be touched.
 func TestEmptySelectorsAreUsageErrors(t *testing.T) {
 	f := newCleanupFixture(t, nil)
-	cfg := rootsConfig(f.repo.Dir)
-	cfg["git"] = map[string]any{"use_gh": false}
-	writeConfig(t, f.home, cfg)
 	dir, file := junkDir(t, f.repo.Dir, "node_modules")
 	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
 
@@ -25,9 +22,8 @@ func TestEmptySelectorsAreUsageErrors(t *testing.T) {
 		{"id comma only", []string{"clean", "--from", report, "--id", ","}, "--id"},
 		{"id empty element", []string{"clean", "--from", report, "--id", "abc,,def"}, "--id"},
 		{"id blank", []string{"clean", "--from", report, "--id", " "}, "--id"},
-		{"root empty", []string{"sweep", "-w", "--root", ""}, "--root"},
-		{"root commas", []string{"sweep", "-w", "--root", ",,"}, "--root"},
-		{"root empty element", []string{"sweep", "-w", "--root", f.repo.Dir + ","}, "--root"},
+		{"path empty", []string{"clean", "--from", report, "--path", ""}, "--path"},
+		{"path blank", []string{"undo", "--path", " "}, "--path"},
 		{"detector empty", []string{"sweep", "-d", ""}, "--detector"},
 		{"detector empty element", []string{"sweep", "-d", "build-artifacts,"}, "--detector"},
 		{"detector on clean", []string{"clean", "--from", report, "-d", ""}, "--detector"},
