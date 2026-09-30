@@ -1,42 +1,136 @@
 package config
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+)
 
-// errNotImplemented marks skeleton functions that are implemented by the
-// milestone issues. It is never returned by a released binary.
-var errNotImplemented = errors.New("config: not implemented yet")
+const (
+	// maxConfigBytes caps the global config file; a real one is a few KiB, so
+	// anything larger is a mistake (or an attempt to exhaust memory).
+	maxConfigBytes = 1 << 20
+	// maxRepoConfigBytes caps .brooom.json, which is untrusted input.
+	maxRepoConfigBytes = 64 << 10
+)
 
 // Load reads the config file at path and merges it over Default. A missing
-// file is not an error (defaults are returned). Unknown keys and invalid
-// values are errors that name the offending key.
+// file is not an error (defaults are returned); any other read error is
+// returned wrapped with the path.
+//
+// The file is decoded strictly: unknown keys, wrong types, trailing data and
+// files over 1 MiB are errors that name the offending key path (or line and
+// column for syntax errors). An empty file is an error (probably a truncated
+// write); "{}" is a valid empty configuration. A UTF-8 BOM is tolerated.
+//
+// Merge semantics: values are decoded into a pre-populated Default(), so
+// fields absent from the file keep their defaults. Slices and maps present in
+// the file REPLACE the default value entirely (they are not merged); for
+// example git.protected_branches in the file is the complete list, and
+// trash.per_detector is not combined with defaults. A JSON null for a slice
+// or map yields an empty one. Root paths are kept as written (see
+// Root.ResolvedPath), so Save round-trips them.
+//
+// The loaded configuration is validated; the error lists every problem.
 func Load(path string) (*Config, error) {
-	return nil, errNotImplemented
+	data, err := readCapped(path, maxConfigBytes)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Default(), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	cfg := Default()
+	if err := decodeStrict(path, data, cfg); err != nil {
+		return nil, err
+	}
+	normalizeNulls(cfg)
+	if cfg.Version < 1 || cfg.Version > CurrentVersion {
+		return nil, fmt.Errorf("%s: version: %s", path, versionMessage(cfg.Version, CurrentVersion))
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return cfg, nil
 }
 
-// Save writes cfg to path atomically (temp file + rename), creating parent
-// directories as needed.
-func Save(path string, cfg *Config) error {
-	return errNotImplemented
+// normalizeNulls turns the nil slices produced by an explicit JSON null into
+// empty ones, so callers never see a difference between "[]" and "null".
+func normalizeNulls(c *Config) {
+	if c.Roots == nil {
+		c.Roots = []Root{}
+	}
+	if c.Git.ProtectedBranches == nil {
+		c.Git.ProtectedBranches = []string{}
+	}
+	if c.Git.BaseBranches == nil {
+		c.Git.BaseBranches = []string{}
+	}
 }
 
-// Validate checks cfg for invalid values (unknown formats, strategies, merge
-// modes, negative thresholds, relative root paths after expansion, ...) and
-// returns an error listing every problem.
-func (c *Config) Validate() error {
-	return errNotImplemented
+// readCapped reads a whole regular file of at most limit bytes. The error is
+// wrapped with the path; a missing file satisfies errors.Is(err, fs.ErrNotExist).
+func readCapped(path string, limit int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	defer f.Close()
+	return readCappedFile(f, path, limit)
 }
 
-// ForTarget returns the effective configuration for a target directory: the
-// global config, overlaid with the matching root's overrides and then with
-// the repo's .brooom.json (tighten-only; see ApplyRepoConfig).
-func (c *Config) ForTarget(root, target string) (*Config, error) {
-	return nil, errNotImplemented
+func readCappedFile(f *os.File, path string, limit int64) ([]byte, error) {
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if fi.IsDir() {
+		return nil, fmt.Errorf("read %s: is a directory", path)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("read %s: file is larger than the %d KiB limit", path, limit>>10)
+	}
+	return data, nil
+}
+
+// openRegular opens path only if it is a regular file that is not a symlink.
+// A missing file yields nil, nil.
+func openRegular(path string) (*os.File, error) {
+	lfi, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if !lfi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: refusing to read repo config that is a symlink or not a regular file", path)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	// Guard against the path being swapped for a link between Lstat and Open.
+	if fi, err := f.Stat(); err != nil || !os.SameFile(lfi, fi) {
+		_ = f.Close()
+		return nil, fmt.Errorf("%s: changed while being opened; refusing to read it", path)
+	}
+	return f, nil
 }
 
 // RepoConfig is the per-repo .brooom.json. It can only make Brooom more
 // careful: disable detectors, raise age/size thresholds, add protected
-// branches and excludes. Anything that would loosen a rule is rejected.
+// branches and excludes. Anything that would loosen a rule is not
+// representable here and is therefore rejected by strict decoding with the
+// offending key path.
 type RepoConfig struct {
+	// Version of the file format; 0 (missing) and 1 are accepted.
 	Version int `json:"version"`
 	// Disable lists detector names to disable for this repo.
 	Disable []string `json:"disable,omitempty"`
@@ -48,8 +142,27 @@ type RepoConfig struct {
 	Exclude []string `json:"exclude,omitempty"`
 }
 
-// ApplyRepoConfig overlays a per-repo config onto c, returning an error if
-// rc tries to loosen any rule.
-func (c *Config) ApplyRepoConfig(rc *RepoConfig) (*Config, error) {
-	return nil, errNotImplemented
+// LoadRepoConfig reads a repository's .brooom.json. A missing file returns
+// nil, nil. The file is untrusted (the repository may come from anywhere), so
+// it is decoded strictly, limited to 64 KiB, and refused when it is a symlink
+// or not a regular file: following a link would let a repository make Brooom
+// read arbitrary files. Every error names the file.
+func LoadRepoConfig(path string) (*RepoConfig, error) {
+	f, err := openRegular(path)
+	if err != nil || f == nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := readCappedFile(f, path, maxRepoConfigBytes)
+	if err != nil {
+		return nil, err
+	}
+	rc := &RepoConfig{}
+	if err := decodeStrict(path, data, rc); err != nil {
+		return nil, err
+	}
+	if rc.Version < 0 || rc.Version > CurrentVersion {
+		return nil, fmt.Errorf("%s: version: %s", path, versionMessage(rc.Version, CurrentVersion))
+	}
+	return rc, nil
 }

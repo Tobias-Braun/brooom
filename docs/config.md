@@ -1,0 +1,172 @@
+# Configuration reference
+
+Brooom works with zero configuration inside a repository. The optional file
+`~/.brooom/config.json` (override the home with `BROOOM_HOME`) only needs to
+contain what differs from the built-in defaults (`config.Default()`).
+`brooom config init` (see #38) writes the complete document.
+
+Implementation: `internal/config` (`Load`, `Save`, `SaveFull`, `Marshal`,
+`Validate`, `ForTarget`, `LoadRepoConfig`, `ApplyRepoConfig`).
+
+## Loading rules
+
+- A missing file yields the defaults. Any other read error (permissions, path
+  is a directory) is an error naming the path.
+- The file is decoded strictly: unknown keys, wrong types, trailing data after
+  the JSON value and files over 1 MiB are errors. An empty file is an error
+  (likely a truncated write); `{}` is valid. A UTF-8 BOM is tolerated.
+- Errors name the full key path, for example
+  `config.json: unknown key "detectors.merged-branch.mdoe" (did you mean "mode"?)`
+  or `config.json: roots[1].path: expected string, got number`. Syntax errors
+  report line and column.
+- `version`: missing means the current version (1). A newer version is
+  rejected with a request to upgrade Brooom; `version < 1` is rejected.
+
+### Merge semantics
+
+Values are merged over the defaults: a field that is absent keeps its default.
+**Slices and maps present in the file replace the default entirely; they are
+never merged.** For example `git.protected_branches` in the file is the
+complete list of protected branches, and `trash.per_detector` is not combined
+with defaults. A JSON `null` for a slice or map yields an empty one.
+
+`Save` writes only values that differ from the defaults (plus `version`), so
+later changes of a default reach users who never customised that value; lists
+and maps are written whole. `SaveFull` / `Marshal(cfg, true)` render the
+complete document. Saving is atomic (temp file in the same directory, fsync,
+mode `0600`, rename) and never writes an invalid configuration.
+
+## Keys
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `version` | `1` | File format version. |
+| `roots[]` | `[]` | Workspace roots scanned with `--workspaces`. |
+| `roots[].path` | | Root directory; `~`, `$VAR`, `${VAR}` (and `%VAR%` on Windows) are expanded on use, the file keeps the text as written. |
+| `roots[].exclude[]` | | Globs (relative to the root, forward slashes, `**` segments allowed) that discovery and detectors skip. |
+| `roots[].thresholds` | | Overrides for `min_age_days`, `min_size_bytes`, `recent_days`; absent fields inherit the global value. Not tighten-only. |
+| `roots[].detectors` | | `{"<detector>": true/false}` enables or disables a detector for this root. |
+| `thresholds.min_age_days` | `14` | Findings younger than this are not reported. |
+| `thresholds.min_size_bytes` | `0` | Findings smaller than this are not reported. |
+| `thresholds.recent_days` | `2` | Window for the `recently_modified` risk flag. |
+| `git.protected_branches` | `main, master, develop, dev, trunk, release/*, release-*, gh-pages` | Branch globs never suggested for deletion. Must not be empty. |
+| `git.base_branches` | `main, master, develop, trunk` | Candidate base branches for merge detection. Must not be empty. |
+| `git.use_gh` | `true` | Query open PRs through `gh` when available. |
+| `detectors.stale-branch` | enabled, `min_age_days` 90, `include_unpushed` | Stale branch detector. |
+| `detectors.merged-branch` | enabled, `mode` `ancestor+squash`, `include_remote` false | `mode` is `ancestor` or `ancestor+squash`. |
+| `detectors.worktrees` | enabled, `include_stale`, `min_age_days` 30 | Worktree detector. |
+| `detectors.git-bloat` | enabled, thresholds, `reflog_expire` `90.days.ago`, `prune_expire` `2.weeks.ago` | The two expiry values are passed to git as option values: they must be non-empty, contain no whitespace or control characters and must not start with `-`. |
+| `detectors.large-untracked` | enabled, `min_size_bytes` 100 MiB, `include_ignored` | Large untracked files. |
+| `detectors.ai-artifacts` | enabled, `user_locations` false | Optional `tools`, `extra[]` catalog entries, `min_age_days`. |
+| `detectors.log-and-runtime-files` | enabled | Optional `categories`, `extra[]`, `min_age_days`. |
+| `detectors.build-artifacts` | enabled, `inactive_days` 30 | Optional `dirs`, `extra_dirs`. |
+| `trash.strategy` | `trash` | `trash`, `quarantine` or `delete`. |
+| `trash.per_detector` | | Strategy per detector name. |
+| `trash.quarantine_retention_days` | `14` | Quarantined sessions older than this are purged. **`0` means never purge**; negative is invalid. |
+| `trash.allow_delete` | `false` | Must be `true` for any use of `delete` (default or per detector). |
+| `output.format` | `table` | `table`, `tree`, `json`, `ndjson`, `plain`, `summary`. |
+| `output.color` | `auto` | `auto`, `always`, `never`. |
+| `scan.concurrency` | `0` | Parallel walkers (0 = number of CPUs). |
+| `scan.cache` | `true` | mtime-invalidated scan cache. |
+| `scan.skip_dirs[]` | | Plain directory names (no separators, not `.`/`..`). |
+| `scan.max_depth` | `6` | Workspace discovery depth. |
+| `agent.provider` | | `""`, `anthropic` or `openai-compatible`. |
+| `agent.endpoint`, `agent.model` | | Agent settings. |
+| `agent.api_key_env` | | Name of the environment variable holding the key (`[A-Za-z_][A-Za-z0-9_]*`); keys are never stored. |
+| `update_check` | `false` | Opt-in update check. |
+
+### Catalog `extra` entries
+
+Entries in `detectors.ai-artifacts.extra` and
+`detectors.log-and-runtime-files.extra` need a unique kebab-case `id`, a
+non-empty `name` and at least one location in `project` or `user`. `project`
+paths are relative to the project and must not contain `..`.
+
+## Paths: `~` and environment variables
+
+`ExpandPath` expands a leading `~`, `~/` or `~\` (home from
+`os.UserHomeDir`, so `HOME`/`USERPROFILE` overrides apply), `$VAR`, `${VAR}`
+and on Windows `%VAR%`. An undefined or empty variable is an error: it never
+expands to an empty string, which would turn `$WORK/x` into `/x`. `~user` is
+not supported. `Root.ResolvedPath()` expands and cleans a root; `Load` does
+not rewrite roots.
+
+## Validation
+
+`Validate()` returns a `*ValidationError` (matches `errors.Is(err,
+config.ErrInvalid)`) listing every problem as `Problems[]{Field, Message}` in
+deterministic order. It checks:
+
+- roots: non-empty path, absolute after expansion, not a filesystem or volume
+  root (`config.IsFilesystemRoot`: `/`, `C:\`, `C:`, `\\server\share`,
+  `\\?\C:\`), no duplicates after cleaning, valid `exclude` globs, known
+  detector names, non-negative thresholds;
+- all thresholds and detector numbers non-negative;
+- allowed values for `output.format`, `output.color`, `trash.strategy`,
+  `trash.per_detector`, `detectors.merged-branch.mode`, `agent.provider`;
+- any use of `delete` requires `trash.allow_delete: true`;
+- `trash.quarantine_retention_days >= 0` (0 = never purge);
+- `git.protected_branches` / `base_branches` non-empty valid globs without
+  control characters; the git expiry values as described above;
+- `scan.concurrency`, `scan.max_depth >= 0`, plain `scan.skip_dirs` names;
+- `agent.api_key_env` is an environment variable name;
+- catalog `extra` entries as described above.
+
+## Effective configuration: `ForTarget`
+
+`cfg.ForTarget(root, target)` returns the configuration for a directory
+`target`, in three layers: global, then the selected root, then
+`<target>/.brooom.json`. The receiver is never modified.
+
+`root` is a **hint**, never an error. If it equals a configured root
+(compared after expansion, cleaning and best-effort symlink resolution) that
+root is used. Otherwise, including an empty hint, the longest configured root
+that contains `target` component-wise is selected (`/a/b` does not contain
+`/a/bc`). If no root contains `target`, the root layer is skipped. So repo
+mode (hint = the repository root) and workspace mode produce the same overlay
+for the same directory. The root's `thresholds` replace the global values and
+its `detectors` toggle `enabled`.
+
+### Exclude contract for detectors
+
+The effective config carries three fields that are never stored in a file:
+
+- `RootPath`: the resolved (symlink-resolved) selected root, `""` if none;
+- `RootExclude`: the selected root's `exclude` globs, relative to `RootPath`;
+- `RepoExclude`: the `.brooom.json` `exclude` globs, relative to the target.
+
+Detectors must skip directories matching `RootExclude` (relative to
+`RootPath`) or `RepoExclude` (relative to the target) using `scope.Excluded`.
+`internal/config` only validates and carries the patterns.
+
+## Per-repo `.brooom.json`
+
+The file lives in the repository root and is **untrusted input**: a
+repository may come from anywhere. It can only make Brooom more careful.
+
+```json
+{
+  "disable": ["build-artifacts"],
+  "thresholds": { "min_age_days": 30, "min_size_bytes": 1048576, "recent_days": 7 },
+  "protected_branches": ["hotfix/*"],
+  "exclude": ["generated", "**/fixtures"]
+}
+```
+
+- Loading is strict with the same key-path errors, limited to 64 KiB. A
+  missing file is fine; a file that is a symlink or not a regular file is
+  refused (so a repository cannot make Brooom read arbitrary files).
+- `disable`: known detector names only (unknown is an error); sets
+  `enabled: false`.
+- `thresholds`: values may only be raised or equal; a lower value is an error
+  (`.brooom.json: thresholds.min_age_days: 7 is lower than the effective value
+  30; repo config may only tighten`), as are negatives. A raised
+  `min_age_days` also floors the per-detector ages (`stale-branch`,
+  `worktrees`, `ai-artifacts`, `log-and-runtime-files`) and a raised
+  `min_size_bytes` floors `large-untracked.min_size_bytes` (new value = max of
+  existing and repo value).
+- `protected_branches` are appended to the global list (deduplicated, order
+  kept). `exclude` globs are validated and collected in `RepoExclude`.
+- Everything else (enabling detectors, `trash`, `roots`, removing protected
+  branches, ...) cannot be expressed and is rejected by strict decoding with
+  the key path.

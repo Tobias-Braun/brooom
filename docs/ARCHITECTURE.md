@@ -167,6 +167,9 @@ Per-root overrides live in `roots[].thresholds` / `roots[].detectors`. A
 repository may contain `.brooom.json` that can only tighten rules (disable
 detectors, raise thresholds, add protected branches and excludes).
 
+The full key reference, merge semantics, validation rules and the
+`ForTarget`/exclude contract for detectors are in [config.md](config.md).
+
 ## Conventions
 
 - Go 1.24, `CGO_ENABLED=0`, no runtime dependencies. Keep third-party
