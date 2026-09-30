@@ -16,8 +16,11 @@ func newSweepCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sweep",
 		Short: "The no-brainer: scan and clean with a preset",
-		Long:  sweepLong(),
-		Args:  cobra.NoArgs,
+		Example: `  brooom sweep
+  brooom sweep --preset standard --apply
+  brooom sweep --workspaces --root ~/code --detector build-artifacts`,
+		Long: sweepLong(),
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := a.resolvePreset(cmd, preset)
 			if err != nil {

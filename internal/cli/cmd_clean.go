@@ -32,6 +32,10 @@ func newCleanCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clean --from <findings.json>",
 		Short: "Act on a reviewed findings file (from --format json)",
+		Example: `  brooom scan --format json > findings.json
+  brooom clean --from findings.json
+  brooom clean --from findings.json --id 8f2a41c7 --apply
+  brooom scan --format json | brooom clean --from - --apply`,
 		Long: `Apply the suggested actions of a findings file produced with
 'brooom scan --format json'. Edit or filter the file (or pass --id) to choose
 what gets cleaned. Every finding is re-validated before anything is done.

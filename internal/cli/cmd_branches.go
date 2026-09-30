@@ -12,6 +12,9 @@ func newBranchesCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "branches",
 		Short: "Find (and delete) stale and merged local branches",
+		Example: `  brooom branches --merged
+  brooom branches --stale --workspaces
+  brooom branches --merged --apply`,
 		Long: `Report local branches that are merged into the base branch (including
 squash merges) or stale (no commits for a long time, upstream gone or never
 pushed). With --apply they are deleted with 'git branch -d' (-D with

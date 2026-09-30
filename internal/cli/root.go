@@ -128,6 +128,10 @@ func newRootCmd(a *app) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "brooom",
 		Short: "Sweep disk clutter from AI-assisted development",
+		Example: `  brooom
+  brooom --workspaces --format json
+  brooom sweep --apply
+  brooom undo`,
 		Long: `Brooom finds and safely cleans the clutter that heavy AI/agent-assisted
 development leaves behind: agent run logs and runtime files, stale and merged
 git branches, leftover worktrees, bloated git histories and build artifacts.
@@ -181,7 +185,17 @@ Without flags Brooom only looks at the git repository you are in. Use
 		newVersionCmd(a),
 		newUpdateCheckCmd(a),
 	)
+	customizeCompletionCmd(root)
+	registerCompletions(root, a)
 	return root
+}
+
+// NewRootCommand returns a fresh command tree without any collaborators wired
+// in. It exists for tooling that only inspects the tree (the CLI reference
+// generator, tests); construction performs no I/O, so it is safe to call from
+// a `go run` tool. Use Main to run the CLI.
+func NewRootCommand() *cobra.Command {
+	return newRootCmd(&app{})
 }
 
 // addApplyFlags registers the flags of commands that can modify things.

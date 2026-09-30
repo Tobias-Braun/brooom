@@ -71,6 +71,9 @@ func newScanCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "scan",
 		Short: "Scan for clutter and report findings (never modifies anything)",
+		Example: `  brooom scan
+  brooom scan --workspaces --format json > findings.json
+  brooom scan --detector merged-branch,worktrees --format plain`,
 		Long: `Scan the current repository (or, with --workspaces, every repository and
 project below the configured roots) and report findings. Scanning never
 modifies anything; use 'brooom sweep', a specific command with --apply, or

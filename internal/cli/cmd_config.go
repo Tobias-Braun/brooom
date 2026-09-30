@@ -23,11 +23,17 @@ func newConfigCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Create, show, edit and validate the configuration",
-		Args:  cobra.NoArgs,
+		Example: `  brooom config init
+  brooom config show
+  brooom config edit
+  brooom config validate`,
+		Args: cobra.NoArgs,
 	}
 	initCmd := &cobra.Command{
 		Use:   "init",
 		Short: "Write a config file with the defaults",
+		Example: `  brooom config init
+  brooom config init --force`,
 		Long: `Write the complete default configuration to the config file (creating the
 directory). An existing file is never overwritten unless --force is given.`,
 		Args: cobra.NoArgs,
@@ -39,13 +45,16 @@ directory). An existing file is never overwritten unless --force is given.`,
 		&cobra.Command{
 			Use:   "show",
 			Short: "Print the effective configuration",
-			Long:  "Print the effective global configuration (defaults merged with the file). Supports --format json (default) and table.",
-			Args:  cobra.NoArgs,
-			RunE:  func(cmd *cobra.Command, args []string) error { return a.runConfigShow() },
+			Example: `  brooom config show
+  brooom config show --format table`,
+			Long: "Print the effective global configuration (defaults merged with the file). Supports --format json (default) and table.",
+			Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error { return a.runConfigShow() },
 		},
 		&cobra.Command{
-			Use:   "edit",
-			Short: "Open the config file in $VISUAL / $EDITOR",
+			Use:     "edit",
+			Short:   "Open the config file in $VISUAL / $EDITOR",
+			Example: `  brooom config edit`,
 			Long: `Open the config file in $VISUAL, else $EDITOR, else notepad (Windows) or vi.
 The file is created with the defaults first if it does not exist. After the
 editor exits the file is validated; problems are reported but your edit is
@@ -56,13 +65,16 @@ never reverted.`,
 		&cobra.Command{
 			Use:   "validate",
 			Short: "Validate the config file",
-			Args:  cobra.NoArgs,
-			RunE:  func(cmd *cobra.Command, args []string) error { return a.runConfigValidate() },
+			Example: `  brooom config validate
+  brooom config validate --config ./brooom.json`,
+			Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error { return a.runConfigValidate() },
 		},
 		&cobra.Command{
-			Use:   "path",
-			Short: "Print the config file path",
-			Args:  cobra.NoArgs,
+			Use:     "path",
+			Short:   "Print the config file path",
+			Example: `  brooom config path`,
+			Args:    cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				path, err := a.configPath()
 				if err != nil {

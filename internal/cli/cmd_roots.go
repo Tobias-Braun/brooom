@@ -22,6 +22,9 @@ func newRootsCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "roots",
 		Short: "Manage workspace roots used by --workspaces",
+		Example: `  brooom roots list
+  brooom roots add ~/code
+  brooom roots remove ~/code`,
 		Long: `Workspace roots are the only locations --workspaces may touch. Each root
 must be an existing directory; filesystem roots such as / or C:\ are refused.
 Roots are edited in place in the config file: every other key is preserved.`,
@@ -31,21 +34,26 @@ Roots are edited in place in the config file: every other key is preserved.`,
 		&cobra.Command{
 			Use:   "add <path>...",
 			Short: "Add workspace roots",
-			Args:  cobra.MinimumNArgs(1),
-			RunE:  func(cmd *cobra.Command, args []string) error { return a.runRootsAdd(args) },
+			Example: `  brooom roots add ~/code ~/work
+  brooom roots add .`,
+			Args: cobra.MinimumNArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error { return a.runRootsAdd(args) },
 		},
 		&cobra.Command{
-			Use:   "remove <path>...",
-			Short: "Remove workspace roots",
-			Args:  cobra.MinimumNArgs(1),
-			RunE:  func(cmd *cobra.Command, args []string) error { return a.runRootsRemove(args) },
+			Use:     "remove <path>...",
+			Short:   "Remove workspace roots",
+			Example: `  brooom roots remove ~/work`,
+			Args:    cobra.MinimumNArgs(1),
+			RunE:    func(cmd *cobra.Command, args []string) error { return a.runRootsRemove(args) },
 		},
 		&cobra.Command{
 			Use:   "list",
 			Short: "List workspace roots",
-			Long:  "List the configured roots with their status. Supports --format table (default), plain and json.",
-			Args:  cobra.NoArgs,
-			RunE:  func(cmd *cobra.Command, args []string) error { return a.runRootsList() },
+			Example: `  brooom roots list
+  brooom roots list --format json`,
+			Long: "List the configured roots with their status. Supports --format table (default), plain and json.",
+			Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error { return a.runRootsList() },
 		},
 	)
 	return cmd
