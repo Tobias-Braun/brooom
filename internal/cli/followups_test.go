@@ -223,7 +223,7 @@ func TestQuietOutputIsExact(t *testing.T) {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 	want := "   -  <age>  high  delete-branch  .     feat/merged  no-remote\n" +
-		"   -  <age>  high  delete-branch  .     feat/squash  no-remote\n"
+		"   -  <age>  high  delete-branch  .     feat/squash\n"
 	if got := normalizeVolatile(out, f.repo.Dir); got != want {
 		t.Errorf("quiet dry run:\n got %q\nwant %q", got, want)
 	}
@@ -237,8 +237,7 @@ func TestQuietOutputIsExact(t *testing.T) {
 		"  <repo> (feat/merged): run inside the repository: git branch feat/merged <sha>. " +
 		"The commits are still reachable from feat/squash, so git gc will not prune them.\n" +
 		"  <repo> (feat/squash): run inside the repository: git branch feat/squash <sha>. " +
-		"Deleting a branch also deletes its reflog; the commits stay as unreachable objects until git gc prunes them " +
-		"(by default unreachable objects older than 2 weeks may be pruned by the next gc), so recover promptly.\n" +
+		"The commits are still reachable from origin/feat/squash, so git gc will not prune them.\n" +
 		"undo: brooom undo <session>\n"
 	if got := normalizeVolatile(out, f.repo.Dir); got != wantApply {
 		t.Errorf("quiet apply:\n got %q\nwant %q", got, wantApply)
@@ -263,7 +262,7 @@ func TestSweepFormatsAndQuiet(t *testing.T) {
 		t.Fatalf("code %d stderr %q", code, errOut)
 	}
 	want := "   -  <age>  high  delete-branch  .     feat/merged  no-remote\n" +
-		"   -  <age>  high  delete-branch  .     feat/squash  no-remote\n"
+		"   -  <age>  high  delete-branch  .     feat/squash\n"
 	if got := normalizeVolatile(quiet, f.repo.Dir); got != want {
 		t.Errorf("sweep -q:\n got %q\nwant %q", got, want)
 	}
