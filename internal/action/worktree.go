@@ -159,9 +159,6 @@ func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeE
 	if err := checkStillSafe(ctx, env, repo, wt, path, f); err != nil {
 		return nil, err
 	}
-	if err := checkDetachedRemovable(ctx, env, repo, wt, f); err != nil {
-		return nil, err
-	}
 	ev := &removeEval{repo: repo, wt: wt, path: path}
 	if err := ev.inspect(ctx, env); err != nil {
 		return nil, err
@@ -180,7 +177,7 @@ func evaluateRemove(ctx context.Context, env *Env, f findings.Finding) (*removeE
 // be unreferenced now (the removal deletes HEAD and its reflog), and files
 // may have been edited. Neither is overridable by --force.
 func checkStillSafe(ctx context.Context, env *Env, repo *gitx.Repo, wt gitx.Worktree, path string, f findings.Finding) error {
-	if err := checkDetachedHead(ctx, env, repo, wt); err != nil {
+	if err := checkDetachedRemovable(ctx, env, repo, wt, f); err != nil {
 		return err
 	}
 	return checkUnmodified(ctx, path, f)
