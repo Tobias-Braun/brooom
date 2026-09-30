@@ -354,6 +354,27 @@ func TestTrackedFiles(t *testing.T) {
 	}
 }
 
+// TestTrackedFilesWithForeignGitDir keeps a committed file flagged when the
+// environment exports GIT_DIR/GIT_INDEX_FILE of another repository, which
+// used to make ls-files read the foreign index.
+func TestTrackedFilesWithForeignGitDir(t *testing.T) {
+	sandbox(t)
+	repo := testutil.NewRepo(t)
+	tracked := repo.WriteFile(".aider.chat.history.md", "committed\n")
+	repo.CommitAll("track history", testutil.BaseTime)
+	testutil.SetMTime(t, tracked, daysAgo(100))
+	oldDirs(t, repo.Dir)
+	foreign := testutil.NewRepo(t)
+	t.Setenv("GIT_DIR", filepath.Join(foreign.Dir, ".git"))
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(foreign.Dir, ".git", "index"))
+
+	env := newEnv(t, config.Default(), repo.Dir)
+	f := byRel(t, mustScan(t, env, repoTarget(repo.Dir)), repo.Dir, ".aider.chat.history.md")
+	if !hasFlag(f, findings.RiskTrackedFiles) {
+		t.Fatalf("flags = %v, want tracked_files", f.RiskFlags)
+	}
+}
+
 // checkTrackedAction asserts the action of a finding that has tracked_files:
 // none without --force, trash with the "forced" reason with it.
 func checkTrackedAction(t *testing.T, f findings.Finding, force bool) {

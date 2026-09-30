@@ -47,7 +47,7 @@ func Pipe(ctx context.Context, r Runner, dir string, first, second []string, onL
 	}
 	// GIT_NO_LAZY_FETCH needs git 2.44 or newer; older versions ignore it, which
 	// is harmless because they only lazy-fetch when a promisor remote is set up.
-	env := append(Env(os.Environ()), "GIT_NO_LAZY_FETCH=1")
+	env := Env(os.Environ())
 	var stderr1, stderr2 bytes.Buffer
 	c1 := exec.CommandContext(ctx, path, append([]string{"-C", dir}, first...)...)
 	c2 := exec.CommandContext(ctx, path, append([]string{"-C", dir}, second...)...)
