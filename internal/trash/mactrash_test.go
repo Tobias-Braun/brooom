@@ -276,6 +276,9 @@ func TestMacRemoveRefusals(t *testing.T) {
 		{"volume root", "/Volumes/Data", true},
 		{"user trash", filepath.Join(home, ".Trash"), false},
 		{"inside trash", filepath.Join(home, ".Trash", "x"), false},
+		{"lowercase user trash", filepath.Join(home, ".trash"), false},
+		{"inside lowercase trash", filepath.Join(home, ".trash", "x"), false},
+		{"uppercase volume trashes", "/Volumes/Data/.TRASHES/501/x", true},
 		{"volume trashes", "/Volumes/Data/.Trashes", true},
 		{"inside volume trashes", "/Volumes/Data/.Trashes/501/x", true},
 	}
@@ -553,5 +556,78 @@ func TestIsPermissionErr(t *testing.T) {
 		if got := isPermissionErr(tt.err); got != tt.want {
 			t.Errorf("isPermissionErr(%v) = %v", tt.err, got)
 		}
+	}
+}
+
+func TestChunkFailurePartwayNeverFallsBackForTrashedItems(t *testing.T) {
+	m, _, home := newFakeTrash(t)
+	gone := filepath.Join(t.TempDir(), "gone.txt")
+	kept := filepath.Join(t.TempDir(), "kept.txt")
+	writeFile(t, gone, "a", 0o644)
+	writeFile(t, kept, "b", 0o644)
+	// The process trashes the first item and dies before reporting anything.
+	m.run = func(context.Context, []string) ([]byte, error) {
+		if err := os.Rename(gone, filepath.Join(home, "elsewhere.txt")); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("osascript timed out")
+	}
+	recs, errs := m.RemoveMany(context.Background(), []string{gone, kept})
+	if errs[0] == nil || !strings.Contains(errs[0].Error(), "may already be in the Trash") {
+		t.Errorf("gone item: err = %v", errs[0])
+	}
+	if recs[0].StoredPath != "" {
+		t.Errorf("gone item got a record: %+v", recs[0])
+	}
+	// The untouched item still takes the ~/.Trash fallback.
+	if errs[1] != nil || recs[1].StoredPath != filepath.Join(home, ".Trash", "kept.txt") || exists(kept) {
+		t.Errorf("kept item: rec %+v err %v", recs[1], errs[1])
+	}
+}
+
+func TestCompletedRunRecordsSuccessesDespiteCancelledContext(t *testing.T) {
+	m, f, home := newFakeTrash(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.run = func(c context.Context, argv []string) ([]byte, error) {
+		out, err := f.run(c, argv)
+		cancel() // cancelled after osascript finished successfully
+		return out, err
+	}
+	p := filepath.Join(t.TempDir(), "done.txt")
+	writeFile(t, p, "a", 0o644)
+	rec, err := m.Remove(ctx, p)
+	if err != nil || rec.StoredPath != filepath.Join(home, ".Trash", "done.txt") || exists(p) {
+		t.Errorf("rec %+v err %v", rec, err)
+	}
+}
+
+func TestInvalidUTF8PathFailsOnlyThatItem(t *testing.T) {
+	m, _, _ := newFakeTrash(t)
+	ok := filepath.Join(t.TempDir(), "ok.txt")
+	writeFile(t, ok, "a", 0o644)
+	bad := filepath.Join(t.TempDir(), "bad\xff.txt")
+	recs, errs := m.RemoveMany(context.Background(), []string{bad, ok})
+	if errs[0] == nil || !strings.Contains(errs[0].Error(), "UTF-8") {
+		t.Errorf("bad path: err = %v", errs[0])
+	}
+	if errs[1] != nil || recs[1].StoredPath == "" {
+		t.Errorf("good path: rec %+v err %v", recs[1], errs[1])
+	}
+}
+
+func TestRestoreMkdirFailureIsReported(t *testing.T) {
+	m, _, _ := newFakeTrash(t)
+	orig := filepath.Join(t.TempDir(), "sub", "file.txt")
+	writeFile(t, orig, "abc", 0o644)
+	rec, err := m.Remove(context.Background(), orig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.mkdirAll = func(string, fs.FileMode) error { return errors.New("no space") }
+	if err := os.RemoveAll(filepath.Dir(orig)); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Restore(context.Background(), rec); err == nil || !strings.Contains(err.Error(), "no space") {
+		t.Errorf("err = %v", err)
 	}
 }

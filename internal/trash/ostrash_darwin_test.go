@@ -113,16 +113,22 @@ func TestDarwinTrashBatchWithMissingPath(t *testing.T) {
 	}
 }
 
+// TestDarwinTrashFallbackWithoutOsascript uses a temporary home so it neither
+// touches the real ~/.Trash nor depends on TCC, and a name with characters
+// that are dangerous in shells and scripts.
 func TestDarwinTrashFallbackWithoutOsascript(t *testing.T) {
-	m, track := newRealMacTrash(t)
+	home := t.TempDir()
+	m := newMacTrash(home)
 	m.osascript = filepath.Join(t.TempDir(), "missing-osascript")
-	orig := filepath.Join(t.TempDir(), "fallback.txt")
+	orig := filepath.Join(t.TempDir(), "it's \"q\" $x `y` üñí\n.txt")
 	writeFile(t, orig, "x", 0o644)
 	rec, err := m.Remove(context.Background(), orig)
 	if err != nil {
-		t.Skipf("fallback needs a writable ~/.Trash: %v", err)
+		t.Fatal(err)
 	}
-	track(rec)
+	if want := filepath.Join(home, ".Trash", filepath.Base(orig)); rec.StoredPath != want || !exists(want) {
+		t.Errorf("record %+v, want stored at %q", rec, want)
+	}
 	if exists(orig) {
 		t.Error("original still exists")
 	}

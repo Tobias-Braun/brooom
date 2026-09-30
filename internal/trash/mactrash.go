@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 )
@@ -98,6 +99,8 @@ type macTrash struct {
 	run   scriptRunner
 	lstat func(string) (fs.FileInfo, error)
 	move  func(ctx context.Context, src, dst string) error
+	// mkdirAll recreates missing parents on Restore.
+	mkdirAll func(path string, perm fs.FileMode) error
 }
 
 // newMacTrash returns a macTrash using the real osascript and filesystem.
@@ -109,6 +112,7 @@ func newMacTrash(home string) *macTrash {
 		now:       time.Now,
 		lstat:     os.Lstat,
 		move:      moveTree,
+		mkdirAll:  os.MkdirAll,
 	}
 	m.run = m.execScript
 	return m
@@ -159,6 +163,11 @@ func (m *macTrash) RemoveMany(ctx context.Context, paths []string) ([]Record, []
 
 // prepare validates path and measures it.
 func (m *macTrash) prepare(idx int, path string) (pendingItem, error) {
+	// The paths travel as a JSON array, which can only carry valid UTF-8.
+	// Failing this one item keeps an odd name from rejecting its whole batch.
+	if !utf8.ValidString(path) {
+		return pendingItem{}, fmt.Errorf("cannot trash %q: path is not valid UTF-8", path)
+	}
 	if err := checkMacRemovable(path); err != nil {
 		return pendingItem{}, err
 	}
@@ -173,25 +182,51 @@ func (m *macTrash) prepare(idx int, path string) (pendingItem, error) {
 	return pendingItem{idx: idx, path: path, size: size, isDir: fi.IsDir() && !isSymlink(fi)}, nil
 }
 
-// trashChunk trashes one batch and stores each item's outcome. Only errors of
-// the whole invocation or of a single item lead to the ~/.Trash fallback; a
-// cancelled context aborts the batch instead, since the caller gave up.
+// trashChunk trashes one batch and stores each item's outcome.
+//
+// When osascript completed (runErr == nil) its per-item results are
+// authoritative and every success is recorded, even if the context was
+// cancelled in the meantime: the items are in the Trash and must stay
+// undoable. When the invocation itself failed part-way (timeout, kill,
+// cancellation) some items may already have been trashed without brooom
+// learning about it, so items whose original is gone are reported as possibly
+// trashed and never fall back. A cancelled context never leads to a fallback,
+// since the caller gave up.
 func (m *macTrash) trashChunk(ctx context.Context, chunk []pendingItem, recs []Record, errs []error) {
 	results, runErr := m.invoke(ctx, chunk)
-	if err := ctx.Err(); err != nil {
-		for _, it := range chunk {
-			errs[it.idx] = fmt.Errorf("cannot trash %q: %w", it.path, err)
-		}
-		return
-	}
 	for k, it := range chunk {
 		resulting, err := itemOutcome(it, results, runErr, k)
 		if err == nil {
 			recs[it.idx] = m.record(it, resulting)
 			continue
 		}
+		if runErr != nil {
+			if gone := originalGone(it.path); gone != nil {
+				errs[it.idx] = fmt.Errorf("%w; %w", err, gone)
+				continue
+			}
+		}
+		if cerr := ctx.Err(); cerr != nil {
+			errs[it.idx] = fmt.Errorf("cannot trash %q: %w", it.path, cerr)
+			continue
+		}
 		m.fallback(ctx, it, err, recs, errs)
 	}
+}
+
+// originalGone returns a non-nil error when path is no longer present, or
+// cannot be inspected, after a failed osascript run. Both mean the item may
+// already sit in the Trash without a Record, so a ~/.Trash fallback (which
+// would fail with not-exist) must not be attempted.
+func originalGone(path string) error {
+	_, err := os.Lstat(path)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("%q is gone and may already be in the Trash (look for it there; brooom cannot undo it)", path)
+	}
+	return fmt.Errorf("cannot tell whether %q was trashed: %w", path, err)
 }
 
 // itemOutcome extracts the resulting path of item k or the reason it failed.
@@ -361,7 +396,7 @@ func (m *macTrash) Restore(ctx context.Context, r Record) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("cannot check %q: %w", r.OriginalPath, err)
 	}
-	if err := os.MkdirAll(filepath.Dir(r.OriginalPath), 0o755); err != nil {
+	if err := m.mkdirAll(filepath.Dir(r.OriginalPath), 0o755); err != nil {
 		return fmt.Errorf("cannot recreate parent of %q: %w", r.OriginalPath, err)
 	}
 	if err := m.move(ctx, r.StoredPath, r.OriginalPath); err != nil {
@@ -382,7 +417,7 @@ func checkRestoreRecord(r Record) error {
 	if !filepath.IsAbs(r.OriginalPath) || !filepath.IsAbs(r.StoredPath) {
 		return fmt.Errorf("refusing to restore relative path %q from %q", r.OriginalPath, r.StoredPath)
 	}
-	if !isInsideTrash(r.StoredPath) || trashDirNames[filepath.Base(r.StoredPath)] {
+	if !isInsideTrash(r.StoredPath) || isTrashDirName(filepath.Base(r.StoredPath)) {
 		return fmt.Errorf("refusing to restore from %q: not inside a .Trash or .Trashes directory", r.StoredPath)
 	}
 	return nil
@@ -411,14 +446,21 @@ func isPermissionErr(err error) bool {
 	return errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES)
 }
 
-// trashDirNames are the directory names macOS uses for the per-user Trash
-// (~/.Trash) and per-volume Trashes (/Volumes/X/.Trashes/<uid>).
-var trashDirNames = map[string]bool{".Trash": true, ".Trashes": true}
+// isTrashDirName reports whether name is ".Trash" or ".Trashes". The
+// comparison ignores case because the default macOS volumes are case
+// insensitive, so ".trash" addresses the very same directory.
+func isTrashDirName(name string) bool {
+	return strings.EqualFold(name, ".Trash") || strings.EqualFold(name, ".Trashes")
+}
 
-// isInsideTrash reports whether p is a Trash directory or below one.
+// isInsideTrash reports whether p is a Trash directory or below one. Any path
+// component with a Trash name counts, also an unrelated directory that merely
+// carries that name: refusing too much is the safe side. Symlinked parents
+// that lead into a Trash are not resolved here; scope.Guard rejects symlinks
+// that leave the scope before a path ever reaches the trasher.
 func isInsideTrash(p string) bool {
 	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(p)), "/") {
-		if trashDirNames[part] {
+		if isTrashDirName(part) {
 			return true
 		}
 	}
