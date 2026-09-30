@@ -110,7 +110,7 @@ func TestHintQuotingIsOSAware(t *testing.T) {
 		want string
 	}{
 		{"windows path with a space", "windows",
-			`brooom scan --config "C:\my dir\c.json" --detector git-bloat,logs --format json | brooom clean --config "C:\my dir\c.json" --from - --apply`},
+			`brooom scan --config "C:\my dir\c.json" --detector "git-bloat,logs" --format json | brooom clean --config "C:\my dir\c.json" --from - --apply`},
 		{"linux path with a space", "linux",
 			`brooom scan --config '/my dir/c.json' --detector git-bloat,logs --format json | brooom clean --config '/my dir/c.json' --from - --apply`},
 	}

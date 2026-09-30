@@ -71,6 +71,12 @@ var shortCluster = regexp.MustCompile(`^-[a-zA-Z]+$`)
 // cluster when it is attached (`-fjson`), else the next argument, which the
 // caller must skip (consumeNext). -d and -p take values as well; from them on
 // the cluster is kept as is.
+//
+// Worked example: `-dlogs` is -d with the attached value "logs". The loop hits
+// 'd' first and keeps the rest of the cluster verbatim, so it returns
+// "-dlogs"; scanning on would misread 'l', 'o', 'g', 's' as flags. By
+// contrast `-qyd` returns "-qd" (y dropped, d kept) and `-yfjson` returns ""
+// (both dropped, "json" is f's attached value).
 func stripShortCluster(arg string) (kept string, consumeNext bool) {
 	var b strings.Builder
 	letters := arg[1:]

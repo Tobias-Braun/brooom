@@ -3,6 +3,7 @@ package cli
 import (
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -262,5 +263,23 @@ func TestScanForceIsReadOnlyAndReachesDetectors(t *testing.T) {
 	}
 	if !f.hasBranch("feat/merged") || len(f.sessions()) != 0 {
 		t.Error("scan --force changed something")
+	}
+}
+
+// TestDetectorFlagIsOneWordOnWindows guards the multi-detector hint: ',' is
+// PowerShell's array operator, so a bare `a,b` would reach the exe as two
+// arguments and the pasted hint would scan the wrong detectors.
+func TestDetectorFlagIsOneWordOnWindows(t *testing.T) {
+	a := &app{goos: "windows"}
+	a.flags.detectors = []string{"stale-branch", "merged-branch"}
+	got := a.detectorFlag()
+	want := []string{"--detector", `"stale-branch,merged-branch"`}
+	if !slices.Equal(got, want) {
+		t.Errorf("detectorFlag() = %q, want %q", got, want)
+	}
+	u := &app{goos: "linux"}
+	u.flags.detectors = a.flags.detectors
+	if got := u.detectorFlag(); got[1] != "stale-branch,merged-branch" {
+		t.Errorf("unix detectorFlag() = %q, want a bare word", got)
 	}
 }

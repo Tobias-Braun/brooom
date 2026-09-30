@@ -435,6 +435,8 @@ func (e *Executor) warnBeforeDelete(plan *Plan) {
 		// An error here surfaces again when the step itself is applied.
 		if tr, err := env.Trasher(g.Detector); err == nil && tr.Strategy() == config.StrategyDelete {
 			env.BeforeDelete()
+			// Returning after the first delete-strategy group is intended:
+			// the permanence warning is shown once per run, not per group.
 			return
 		}
 	}

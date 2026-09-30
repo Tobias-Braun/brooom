@@ -721,7 +721,12 @@ actions and the CLI hints: POSIX single quotes (`findings.ShellQuote`) on unix,
 and on Windows a bare word when safe, double quotes when neither cmd.exe nor
 PowerShell can act on the content (single quotes are a literal character in
 cmd.exe), and PowerShell single quotes for values that need `$`, `%`, quotes or
-a trailing backslash escaped. `findings.QuoteFor(goos, s)` renders either
+a trailing backslash escaped. The bare set on Windows is only alphanumerics and
+`/ . _ - : \` (',' and '@' are PowerShell syntax and get double quotes).
+Values that need PowerShell single quotes (`%`, `"`, `$`, a trailing backslash)
+are a PowerShell-only limitation: cmd.exe treats single quotes literally, so
+such a hint parses correctly in PowerShell but not in cmd.exe; all other
+values parse identically in both. `findings.QuoteFor(goos, s)` renders either
 dialect on any OS for tests. The trash step's display command follows the host
 shell (`internal/action/display.go`): POSIX on unix, PowerShell on Windows (the
 Recycle Bin has no cmdlet, so that variant is a labelled, illustrative
@@ -834,3 +839,10 @@ Suggested apply commands (`applyHint`) repeat the invocation without `--apply`,
 an explicit `-f tree|table|summary` renders the scan report before the plan;
 without `-f` an applying run prints no report; a machine format is a usage
 error with `--apply`.
+
+Decision (#182 item 5): the issue proposed rejecting every explicit `--format`
+together with `--apply`. Brooom instead honours an explicit human format
+(`tree`, `table`, `summary`), because a user who asked for a report expects to
+see it before confirming, and rejects only machine formats, whose consumers
+would receive a plan prompt mixed into their data. Fatal detector errors versus
+non-fatal notes in the exit code are tracked in #191.
