@@ -329,3 +329,50 @@ Notes on the shape of the data:
    `go test ./internal/catalog`).
 6. Run `go test ./...`; a typo in the JSON or a violated rule fails loading with
    a message naming the file, tool id and entry.
+
+## AI tool entries
+
+`data/ai_tools.json` covers the tools below. Every entry cites the source it
+was derived from (official documentation or the tool's source code; where a
+tool is closed source and its docs were not reachable, a source that shows the
+path in code, named in the "Notes on sources" list). Policy: transcripts,
+sessions and history are `medium` with `min_age_days: 30`; caches and logs are
+`high` with 14 days; the generic run-log entry is `low`. Unverified per-OS
+paths are omitted rather than guessed. `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME`
+below are the catalog variables, so they fall back to `~/.config` and
+`~/.local/share`. "Code" and "Cursor" editors share the VS Code layout
+(`<user data>` is `$XDG_CONFIG_HOME/<Name>` on Linux, `~/Library/Application
+Support/<Name>` on macOS and `%APPDATA%/<Name>` on Windows).
+
+| Tool | Removed (medium 30d unless noted) | Protected | Deliberately left out and why |
+| --- | --- | --- | --- |
+| Claude Code (`claude-code`) | `~/.claude/projects/*/*.jsonl` transcripts, `~/.claude/file-history/*`, `~/.claude/todos/*` (legacy). High 14d: `~/.claude/shell-snapshots/*`, `~/.claude/debug/*`, `~/.claude/statsig/*` (legacy) | Project: `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.claude/{settings.json,settings.local.json,commands,agents,skills,hooks,rules,agent-memory,agent-memory-local}`, `.claude/worktrees`, `.worktrees`. User: `~/.claude.json`, `~/.claude/{CLAUDE.md,settings*.json,keybindings.json,.credentials.json,commands,agents,skills,hooks,rules,plugins,agent-memory,history.jsonl}`, `~/.claude/projects/*/memory` | `.claude/worktrees` and `.worktrees` are deliberately excluded: they hold git worktrees that may contain uncommitted or unpushed work and are owned by the worktrees detector (#15) and its dirty/locked/unpushed checks. `paste-cache`, `backups`, `session-env`, `plans`, `history.jsonl` and subagent/tool-result folders are not listed (config-adjacent or not verified as safe on their own). |
+| Cursor (`cursor`) | High 14d: `<user data>/logs/*`, `CachedData/*`, `Cache/*` per OS. Medium: `<user data>/User/workspaceStorage/*` (can contain chat history), `~/.cursor/projects/*/agent-transcripts/**/*.{jsonl,txt}` | `User/{settings.json,keybindings.json,snippets,mcp.json}`, `User/globalStorage/{state.vscdb*,storage.json}`, `~/.cursor/{mcp.json,rules,commands,skills,extensions,cli-config.json,argv.json}`, project `.cursorrules`, `.cursor/{rules,mcp.json,commands,skills}`, `.cursorignore`, `.cursorindexingignore` | `~/.cursor/chats/**/store.db` (a database that mixes sessions and state) and `globalStorage` (accounts, tokens). |
+| Aider (`aider`) | Project: `.aider.chat.history.md`, `.aider.input.history` (medium 30d), `.aider.tags.cache.v*/` (high 14d) | `.aider.conf.yml`, `.aiderignore`, `.env`, `.aider.model.settings.yml`, `.aider.model.metadata.json`, `CONVENTIONS.md`, and the same files in `~` | `--llm-history-file` (no default, user chosen). |
+| GitHub Copilot (`github-copilot`) | High 14d: `<Code user data>/logs/*/window*/exthost/GitHub.copilot-chat/*.log` | `~/.config/github-copilot` and `%LOCALAPPDATA%/github-copilot` entirely (`hosts.json`, `apps.json`, tokens), `~/.copilot`, Code `User/{settings.json,keybindings.json,snippets,prompts,mcp.json,globalStorage/github.copilot-chat}`, `.github/{copilot-instructions.md,instructions,prompts,agents,chatmodes}`, `.vscode/mcp.json` | Log and cache locations below `github-copilot` and `globalStorage/github.copilot-chat`: not verified, and the directories hold credentials. |
+| OpenAI Codex CLI (`codex-cli`) | `~/.codex/sessions/**/*.jsonl` (medium 30d), `~/.codex/log/*` (high 14d) | `~/.codex/{config.toml,auth.json,AGENTS.md,AGENTS.override.md,prompts,skills,rules,history.jsonl}`, project `AGENTS.md`, `.codex` | `archived_sessions` (archived on purpose), `history.jsonl` (name not verified), a custom `CODEX_HOME` (not expressible with catalog variables). |
+| Gemini CLI (`gemini-cli`) | `~/.gemini/tmp/*/chats/*`, `~/.gemini/tmp/*/checkpoints/*` (medium 30d), `~/.gemini/tmp/*/logs/*` (high 14d) | `~/.gemini/{settings.json,GEMINI.md,oauth_creds.json,google_accounts.json,trustedFolders.json,installation_id,.env,commands,extensions,policies,skills,agents,history}`, project `GEMINI.md`, `.gemini`, `.geminiignore` | `~/.gemini/history` shadow git repositories of checkpoints (protected). |
+| Continue (`continue`) | `~/.continue/sessions/<id>.json` (medium 30d), `~/.continue/index/*` and `~/.continue/logs/*` (high 14d) | `~/.continue/{config.json,config.yaml,config.ts,.continuerc.json,.continuerc,rules,prompts,mcpServers,assistants,.env}`, `sessions/sessions.json` (session list), project `.continue`, `.continuerc*` | `dev_data` (content not verified). |
+| Cline (`cline`) | `<Code or Cursor user data>/User/globalStorage/saoudrizwan.claude-dev/tasks/*` (medium 30d) | `globalStorage/saoudrizwan.claude-dev/settings`, `~/Documents/Cline`, `~/.cline`, project `.clinerules`, `.clineignore`, `.cline` | Other VS Code variants (Insiders, VSCodium) and the extension `cache`. |
+| Roo Code (`roo-code`) | `<Code or Cursor user data>/User/globalStorage/rooveterinaryinc.roo-cline/tasks/*` (medium 30d) | `globalStorage/rooveterinaryinc.roo-cline/settings` (MCP servers, custom modes), `~/.roo`, project `.roo`, `.roomodes`, `.roorules`, `.rooignore` | Same as Cline. |
+| Windsurf (`windsurf`) | High 14d: `<user data>/{logs,CachedData,Cache}/*` per OS | `User/{settings.json,keybindings.json,snippets,mcp.json}`, `User/globalStorage/{state.vscdb*,storage.json}`, `~/.codeium/windsurf` entirely (memories, global rules, MCP), project `.windsurf`, `.windsurfrules`, `.codeiumignore` | `workspaceStorage` (Cascade history location not verified). |
+| Goose (`goose`) | Linux only: `~/.local/share/goose/sessions/*.jsonl` (medium 30d), `~/.local/state/goose/logs/*` (high 14d) | `~/.config/goose` (`config.yaml`, `permission.yaml`, `secrets.yaml`, prompts), `%APPDATA%/Block/goose/config`, `.goosehints`, `.goose`, `AGENTS.md` | macOS and Windows session and log paths: not verified. |
+| OpenHands (`openhands`) | `~/.openhands/sessions/*` (medium 30d, default local file store) | `~/.openhands/{*.json,config.toml,.env,microagents,skills,.jwt_secret}`, project `.openhands`, `.openhands_instructions` | Other file store locations (`conversations`) and hosted deployments. |
+| Amp (`amp`) | Linux and macOS: `$XDG_DATA_HOME/amp/threads/*.json` (medium 30d) | `$XDG_CONFIG_HOME/amp` entirely, `$XDG_DATA_HOME/amp/{secrets.json,session.json}`, `AGENTS.md`, `AGENT.md`, `.agents/{skills,commands}` | Windows path not verified; recent Amp builds keep threads in the cloud, so the local directory may be empty. |
+| Zed (`zed`) | `<data dir>/threads/threads.db*` (medium 30d), `Zed.log.old` (high 14d; logs dir is `~/Library/Logs/Zed` on macOS, `<data dir>/logs` elsewhere) | `$XDG_CONFIG_HOME/zed`, `~/.config/zed` (macOS), `%APPDATA%/Zed`, prompts, prompt overrides, external agents, project `.zed`, `.rules`, `AGENTS.md` | The live `Zed.log` (open by the running editor). |
+| Generic run logs (`agent-run-logs`) | Low, 30d: `*.jsonl` below `.agent/{runs,logs}`, `.agents/{runs,logs}`, `.agent-runs` at the project root | `.agent` and `.agents` skills, rules, commands and memory | Everything else: a heuristic for conventional scratch directories, not a tool documentation. |
+
+### Notes on sources
+
+- Claude Code: `code.claude.com/docs/en/claude-directory` (application data
+  table, legacy directories, auto memory below `projects/<project>/memory`).
+- Cursor, Windsurf, Cline, Roo Code and Copilot are extensions or forks of
+  VS Code, whose source defines `logs`, `CachedData` and `User/workspaceStorage`
+  below the user data directory. Cursor, Windsurf and Copilot paths come from
+  community documentation and source in public repositories (linked in each
+  entry) because the vendor documentation was not reachable when the entries
+  were written; a follow-up should re-check them against vendor docs.
+- Amp and OpenHands paths come from open source clients that read those
+  stores (linked in each entry), not vendor documentation.
+- The generic `agent-run-logs` directories are a naming convention, not
+  something a vendor documents; that is why they are `low`.
