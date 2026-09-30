@@ -102,7 +102,13 @@ func (a *app) startUpdateCheck(cmd *cobra.Command) {
 	a.update.pending = p
 	go func() {
 		// A panic in a best-effort goroutine must not crash the command.
-		defer func() { _ = recover() }()
+		// The channel is buffered, so the error outcome unblocks the post-run
+		// step immediately instead of after the full grace period.
+		defer func() {
+			if r := recover(); r != nil {
+				p.done <- checkOutcome{err: fmt.Errorf("update check panicked: %v", r)}
+			}
+		}()
 		entry, err := checker.Cached(ctx)
 		p.done <- checkOutcome{entry: entry, err: err}
 	}()

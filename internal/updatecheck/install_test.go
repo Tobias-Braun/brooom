@@ -21,9 +21,10 @@ func TestDetectInstall(t *testing.T) {
 		{"gopath bin", "/home/u/mygo/bin/brooom", env, MethodGo},
 		{"second gopath entry", "/extra/bin/brooom", env, MethodGo},
 		{"default go bin", "/home/u/go/bin/brooom", InstallEnv{Home: "/home/u"}, MethodGo},
-		{"go/bin heuristic", "/somewhere/go/bin/brooom", InstallEnv{}, MethodGo},
+		{"unrelated go/bin is not a go install", "/somewhere/go/bin/brooom", InstallEnv{}, MethodManual},
+		{"go toolchain dir", "/usr/local/go/bin/brooom", InstallEnv{Home: "/home/u"}, MethodManual},
 		{"windows gopath", `c:\users\u\gopath\bin\brooom.exe`, winEnv, MethodGo},
-		{"windows go/bin", `D:\dev\go\bin\brooom.exe`, InstallEnv{}, MethodGo},
+		{"windows go toolchain dir", `C:\Program Files\Go\bin\brooom.exe`, winEnv, MethodManual},
 		{"manual usr local", "/usr/local/bin/brooom", env, MethodManual},
 		{"manual windows", `C:\Tools\brooom.exe`, winEnv, MethodManual},
 		{"prefix only is not under bin", "/opt/gobinary/brooom", env, MethodManual},
@@ -46,10 +47,10 @@ func TestDetectInstallCommands(t *testing.T) {
 	cases := map[string]string{
 		"/opt/homebrew/Cellar/brooom/1/bin/brooom": "brew upgrade brooom",
 		`C:\u\scoop\apps\brooom\brooom.exe`:        "scoop update brooom",
-		"/x/go/bin/brooom":                         GoInstallCmd,
+		"/home/u/go/bin/brooom":                    GoInstallCmd,
 	}
 	for path, want := range cases {
-		got := DetectInstall(path, InstallEnv{})
+		got := DetectInstall(path, InstallEnv{Home: "/home/u"})
 		if got.Upgrade != want {
 			t.Errorf("%s: upgrade %q, want %q", path, got.Upgrade, want)
 		}

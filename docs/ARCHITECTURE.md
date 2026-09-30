@@ -184,6 +184,15 @@ The full key reference, merge semantics, validation rules and the
 - Tests: table-driven, `t.TempDir()`, `testutil.NewRepo` for git. Tests must
   pass on Linux, macOS and Windows (CI runs all three). Never touch the real
   home directory: set `BROOOM_HOME` / `HOME` / `XDG_DATA_HOME` to temp dirs.
+- CLI post-run steps: cobra runs only one `PersistentPostRun` per command
+  chain (the nearest one), so the root owns the single hook and it only
+  iterates `a.postRunHooks`. Features (update notice, and later #26) must
+  append to `a.postRunHooks` and never assign a command's `PersistentPostRun`,
+  or they would silently replace each other. Hooks run in registration order
+  after a successful command only.
+- Background work (update check): it is best effort, bounded by a short grace
+  period at exit, records each attempt in its cache so a slow or failing
+  network costs at most one request per backoff, and never fails a command.
 - Errors: wrap with context (`fmt.Errorf("...: %w", err)`), name the path.
 - Comments explain *why*; doc comments on every exported identifier.
 - Functions stay below cyclomatic complexity 15 (`gocyclo`).

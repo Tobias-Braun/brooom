@@ -2,6 +2,7 @@ package updatecheck
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -113,21 +114,51 @@ func TestCheckerCachedNoCacheAndCorruptCache(t *testing.T) {
 	}
 }
 
-func TestCheckerCachedFailureKeepsCache(t *testing.T) {
-	srv := httptest.NewServer(http.NotFoundHandler())
+// A failed fetch keeps the known release but records the attempt, and the
+// recorded attempt suppresses further requests for AttemptBackoff.
+func TestCheckerCachedFailureRecordsAttempt(t *testing.T) {
+	srv, hits := countingServer(t, "v9.0.0")
 	base := srv.URL
 	srv.Close()
 	path := filepath.Join(t.TempDir(), "update.json")
-	old := Cache{CheckedAt: t0, Latest: "v1.0.0"}
-	if err := WriteCache(path, old); err != nil {
+	if err := WriteCache(path, Cache{CheckedAt: t0, Latest: "v1.0.0", URL: "u"}); err != nil {
 		t.Fatal(err)
 	}
-	c := Checker{BaseURL: base, CachePath: path, Now: func() time.Time { return t0.Add(48 * time.Hour) }}
+	now := t0.Add(48 * time.Hour)
+	c := Checker{BaseURL: base, CachePath: path, Now: func() time.Time { return now }}
 	if _, err := c.Cached(context.Background()); err == nil {
 		t.Fatal("want fetch error")
 	}
-	if got, _ := ReadCache(path); got != old {
-		t.Errorf("cache changed on failure: %+v", got)
+	got, _ := ReadCache(path)
+	if got.Latest != "v1.0.0" || got.URL != "u" || !got.CheckedAt.Equal(t0) || !got.LastAttempt.Equal(now) {
+		t.Errorf("cache after failure: %+v", got)
+	}
+
+	// Within the backoff no request is made and the old release is returned.
+	live, liveHits := countingServer(t, "v9.0.0")
+	c.BaseURL = live.URL
+	now = now.Add(AttemptBackoff / 2)
+	if entry, err := c.Cached(context.Background()); err != nil || entry.Latest != "v1.0.0" || liveHits.Load() != 0 {
+		t.Fatalf("within backoff: %+v %v hits %d", entry, err, liveHits.Load())
+	}
+	// After the backoff a new attempt is made.
+	now = now.Add(AttemptBackoff)
+	if entry, err := c.Cached(context.Background()); err != nil || entry.Latest != "v9.0.0" || liveHits.Load() != 1 {
+		t.Fatalf("after backoff: %+v %v hits %d", entry, err, liveHits.Load())
+	}
+	_ = hits
+}
+
+// With nothing cached, a recent failed attempt yields ErrNoData, not a request.
+func TestCheckerCachedBackoffWithoutData(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "update.json")
+	if err := WriteCache(path, Cache{LastAttempt: t0}); err != nil {
+		t.Fatal(err)
+	}
+	srv, hits := countingServer(t, "v2.0.0")
+	c := Checker{BaseURL: srv.URL, CachePath: path, Now: func() time.Time { return t0.Add(time.Minute) }}
+	if _, err := c.Cached(context.Background()); !errors.Is(err, ErrNoData) || hits.Load() != 0 {
+		t.Fatalf("err %v hits %d", err, hits.Load())
 	}
 }
 

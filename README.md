@@ -68,7 +68,8 @@ network access in the whole tool is the opt-in update check:
   cached in `~/.brooom/cache/update.json`, and a one-line hint goes to
   stderr after a command when a newer version exists. It only runs in an
   interactive terminal with the default table output, never with `--quiet`,
-  and never delays or fails a command.
+  never fails a command, and waits at most 200 ms for the answer before
+  giving up (a slow or failed request is not retried for an hour).
 - Set `BROOOM_NO_UPDATE_CHECK=1` to disable the background check regardless
   of the config. `BROOOM_UPDATE_URL` points the check at a mirror (mainly
   used by tests).

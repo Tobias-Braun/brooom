@@ -3,6 +3,7 @@ package updatecheck
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,11 +14,21 @@ import (
 // CacheTTL is how long a background check result stays fresh.
 const CacheTTL = 24 * time.Hour
 
+// AttemptBackoff is how long after a fetch attempt no new attempt is made,
+// whether the attempt succeeded, failed or was cancelled when the command
+// exited. It bounds the cost of an offline, slow or rate limited network to
+// one request per backoff instead of one per command.
+const AttemptBackoff = time.Hour
+
 // Cache is the content of ~/.brooom/cache/update.json.
 type Cache struct {
 	CheckedAt time.Time `json:"checked_at"`
-	Latest    string    `json:"latest"`
-	URL       string    `json:"url"`
+	// LastAttempt is when the last fetch was started, even if it failed or was
+	// cancelled. It is written before the request so an interrupted attempt is
+	// still recorded.
+	LastAttempt time.Time `json:"last_attempt,omitempty"`
+	Latest      string    `json:"latest"`
+	URL         string    `json:"url"`
 }
 
 // ReadCache loads the cache file. A missing or corrupt file is an error the
@@ -75,21 +86,35 @@ type Checker struct {
 }
 
 // Cached returns the latest known release. A cache younger than CacheTTL is
-// returned as is without any network access; otherwise GitHub is asked once
-// and the answer is cached. A failed fetch is returned as an error and does
-// not touch the cache, so the next command retries. Failing to write the
-// cache is ignored: the answer is still valid for this run.
+// returned as is without any network access. Otherwise, unless an attempt was
+// made within AttemptBackoff, the attempt is recorded in the cache first
+// (keeping the previous latest/url) and GitHub is asked once; a command that
+// exits before the answer arrives therefore still suppresses further
+// requests. When no request is made and nothing is known, ErrNoData is
+// returned; a previously cached release is returned as is. Failing to write
+// the cache is ignored: the answer is still valid for this run.
 func (c Checker) Cached(ctx context.Context) (Cache, error) {
 	now := time.Now
 	if c.Now != nil {
 		now = c.Now
 	}
-	if cached, err := ReadCache(c.CachePath); err == nil && cached.Latest != "" {
-		// A checked_at in the future (clock change) counts as stale.
-		if age := now().Sub(cached.CheckedAt); age >= 0 && age < CacheTTL {
-			return cached, nil
-		}
+	cached, err := ReadCache(c.CachePath)
+	if err != nil {
+		cached = Cache{}
 	}
+	// A timestamp in the future (clock change) counts as stale.
+	if age := now().Sub(cached.CheckedAt); cached.Latest != "" && age >= 0 && age < CacheTTL {
+		return cached, nil
+	}
+	if age := now().Sub(cached.LastAttempt); !cached.LastAttempt.IsZero() && age >= 0 && age < AttemptBackoff {
+		if cached.Latest == "" {
+			return Cache{}, ErrNoData
+		}
+		return cached, nil
+	}
+	cached.LastAttempt = now().UTC()
+	_ = WriteCache(c.CachePath, cached)
+
 	base := c.BaseURL
 	if base == "" {
 		base = BaseURL()
@@ -102,7 +127,11 @@ func (c Checker) Cached(ctx context.Context) (Cache, error) {
 	if err != nil {
 		return Cache{}, err
 	}
-	entry := Cache{CheckedAt: now().UTC(), Latest: rel.TagName, URL: rel.HTMLURL}
+	entry := Cache{CheckedAt: now().UTC(), LastAttempt: cached.LastAttempt, Latest: rel.TagName, URL: rel.HTMLURL}
 	_ = WriteCache(c.CachePath, entry)
 	return entry, nil
 }
+
+// ErrNoData is returned by Cached when a recent attempt suppressed the request
+// and no release is known yet.
+var ErrNoData = errors.New("no update information cached yet")

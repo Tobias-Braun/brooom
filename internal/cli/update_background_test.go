@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -133,6 +134,40 @@ func TestBackgroundGraceDoesNotBlock(t *testing.T) {
 	}
 	if errOut.Len() != 0 {
 		t.Errorf("stderr = %q, want no notice after grace expiry", errOut)
+	}
+}
+
+// A request slower than the grace is cancelled at exit, but the attempt is
+// recorded, so the next command must not start another request.
+func TestBackgroundSlowRequestIsNotRetriedImmediately(t *testing.T) {
+	f := newReleaseFixture(t, 200, "v2.0.0", 10*time.Second)
+	a, _, _ := newTestApp(t, "1.0.0")
+	enableBackground(a)
+	a.update.grace = 100 * time.Millisecond
+	if code := execute(a, []string{"version"}); code != ExitOK {
+		t.Fatalf("code = %d", code)
+	}
+	// The request may still be on its way to the server when the command ends.
+	deadline := time.Now().Add(2 * time.Second)
+	for f.hits.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if f.hits.Load() != 1 {
+		t.Fatalf("hits after first run = %d, want 1", f.hits.Load())
+	}
+	// A second invocation shares the Brooom home (and so the cache file).
+	var errOut bytes.Buffer
+	b := &app{io: IO{In: strings.NewReader(""), Out: &bytes.Buffer{}, Err: &errOut}}
+	b.update = a.update
+	if code := execute(b, []string{"version"}); code != ExitOK {
+		t.Fatalf("code = %d", code)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if f.hits.Load() != 1 {
+		t.Errorf("hits after second run = %d, want 1 (attempt must be recorded)", f.hits.Load())
+	}
+	if errOut.Len() != 0 {
+		t.Errorf("stderr = %q", errOut)
 	}
 }
 

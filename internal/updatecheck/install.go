@@ -69,13 +69,12 @@ func normalizePath(p string) string {
 }
 
 func underGoBin(p string, env InstallEnv) bool {
-	if strings.Contains(p, "/go/bin/") {
-		return true
-	}
 	var dirs []string
 	if env.GOBIN != "" {
 		dirs = append(dirs, env.GOBIN)
 	}
+	// Without GOPATH the Go default <home>/go applies. A bare "/go/bin/"
+	// substring is not used: it also matches the Go toolchain directory.
 	gopath := env.GOPATH
 	if len(gopath) == 0 && env.Home != "" {
 		gopath = []string{filepath.Join(env.Home, "go")}
