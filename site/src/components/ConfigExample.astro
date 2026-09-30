@@ -1,0 +1,35 @@
+---
+/**
+ * Every key below exists in internal/config/config.go and the values are
+ * valid: roots[].path, thresholds.min_age_days, detectors.<name>.enabled and
+ * trash.strategy / trash.quarantine_retention_days. If Default() changes,
+ * the code wins and this excerpt must follow.
+ */
+const config = `{
+  "version": 1,
+  "roots": [{ "path": "~/code" }],
+  "thresholds": { "min_age_days": 30 },
+  "detectors": {
+    "git-bloat": { "enabled": false }
+  },
+  "trash": {
+    "strategy": "quarantine",
+    "quarantine_retention_days": 14
+  }
+}`;
+---
+
+<section class="section" id="config" aria-labelledby="config-title">
+  <div class="wrap">
+    <h2 id="config-title">Zero config, fully configurable</h2>
+    <p class="section-intro">
+      All fields have safe defaults, so Brooom works inside a repository without any config. To
+      sweep several projects with <code>--workspaces</code>, add roots and tune the rest in
+      <code>~/.brooom/config.json</code>. This excerpt adds one root, raises the minimum age to 30
+      days, turns one detector off and moves removed files to quarantine.
+    </p>
+    <div data-slot="config-copy" class="code-block">
+      <pre tabindex="0"><code>{config}</code></pre>
+    </div>
+  </div>
+</section>

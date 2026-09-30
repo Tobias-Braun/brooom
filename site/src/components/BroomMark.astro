@@ -1,0 +1,96 @@
+---
+/**
+ * The Brooom broom mark: a diagonal handle and a swept bristle fan, drawn in
+ * the brand gradient. Decorative next to the wordmark (`aria-hidden`), and
+ * given a <title> when it stands alone (`title` prop).
+ */
+interface Props {
+  /** Accessible name; omit when the mark sits next to the wordmark. */
+  title?: string;
+  size?: number;
+  /** Unique gradient id, required when several marks share one page. */
+  id?: string;
+  /** Adds the CSS-only sweep accent (respects reduced motion). */
+  sweep?: boolean;
+}
+const { title, size = 32, id = 'broom-grad', sweep = false } = Astro.props;
+---
+
+<svg
+  class:list={['broom', { sweep }]}
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 64 64"
+  width={size}
+  height={size}
+  fill="none"
+  role={title ? 'img' : undefined}
+  aria-hidden={title ? undefined : 'true'}
+  focusable="false"
+>
+  {title && <title>{title}</title>}
+  <defs>
+    <linearGradient id={id} x1="8" y1="58" x2="58" y2="6" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="var(--violet, #a78bfa)"></stop>
+      <stop offset="1" stop-color="var(--blue, #60a5fa)"></stop>
+    </linearGradient>
+  </defs>
+  <g class="body">
+    <path d="M56 6 35 27" stroke={`url(#${id})`} stroke-width="5" stroke-linecap="round"></path>
+    <path
+      d="M32.2 26.2 37.8 31.8 21.2 61.2 2.8 42.8Z"
+      fill={`url(#${id})`}
+      stroke={`url(#${id})`}
+      stroke-width="3"
+      stroke-linejoin="round"></path>
+    <path
+      d="M36.4 30.4 16.6 56.6M33.6 27.6 7.4 47.4"
+      stroke="var(--bg, #0a0913)"
+      stroke-width="2"
+      stroke-linecap="round"></path>
+  </g>
+  <g class="dust" stroke="var(--neon, #5eead4)" stroke-width="2.5" stroke-linecap="round">
+    <path d="M46 56h8"></path>
+    <path d="M52 49h6"></path>
+  </g>
+</svg>
+
+<style>
+  .broom {
+    display: block;
+    flex: none;
+  }
+
+  /* Pure-CSS sweep: the broom rocks gently, the dust dashes slide out. */
+  @media (prefers-reduced-motion: no-preference) {
+    .sweep .body {
+      transform-origin: 50% 90%;
+      animation: rock 3.2s ease-in-out infinite;
+    }
+
+    .sweep .dust {
+      animation: dust 3.2s ease-in-out infinite;
+    }
+  }
+
+  @keyframes rock {
+    0%,
+    100% {
+      transform: rotate(-4deg);
+    }
+    50% {
+      transform: rotate(5deg);
+    }
+  }
+
+  @keyframes dust {
+    0%,
+    100% {
+      opacity: 0.35;
+      transform: translateX(0);
+    }
+    50% {
+      opacity: 1;
+      transform: translateX(3px);
+    }
+  }
+</style>

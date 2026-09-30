@@ -1,0 +1,55 @@
+---
+import '../styles/global.css';
+import { withBase } from '../lib/url';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Brooom - sweep your workspace clean',
+  description = 'Brooom is a fast, safe, cross-platform CLI that sweeps the disk clutter AI-assisted development leaves behind. Dry run by default.',
+} = Astro.props;
+
+// Absolute URLs (canonical, Open Graph) are derived from the configured
+// `site` and `base`, so they follow the deployment automatically.
+const site = Astro.site ?? new URL('https://tobias-braun.github.io');
+const canonical = new URL(withBase(), site).href;
+const ogImage = new URL(withBase('og.png'), site).href;
+const ogAlt = 'Brooom: sweep your workspace clean, fast, so your agent fleet can run again.';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0a0913" />
+    <link rel="icon" type="image/svg+xml" href={withBase('favicon.svg')} />
+    <link rel="apple-touch-icon" href={withBase('apple-touch-icon.png')} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={ogAlt} />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content={ogAlt} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <slot />
+  </body>
+</html>

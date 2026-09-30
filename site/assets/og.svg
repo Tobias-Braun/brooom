@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="g" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#60a5fa"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.8" cy="0.2" r="0.7">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#0a0913"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <rect x="0" y="618" width="1200" height="12" fill="url(#g)"/>
+  <g transform="translate(835 105) scale(5.6)">
+    <path d="M56 6 35 27" stroke="url(#g)" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M32.2 26.2 37.8 31.8 21.2 61.2 2.8 42.8Z" fill="url(#g)" stroke="url(#g)" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M36.4 30.4 16.6 56.6M33.6 27.6 7.4 47.4" stroke="#0a0913" stroke-width="2" stroke-linecap="round" fill="none"/>
+    <path d="M46 56h8M52 49h6" stroke="#5eead4" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+  </g>
+  <text x="80" y="230" font-family="DejaVu Sans, Arial, sans-serif" font-size="110" font-weight="800" fill="#ecebf7">Brooom</text>
+  <text x="80" y="330" font-family="DejaVu Sans, Arial, sans-serif" font-size="36" font-weight="700" fill="url(#g)">Sweep your workspace clean, fast.</text>
+  <text x="80" y="390" font-family="DejaVu Sans, Arial, sans-serif" font-size="36" fill="#aeacc9">So your agent fleet can run again.</text>
+  <text x="80" y="540" font-family="DejaVu Sans Mono, monospace" font-size="30" fill="#5eead4">$ brooom sweep</text>
+</svg>

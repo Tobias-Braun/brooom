@@ -1,0 +1,91 @@
+---
+import BroomMark from './BroomMark.astro';
+import { REPO_URL, withBase } from '../lib/url';
+
+/**
+ * Anchor navigation without a collapsing menu: the page ships no JavaScript,
+ * so the short link list simply wraps below the wordmark on narrow screens.
+ */
+const links = [
+  { href: '#install', label: 'Install' },
+  { href: '#features', label: 'Features' },
+  { href: '#finds', label: 'What it finds' },
+  { href: '#config', label: 'Config' },
+  { href: REPO_URL, label: 'GitHub' },
+];
+---
+
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href={withBase()}>
+      <BroomMark size={30} id="broom-header" />
+      <span class="wordmark">Brooom</span>
+    </a>
+    <nav aria-label="Primary">
+      <ul>
+        {
+          links.map((l) => (
+            <li>
+              <a href={l.href}>{l.label}</a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    border-bottom: 1px solid var(--border);
+    background: rgb(10 9 19 / 0.85);
+  }
+
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-4);
+    padding-block: var(--space-2);
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 44px;
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 800;
+    font-size: 1.25rem;
+    letter-spacing: -0.02em;
+  }
+
+  .brand:hover {
+    color: var(--text);
+  }
+
+  ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-inline: 0.6rem;
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+
+  nav a:hover {
+    color: var(--text);
+    text-decoration: underline;
+  }
+</style>
