@@ -8,22 +8,70 @@
       "homepage": "https://www.anthropic.com/claude-code",
       "entries": [
         {
-          "scope": "project",
-          "patterns": [".claude/*.log"],
-          "kind": "file",
-          "confidence": "high",
-          "min_age_days": 14,
-          "description": "Run logs written next to the project settings",
-          "source": "https://docs.claude.com/en/docs/claude-code/settings"
-        },
-        {
           "scope": "user",
-          "patterns": ["~/.claude/todos"],
+          "patterns": [
+            "~/.claude/projects/*/*.jsonl"
+          ],
           "kind": "file",
           "confidence": "medium",
           "min_age_days": 30,
-          "description": "Per-session todo lists of finished sessions",
-          "source": "https://docs.claude.com/en/docs/claude-code/settings"
+          "description": "Full conversation transcripts of past sessions; history that Claude Code itself expires after cleanupPeriodDays and does not regenerate",
+          "source": "https://code.claude.com/docs/en/claude-directory"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.claude/file-history"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Per-session pre-edit file snapshots used for checkpoint restore of past sessions; not regenerated",
+          "source": "https://code.claude.com/docs/en/claude-directory"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.claude/todos"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Legacy per-session todo lists that current versions no longer write",
+          "source": "https://code.claude.com/docs/en/claude-directory"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.claude/shell-snapshots"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Shell aliases and functions captured at startup; recaptured by every new session",
+          "source": "https://code.claude.com/docs/en/claude-directory"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.claude/debug"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Per-session debug logs written only while debug logging is on",
+          "source": "https://code.claude.com/docs/en/claude-directory"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.claude/statsig"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Legacy feature flag cache that current versions no longer write; refetched if needed",
+          "source": "https://code.claude.com/docs/en/claude-directory"
         }
       ],
       "protect": [
@@ -31,27 +79,1467 @@
           "scope": "project",
           "patterns": [
             "CLAUDE.md",
+            "CLAUDE.local.md",
+            ".mcp.json",
+            ".worktreeinclude",
             ".claude/settings.json",
             ".claude/settings.local.json",
             ".claude/commands",
             ".claude/agents",
             ".claude/skills",
-            ".claude/hooks"
+            ".claude/hooks",
+            ".claude/rules",
+            ".claude/agent-memory",
+            ".claude/agent-memory-local"
           ],
-          "reason": "Project instructions, settings, commands, agents, skills and hooks are configuration, not clutter"
+          "reason": "Project instructions, settings, commands, agents, skills, hooks and memory are configuration, not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".claude/worktrees",
+            ".worktrees"
+          ],
+          "reason": "Agent created git worktrees may hold uncommitted or unpushed work; they belong to the worktrees detector and its dirty, locked and unpushed checks"
         },
         {
           "scope": "user",
           "patterns": [
+            "~/.claude.json",
             "~/.claude/CLAUDE.md",
+            "~/.claude/CLAUDE.local.md",
             "~/.claude/settings.json",
             "~/.claude/settings.local.json",
+            "~/.claude/keybindings.json",
+            "~/.claude/.credentials.json",
             "~/.claude/commands",
             "~/.claude/agents",
             "~/.claude/skills",
-            "~/.claude/hooks"
+            "~/.claude/hooks",
+            "~/.claude/rules",
+            "~/.claude/plugins",
+            "~/.claude/agent-memory",
+            "~/.claude/history.jsonl"
           ],
-          "reason": "User level instructions, settings, commands, agents, skills and hooks are configuration, not clutter"
+          "reason": "User level instructions, settings, credentials, commands, agents, skills, hooks and prompt history are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.claude/projects/*/memory"
+          ],
+          "reason": "Auto memory is Claude's accumulated knowledge about a project, not a transcript"
+        }
+      ]
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "category": "ai",
+      "homepage": "https://cursor.com",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Cursor/logs"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Per-session log directories of the editor, recreated on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/vs/platform/environment/common/environmentService.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Cursor/logs"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Per-session log directories of the editor, recreated on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/vs/platform/environment/common/environmentService.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Cursor/logs"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Per-session log directories of the editor, recreated on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/vs/platform/environment/common/environmentService.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Cursor/CachedData"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "V8 code cache per editor build, rebuilt on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/mainImpl.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Cursor/CachedData"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "V8 code cache per editor build, rebuilt on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/mainImpl.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Cursor/CachedData"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "V8 code cache per editor build, rebuilt on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/mainImpl.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Cursor/Cache"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Chromium HTTP cache of the editor, refilled on demand",
+          "source": "https://github.com/S2thend/cursor-history/blob/main/README.md"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Cursor/Cache"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Chromium HTTP cache of the editor, refilled on demand",
+          "source": "https://github.com/S2thend/cursor-history/blob/main/README.md"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Cursor/Cache"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Chromium HTTP cache of the editor, refilled on demand",
+          "source": "https://github.com/S2thend/cursor-history/blob/main/README.md"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Cursor/User/workspaceStorage"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Per-workspace state databases that also hold the chat and composer history of that workspace; history is not regenerated",
+          "source": "https://github.com/S2thend/cursor-history/blob/main/README.md"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Cursor/User/workspaceStorage"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Per-workspace state databases that also hold the chat and composer history of that workspace; history is not regenerated",
+          "source": "https://github.com/S2thend/cursor-history/blob/main/README.md"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Cursor/User/workspaceStorage"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Per-workspace state databases that also hold the chat and composer history of that workspace; history is not regenerated",
+          "source": "https://github.com/S2thend/cursor-history/blob/main/README.md"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.cursor/projects/*/agent-transcripts/**/*.jsonl",
+            "~/.cursor/projects/*/agent-transcripts/**/*.txt"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Plain text and JSONL transcripts of past agent conversations; history that is not regenerated",
+          "source": "https://github.com/S2thend/cursor-history/blob/main/README.md"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Cursor/User/settings.json",
+            "$XDG_CONFIG_HOME/Cursor/User/keybindings.json",
+            "$XDG_CONFIG_HOME/Cursor/User/snippets",
+            "$XDG_CONFIG_HOME/Cursor/User/mcp.json",
+            "$XDG_CONFIG_HOME/Cursor/User/globalStorage/state.vscdb*",
+            "$XDG_CONFIG_HOME/Cursor/User/globalStorage/storage.json"
+          ],
+          "os": [
+            "linux"
+          ],
+          "reason": "Editor settings, keybindings, snippets, MCP configuration and the global state database (accounts, tokens) are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Cursor/User/settings.json",
+            "~/Library/Application Support/Cursor/User/keybindings.json",
+            "~/Library/Application Support/Cursor/User/snippets",
+            "~/Library/Application Support/Cursor/User/mcp.json",
+            "~/Library/Application Support/Cursor/User/globalStorage/state.vscdb*",
+            "~/Library/Application Support/Cursor/User/globalStorage/storage.json"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "reason": "Editor settings, keybindings, snippets, MCP configuration and the global state database (accounts, tokens) are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Cursor/User/settings.json",
+            "%APPDATA%/Cursor/User/keybindings.json",
+            "%APPDATA%/Cursor/User/snippets",
+            "%APPDATA%/Cursor/User/mcp.json",
+            "%APPDATA%/Cursor/User/globalStorage/state.vscdb*",
+            "%APPDATA%/Cursor/User/globalStorage/storage.json"
+          ],
+          "os": [
+            "windows"
+          ],
+          "reason": "Editor settings, keybindings, snippets, MCP configuration and the global state database (accounts, tokens) are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.cursor/mcp.json",
+            "~/.cursor/rules",
+            "~/.cursor/commands",
+            "~/.cursor/skills",
+            "~/.cursor/extensions",
+            "~/.cursor/cli-config.json",
+            "~/.cursor/argv.json"
+          ],
+          "reason": "User level rules, MCP servers, commands, skills, extensions and CLI configuration are not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".cursorrules",
+            ".cursor/rules",
+            ".cursor/mcp.json",
+            ".cursor/commands",
+            ".cursor/skills",
+            ".cursorignore",
+            ".cursorindexingignore"
+          ],
+          "reason": "Project rules, MCP servers, commands and ignore files are configuration, not clutter"
+        }
+      ]
+    },
+    {
+      "id": "aider",
+      "name": "Aider",
+      "category": "ai",
+      "homepage": "https://aider.chat",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [
+            ".aider.chat.history.md"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Markdown log of past chat sessions in this repository; history that is not regenerated",
+          "source": "https://github.com/Aider-AI/aider/blob/main/aider/website/docs/config/options.md"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".aider.input.history"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Readline history of prompts typed in this repository; not regenerated",
+          "source": "https://github.com/Aider-AI/aider/blob/main/aider/website/docs/config/options.md"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".aider.tags.cache.v*"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Repository map tag cache, rebuilt on the next run",
+          "source": "https://github.com/Aider-AI/aider/blob/main/aider/repomap.py"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "project",
+          "patterns": [
+            ".aider.conf.yml",
+            ".aiderignore",
+            ".env",
+            ".aider.model.settings.yml",
+            ".aider.model.metadata.json",
+            "CONVENTIONS.md"
+          ],
+          "reason": "Aider configuration, ignore rules, model settings, conventions and .env (API keys) are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.aider.conf.yml",
+            "~/.aider.model.settings.yml",
+            "~/.aider.model.metadata.json"
+          ],
+          "reason": "User level Aider configuration is not clutter"
+        }
+      ]
+    },
+    {
+      "id": "github-copilot",
+      "name": "GitHub Copilot",
+      "category": "ai",
+      "homepage": "https://github.com/features/copilot",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Code/logs/*/window*/exthost/GitHub.copilot-chat/*.log"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Copilot Chat extension logs inside the VS Code session log directories; rewritten on every session",
+          "source": "https://github.com/saisasivardhan-bb/BBF-Code/blob/main/.agents/skills/code-oss-logs/SKILL.md"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Code/logs/*/window*/exthost/GitHub.copilot-chat/*.log"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Copilot Chat extension logs inside the VS Code session log directories; rewritten on every session",
+          "source": "https://github.com/saisasivardhan-bb/BBF-Code/blob/main/.agents/skills/code-oss-logs/SKILL.md"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Code/logs/*/window*/exthost/GitHub.copilot-chat/*.log"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Copilot Chat extension logs inside the VS Code session log directories; rewritten on every session",
+          "source": "https://github.com/saisasivardhan-bb/BBF-Code/blob/main/.agents/skills/code-oss-logs/SKILL.md"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Code/User/settings.json",
+            "$XDG_CONFIG_HOME/Code/User/keybindings.json",
+            "$XDG_CONFIG_HOME/Code/User/snippets",
+            "$XDG_CONFIG_HOME/Code/User/prompts",
+            "$XDG_CONFIG_HOME/Code/User/mcp.json",
+            "$XDG_CONFIG_HOME/Code/User/globalStorage/github.copilot-chat"
+          ],
+          "os": [
+            "linux"
+          ],
+          "reason": "Editor settings, prompt files and Copilot extension state are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Code/User/settings.json",
+            "~/Library/Application Support/Code/User/keybindings.json",
+            "~/Library/Application Support/Code/User/snippets",
+            "~/Library/Application Support/Code/User/prompts",
+            "~/Library/Application Support/Code/User/mcp.json",
+            "~/Library/Application Support/Code/User/globalStorage/github.copilot-chat"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "reason": "Editor settings, prompt files and Copilot extension state are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Code/User/settings.json",
+            "%APPDATA%/Code/User/keybindings.json",
+            "%APPDATA%/Code/User/snippets",
+            "%APPDATA%/Code/User/prompts",
+            "%APPDATA%/Code/User/mcp.json",
+            "%APPDATA%/Code/User/globalStorage/github.copilot-chat"
+          ],
+          "os": [
+            "windows"
+          ],
+          "reason": "Editor settings, prompt files and Copilot extension state are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.config/github-copilot",
+            "~/.copilot"
+          ],
+          "reason": "Everything below the Copilot configuration directories is authentication or configuration (hosts.json, apps.json, tokens)"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%LOCALAPPDATA%/github-copilot"
+          ],
+          "os": [
+            "windows"
+          ],
+          "reason": "Everything below the Copilot configuration directory is authentication or configuration (hosts.json, apps.json, tokens)"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".github/copilot-instructions.md",
+            ".github/instructions",
+            ".github/prompts",
+            ".github/agents",
+            ".github/chatmodes",
+            ".vscode/mcp.json"
+          ],
+          "reason": "Project instructions, prompts, agents and MCP configuration are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "codex-cli",
+      "name": "OpenAI Codex CLI",
+      "category": "ai",
+      "homepage": "https://github.com/openai/codex",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.codex/sessions/**/*.jsonl"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Rollout transcripts of past sessions, one JSONL file per session; history that is not regenerated",
+          "source": "https://github.com/openai/codex/blob/main/codex-rs/rollout/src/lib.rs"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.codex/log"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Diagnostic log files such as codex-tui.log, recreated on the next run",
+          "source": "https://github.com/openai/codex/blob/main/codex-rs/core/src/config/mod.rs"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.codex/config.toml",
+            "~/.codex/auth.json",
+            "~/.codex/AGENTS.md",
+            "~/.codex/AGENTS.override.md",
+            "~/.codex/prompts",
+            "~/.codex/skills",
+            "~/.codex/rules",
+            "~/.codex/history.jsonl"
+          ],
+          "reason": "Configuration, credentials, instructions, prompts, skills and rules are not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            "AGENTS.md",
+            "AGENTS.override.md",
+            ".codex"
+          ],
+          "reason": "Project instructions and Codex configuration are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "gemini-cli",
+      "name": "Gemini CLI",
+      "category": "ai",
+      "homepage": "https://github.com/google-gemini/gemini-cli",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.gemini/tmp/*/chats/*"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Saved conversations per project; history that is not regenerated",
+          "source": "https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/config/storage.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.gemini/tmp/*/checkpoints/*"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Conversation state saved with checkpoints of past sessions; not regenerated",
+          "source": "https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/checkpointing.md"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.gemini/tmp/*/logs/*"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Per-project session logs, recreated on the next run",
+          "source": "https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/config/storage.ts"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.gemini/settings.json",
+            "~/.gemini/GEMINI.md",
+            "~/.gemini/oauth_creds.json",
+            "~/.gemini/google_accounts.json",
+            "~/.gemini/trustedFolders.json",
+            "~/.gemini/installation_id",
+            "~/.gemini/.env",
+            "~/.gemini/commands",
+            "~/.gemini/extensions",
+            "~/.gemini/policies",
+            "~/.gemini/skills",
+            "~/.gemini/agents",
+            "~/.gemini/history"
+          ],
+          "reason": "Settings, instructions, credentials, commands, extensions and the checkpoint shadow repositories are not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            "GEMINI.md",
+            ".gemini",
+            ".geminiignore"
+          ],
+          "reason": "Project instructions and Gemini configuration are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "continue",
+      "name": "Continue",
+      "category": "ai",
+      "homepage": "https://www.continue.dev",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.continue/sessions/[!s]*.json"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Saved chat sessions (one file per session id, never the sessions.json list); history that is not regenerated",
+          "source": "https://github.com/continuedev/continue/blob/main/core/util/paths.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.continue/index"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Codebase index databases, rebuilt by the next indexing run",
+          "source": "https://github.com/continuedev/continue/blob/main/core/util/paths.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.continue/index"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Codebase index directories, rebuilt by the next indexing run",
+          "source": "https://github.com/continuedev/continue/blob/main/core/util/paths.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.continue/logs"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Core log files such as core.log, recreated on the next start",
+          "source": "https://github.com/continuedev/continue/blob/main/core/util/paths.ts"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.continue/sessions/sessions.json"
+          ],
+          "reason": "The session list is the index of the saved sessions"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.continue/config.json",
+            "~/.continue/config.yaml",
+            "~/.continue/config.ts",
+            "~/.continue/.continuerc.json",
+            "~/.continue/.continuerc",
+            "~/.continue/rules",
+            "~/.continue/prompts",
+            "~/.continue/mcpServers",
+            "~/.continue/assistants",
+            "~/.continue/.env"
+          ],
+          "reason": "Configuration, rules, prompts, MCP servers and credentials are not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".continue",
+            ".continuerc.json",
+            ".continuerc"
+          ],
+          "reason": "Project configuration and rules are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "cline",
+      "name": "Cline",
+      "category": "ai",
+      "homepage": "https://cline.bot",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Code/User/globalStorage/saoudrizwan.claude-dev/tasks",
+            "$XDG_CONFIG_HOME/Cursor/User/globalStorage/saoudrizwan.claude-dev/tasks"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Cline task directories with the API conversation and UI messages of past tasks; history that is not regenerated",
+          "source": "https://github.com/cline/cline/blob/main/apps/vscode/src/core/storage/disk.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/tasks",
+            "~/Library/Application Support/Cursor/User/globalStorage/saoudrizwan.claude-dev/tasks"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Cline task directories with the API conversation and UI messages of past tasks; history that is not regenerated",
+          "source": "https://github.com/cline/cline/blob/main/apps/vscode/src/core/storage/disk.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev/tasks",
+            "%APPDATA%/Cursor/User/globalStorage/saoudrizwan.claude-dev/tasks"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Cline task directories with the API conversation and UI messages of past tasks; history that is not regenerated",
+          "source": "https://github.com/cline/cline/blob/main/apps/vscode/src/core/storage/disk.ts"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Code/User/globalStorage/saoudrizwan.claude-dev/settings",
+            "$XDG_CONFIG_HOME/Cursor/User/globalStorage/saoudrizwan.claude-dev/settings"
+          ],
+          "os": [
+            "linux"
+          ],
+          "reason": "Extension settings (MCP servers, custom modes) are configuration, not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings",
+            "~/Library/Application Support/Cursor/User/globalStorage/saoudrizwan.claude-dev/settings"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "reason": "Extension settings (MCP servers, custom modes) are configuration, not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev/settings",
+            "%APPDATA%/Cursor/User/globalStorage/saoudrizwan.claude-dev/settings"
+          ],
+          "os": [
+            "windows"
+          ],
+          "reason": "Extension settings (MCP servers, custom modes) are configuration, not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Documents/Cline",
+            "~/.cline"
+          ],
+          "reason": "Cline rules, workflows and hooks are not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".clinerules",
+            ".clineignore",
+            ".cline"
+          ],
+          "reason": "Project rules and ignore files are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "roo-code",
+      "name": "Roo Code",
+      "category": "ai",
+      "homepage": "https://roocode.com",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks",
+            "$XDG_CONFIG_HOME/Cursor/User/globalStorage/rooveterinaryinc.roo-cline/tasks"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Roo Code task directories with the API conversation and UI messages of past tasks; history that is not regenerated",
+          "source": "https://github.com/RooCodeInc/Roo-Code/blob/main/src/utils/storage.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks",
+            "~/Library/Application Support/Cursor/User/globalStorage/rooveterinaryinc.roo-cline/tasks"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Roo Code task directories with the API conversation and UI messages of past tasks; history that is not regenerated",
+          "source": "https://github.com/RooCodeInc/Roo-Code/blob/main/src/utils/storage.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks",
+            "%APPDATA%/Cursor/User/globalStorage/rooveterinaryinc.roo-cline/tasks"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Roo Code task directories with the API conversation and UI messages of past tasks; history that is not regenerated",
+          "source": "https://github.com/RooCodeInc/Roo-Code/blob/main/src/utils/storage.ts"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings",
+            "$XDG_CONFIG_HOME/Cursor/User/globalStorage/rooveterinaryinc.roo-cline/settings"
+          ],
+          "os": [
+            "linux"
+          ],
+          "reason": "Extension settings (MCP servers, custom modes) are configuration, not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings",
+            "~/Library/Application Support/Cursor/User/globalStorage/rooveterinaryinc.roo-cline/settings"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "reason": "Extension settings (MCP servers, custom modes) are configuration, not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings",
+            "%APPDATA%/Cursor/User/globalStorage/rooveterinaryinc.roo-cline/settings"
+          ],
+          "os": [
+            "windows"
+          ],
+          "reason": "Extension settings (MCP servers, custom modes) are configuration, not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.roo"
+          ],
+          "reason": "User level Roo rules, modes and commands are not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".roo",
+            ".roomodes",
+            ".roorules",
+            ".rooignore"
+          ],
+          "reason": "Project rules, custom modes and ignore files are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "windsurf",
+      "name": "Windsurf",
+      "category": "ai",
+      "homepage": "https://windsurf.com",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Windsurf/logs"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Per-session log directories of the editor, recreated on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/vs/platform/environment/common/environmentService.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Windsurf/logs"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Per-session log directories of the editor, recreated on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/vs/platform/environment/common/environmentService.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Windsurf/logs"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Per-session log directories of the editor, recreated on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/vs/platform/environment/common/environmentService.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Windsurf/CachedData"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "V8 code cache per editor build, rebuilt on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/mainImpl.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Windsurf/CachedData"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "V8 code cache per editor build, rebuilt on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/mainImpl.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Windsurf/CachedData"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "V8 code cache per editor build, rebuilt on the next start",
+          "source": "https://github.com/microsoft/vscode/blob/main/src/mainImpl.ts"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Windsurf/Cache"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Chromium HTTP cache of the editor, refilled on demand",
+          "source": "https://github.com/agiletec-inc/mindbase/blob/main/libs/collectors/windsurf_collector.py"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Windsurf/Cache"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Chromium HTTP cache of the editor, refilled on demand",
+          "source": "https://github.com/agiletec-inc/mindbase/blob/main/libs/collectors/windsurf_collector.py"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Windsurf/Cache"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Chromium HTTP cache of the editor, refilled on demand",
+          "source": "https://github.com/agiletec-inc/mindbase/blob/main/libs/collectors/windsurf_collector.py"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/Windsurf/User/settings.json",
+            "$XDG_CONFIG_HOME/Windsurf/User/keybindings.json",
+            "$XDG_CONFIG_HOME/Windsurf/User/snippets",
+            "$XDG_CONFIG_HOME/Windsurf/User/mcp.json",
+            "$XDG_CONFIG_HOME/Windsurf/User/globalStorage/state.vscdb*",
+            "$XDG_CONFIG_HOME/Windsurf/User/globalStorage/storage.json"
+          ],
+          "os": [
+            "linux"
+          ],
+          "reason": "Editor settings, keybindings, snippets, MCP configuration and the global state database (accounts, tokens) are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Windsurf/User/settings.json",
+            "~/Library/Application Support/Windsurf/User/keybindings.json",
+            "~/Library/Application Support/Windsurf/User/snippets",
+            "~/Library/Application Support/Windsurf/User/mcp.json",
+            "~/Library/Application Support/Windsurf/User/globalStorage/state.vscdb*",
+            "~/Library/Application Support/Windsurf/User/globalStorage/storage.json"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "reason": "Editor settings, keybindings, snippets, MCP configuration and the global state database (accounts, tokens) are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Windsurf/User/settings.json",
+            "%APPDATA%/Windsurf/User/keybindings.json",
+            "%APPDATA%/Windsurf/User/snippets",
+            "%APPDATA%/Windsurf/User/mcp.json",
+            "%APPDATA%/Windsurf/User/globalStorage/state.vscdb*",
+            "%APPDATA%/Windsurf/User/globalStorage/storage.json"
+          ],
+          "os": [
+            "windows"
+          ],
+          "reason": "Editor settings, keybindings, snippets, MCP configuration and the global state database (accounts, tokens) are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.codeium/windsurf"
+          ],
+          "reason": "Cascade memories, global rules and MCP configuration are not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".windsurf",
+            ".windsurfrules",
+            ".codeiumignore"
+          ],
+          "reason": "Project rules, workflows and ignore files are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "goose",
+      "name": "Goose",
+      "category": "ai",
+      "homepage": "https://block.github.io/goose/",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.local/share/goose/sessions/*.jsonl"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Session transcripts of past runs; history that is not regenerated",
+          "source": "https://github.com/block/goose/blob/main/documentation/docs/guides/config-files.md"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.local/state/goose/logs"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "dir",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Log directories of past runs, recreated on the next run",
+          "source": "https://github.com/block/goose/blob/main/documentation/docs/guides/config-files.md"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.config/goose"
+          ],
+          "reason": "config.yaml, permission.yaml, secrets.yaml and prompts are configuration and credentials"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Block/goose/config"
+          ],
+          "os": [
+            "windows"
+          ],
+          "reason": "config.yaml, permission.yaml, secrets.yaml and prompts are configuration and credentials"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".goosehints",
+            ".goose",
+            "AGENTS.md"
+          ],
+          "reason": "Project hints and instructions are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "openhands",
+      "name": "OpenHands",
+      "category": "ai",
+      "homepage": "https://github.com/All-Hands-AI/OpenHands",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.openhands/sessions"
+          ],
+          "kind": "dir",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Per-session event streams of past conversations in the default local file store; history that is not regenerated",
+          "source": "https://github.com/jhlee0409/claude-code-history-viewer/blob/main/src-tauri/src/providers/openhands.rs"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.openhands/*.json",
+            "~/.openhands/config.toml",
+            "~/.openhands/.env",
+            "~/.openhands/microagents",
+            "~/.openhands/skills",
+            "~/.openhands/.jwt_secret"
+          ],
+          "reason": "Settings, secrets, credentials and microagents are not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".openhands",
+            ".openhands_instructions"
+          ],
+          "reason": "Project microagents and instructions are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "amp",
+      "name": "Amp",
+      "category": "ai",
+      "homepage": "https://ampcode.com",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_DATA_HOME/amp/threads/*.json"
+          ],
+          "os": [
+            "linux",
+            "darwin"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "Locally persisted thread files of past conversations; history that is not regenerated",
+          "source": "https://github.com/Ataraxy-Labs/opensessions/blob/main/integrations/amp/opensessions.ts"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/amp"
+          ],
+          "os": [
+            "linux",
+            "darwin"
+          ],
+          "reason": "Settings, plugins and MCP configuration are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_DATA_HOME/amp/secrets.json",
+            "$XDG_DATA_HOME/amp/session.json"
+          ],
+          "os": [
+            "linux",
+            "darwin"
+          ],
+          "reason": "Stored credentials and the current agent mode are not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            "AGENTS.md",
+            "AGENT.md",
+            ".agents/skills",
+            ".agents/commands"
+          ],
+          "reason": "Project instructions and skills are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "zed",
+      "name": "Zed",
+      "category": "ai",
+      "homepage": "https://zed.dev",
+      "entries": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_DATA_HOME/zed/threads/threads.db*"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "SQLite database of saved agent threads; history that is not regenerated",
+          "source": "https://github.com/zed-industries/zed/blob/main/crates/agent/src/db.rs"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Application Support/Zed/threads/threads.db*"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "SQLite database of saved agent threads; history that is not regenerated",
+          "source": "https://github.com/zed-industries/zed/blob/main/crates/agent/src/db.rs"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%LOCALAPPDATA%/Zed/threads/threads.db*"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "file",
+          "confidence": "medium",
+          "min_age_days": 30,
+          "description": "SQLite database of saved agent threads; history that is not regenerated",
+          "source": "https://github.com/zed-industries/zed/blob/main/crates/agent/src/db.rs"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_DATA_HOME/zed/logs/*.log.old"
+          ],
+          "os": [
+            "linux"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Rotated previous log file, replaced on the next rotation",
+          "source": "https://github.com/zed-industries/zed/blob/main/crates/paths/src/paths.rs"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/Library/Logs/Zed/*.log.old"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Rotated previous log file, replaced on the next rotation",
+          "source": "https://github.com/zed-industries/zed/blob/main/crates/paths/src/paths.rs"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%LOCALAPPDATA%/Zed/logs/*.log.old"
+          ],
+          "os": [
+            "windows"
+          ],
+          "kind": "file",
+          "confidence": "high",
+          "min_age_days": 14,
+          "description": "Rotated previous log file, replaced on the next rotation",
+          "source": "https://github.com/zed-industries/zed/blob/main/crates/paths/src/paths.rs"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "user",
+          "patterns": [
+            "$XDG_CONFIG_HOME/zed",
+            "$XDG_DATA_HOME/zed/prompts",
+            "$XDG_DATA_HOME/zed/prompt_overrides",
+            "$XDG_DATA_HOME/zed/external_agents"
+          ],
+          "os": [
+            "linux"
+          ],
+          "reason": "Settings, keymap, prompts and external agents are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "~/.config/zed",
+            "~/.config/zed/prompts"
+          ],
+          "os": [
+            "darwin"
+          ],
+          "reason": "Settings, keymap and prompts are not clutter"
+        },
+        {
+          "scope": "user",
+          "patterns": [
+            "%APPDATA%/Zed",
+            "%LOCALAPPDATA%/Zed/prompts",
+            "%LOCALAPPDATA%/Zed/external_agents"
+          ],
+          "os": [
+            "windows"
+          ],
+          "reason": "Settings, keymap, prompts and external agents are not clutter"
+        },
+        {
+          "scope": "project",
+          "patterns": [
+            ".zed",
+            ".rules",
+            "AGENTS.md"
+          ],
+          "reason": "Project settings and rules are not clutter"
+        }
+      ]
+    },
+    {
+      "id": "agent-run-logs",
+      "name": "Generic agent run logs",
+      "category": "ai",
+      "entries": [
+        {
+          "scope": "project",
+          "patterns": [
+            ".agent/runs/**/*.jsonl",
+            ".agent/logs/**/*.jsonl",
+            ".agents/runs/**/*.jsonl",
+            ".agents/logs/**/*.jsonl",
+            ".agent-runs/**/*.jsonl"
+          ],
+          "kind": "file",
+          "confidence": "low",
+          "min_age_days": 30,
+          "description": "JSON Lines run logs in conventional agent scratch directories; a heuristic that might match logs the user still wants",
+          "source": "https://jsonlines.org/"
+        }
+      ],
+      "protect": [
+        {
+          "scope": "project",
+          "patterns": [
+            ".agent/skills",
+            ".agent/rules",
+            ".agent/commands",
+            ".agent/memory",
+            ".agents/skills",
+            ".agents/rules",
+            ".agents/commands",
+            ".agents/memory"
+          ],
+          "reason": "Skills, rules, commands and memory in agent directories are configuration, not clutter"
         }
       ]
     }
