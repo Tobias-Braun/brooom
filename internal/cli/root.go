@@ -21,6 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Tobias-Braun/brooom/internal/cli/checklist"
 	"github.com/Tobias-Braun/brooom/internal/cli/progressui"
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/output"
@@ -107,6 +108,9 @@ type app struct {
 	// stdinTTY reports whether prompting is possible; nil means "io.In is a
 	// terminal". Tests inject it to script confirmations.
 	stdinTTY func() bool
+	// choose replaces the checklist behind the "e" answer in tests; nil
+	// means checklist.Run on a real terminal.
+	choose func(in io.Reader, out io.Writer, items []checklist.Item) ([]bool, bool, error)
 	// stderrTTY is stdinTTY's counterpart for the live progress display; nil
 	// means "io.Err is a terminal". Tests inject it to fake a terminal.
 	stderrTTY func() bool
