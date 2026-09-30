@@ -205,12 +205,12 @@ func (e *Executor) Run(ctx context.Context, fs []findings.Finding) (*Result, err
 		return nil, errors.New("apply requires a session store")
 	}
 	plan := e.Plan(ctx, fs)
-	res := &Result{Plan: plan}
-	res.Skips = append(res.Skips, plan.Skipped...)
-	for _, s := range plan.Failed {
-		res.Failures = append(res.Failures, failedEntry(s))
+	res := planResult(plan)
+	// An interrupted plan is incomplete, so it is neither shown nor offered
+	// for confirmation.
+	if ctx.Err() != nil {
+		return res, ErrInterrupted
 	}
-	res.Skipped, res.Failed = len(res.Skips), len(res.Failures)
 	out := e.opts.IO.Out
 	if !e.opts.Quiet {
 		renderPlan(out, plan)
@@ -229,6 +229,17 @@ func (e *Executor) Run(ctx context.Context, fs []findings.Finding) (*Result, err
 		return res, nil
 	}
 	return e.apply(ctx, plan, res)
+}
+
+// planResult seeds a Result with the skips and failures found while planning.
+func planResult(plan *Plan) *Result {
+	res := &Result{Plan: plan}
+	res.Skips = append(res.Skips, plan.Skipped...)
+	for _, s := range plan.Failed {
+		res.Failures = append(res.Failures, failedEntry(s))
+	}
+	res.Skipped, res.Failed = len(res.Skips), len(res.Failures)
+	return res
 }
 
 // failedEntry renders a plan-time failure in the shape of a failed entry.
@@ -340,13 +351,16 @@ func (rs *runState) runItem(ctx context.Context, planned Step) error {
 		rs.res.Skips = append(rs.res.Skips, Skip{f, "action not available"})
 		return nil
 	}
+	// An uncancellable context for the re-plan as well as the apply: a
+	// cancelled re-plan would fail its git calls and record a bogus failed
+	// entry. The loop stops between steps instead, so a step that started
+	// is never interrupted half way (a trash move or branch delete).
+	ctx = context.WithoutCancel(ctx)
 	step, err := act.Plan(ctx, rs.e.env, f)
 	if err != nil {
 		return rs.replanFailed(f, err)
 	}
-	// An uncancellable context: a trash move or branch delete is never
-	// interrupted half way; the loop stops between steps instead.
-	entry, applyErr := act.Apply(context.WithoutCancel(ctx), rs.e.env, step)
+	entry, applyErr := act.Apply(ctx, rs.e.env, step)
 	if entry.Status == session.StatusSkipped {
 		rs.res.Skips = append(rs.res.Skips, Skip{f, entry.Error})
 		return nil

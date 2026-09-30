@@ -166,6 +166,7 @@ func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args 
 	full := append([]string{"-C", dir}, args...)
 	cmd := exec.CommandContext(ctx, r.Path, full...)
 	cmd.Env = Env(os.Environ())
+	ownProcessGroup(cmd)
 	// A killed git can leave a child (hook, alias) holding the output pipes;
 	// without a delay Wait would block until that child exits too.
 	cmd.WaitDelay = waitDelay
@@ -184,6 +185,10 @@ func (r *ExecRunner) run(ctx context.Context, dir string, stdin io.Reader, args 
 		}
 		if errors.Is(deadlineCtx.Err(), context.DeadlineExceeded) {
 			return "", &TimeoutError{Args: args, Dir: dir, After: roundElapsed(time.Since(start))}
+		}
+		if errors.Is(deadlineCtx.Err(), context.Canceled) {
+			// The caller gave up (Ctrl-C): the kill status is not a git failure.
+			return "", fmt.Errorf("git %s (in %s): %w", strings.Join(args, " "), dir, context.Canceled)
 		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

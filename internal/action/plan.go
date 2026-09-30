@@ -152,7 +152,15 @@ func (e *Executor) planSteps(ctx context.Context, fs []findings.Finding, p *Plan
 	var out []planned
 	// One open-file check for the whole plan instead of one per finding.
 	ctx = e.batchOpenCheck(ctx, fs)
-	for _, f := range fs {
+	for i, f := range fs {
+		// After Ctrl-C the remaining findings are reported as interrupted;
+		// asking their actions would only produce "context canceled" failures.
+		if ctx.Err() != nil {
+			for _, rest := range fs[i:] {
+				p.Skipped = append(p.Skipped, Skip{rest, "interrupted"})
+			}
+			break
+		}
 		t := f.SuggestedAction.Type
 		act, ok := e.opts.Lookup(t)
 		if !ok {
@@ -163,6 +171,10 @@ func (e *Executor) planSteps(ctx context.Context, fs []findings.Finding, p *Plan
 		switch {
 		case err == nil:
 			out = append(out, planned{t, step})
+		case ctx.Err() != nil && errors.Is(err, context.Canceled):
+			// The cancellation hit this very finding mid-inspection, so the
+			// error says nothing about the finding itself.
+			p.Skipped = append(p.Skipped, Skip{f, "interrupted"})
 		case errors.Is(err, ErrSkipped):
 			p.Skipped = append(p.Skipped, Skip{f, skipReason(err)})
 		default:
