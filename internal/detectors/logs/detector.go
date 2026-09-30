@@ -44,12 +44,7 @@ func init() { detect.Register(New()) }
 
 // Detector reports log and runtime files. It holds no per-scan state, so one
 // instance serves concurrent targets.
-type Detector struct {
-	// PathEnv supplies home directory and environment variables for the
-	// expansion of user-level patterns; nil means the running machine. It is
-	// a field so tests can point the expansion at a temporary home.
-	PathEnv func() catalog.PathEnv
-}
+type Detector struct{}
 
 // New returns the detector with default dependencies.
 func New() *Detector { return &Detector{} }
@@ -64,13 +59,6 @@ func (*Detector) Description() string {
 
 // Category implements detect.Detector.
 func (*Detector) Category() detect.Category { return detect.CategoryLogs }
-
-func (d *Detector) pathEnv() catalog.PathEnv {
-	if d.PathEnv != nil {
-		return d.PathEnv()
-	}
-	return catalog.HostEnv()
-}
 
 // handled are the catalog categories of this detector. ai belongs to
 // ai-artifacts and build to build-artifacts; passing the list to every
