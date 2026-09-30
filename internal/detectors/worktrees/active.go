@@ -68,8 +68,9 @@ func (s *scan) markInUse(ctx context.Context, e *entry, v *verdict) error {
 }
 
 // openBatch is the outcome of the one open-file check of a scan. Every
-// candidate used to pay for its own call, which on macOS meant one lsof +D
-// (and a fresh time budget) per worktree.
+// candidate used to pay for its own call, which on macOS meant one lsof run
+// (and a fresh time budget) per worktree; procs now answers all directories
+// of a call from one lsof listing.
 type openBatch struct {
 	paths map[string]bool
 	res   map[string]bool
@@ -79,7 +80,9 @@ type openBatch struct {
 
 // prefetchOpen checks all existing, in-scope, non-main worktrees with a
 // single openFiles call. Worktrees that a later rule discards are checked
-// needlessly, which costs nothing extra in one batched call.
+// needlessly, but an extra directory only adds a prefix comparison to the one
+// shared lsof listing (or one directory walk on Linux and Windows), not an
+// lsof run.
 func (s *scan) prefetchOpen(ctx context.Context, wts []gitx.Worktree) {
 	var paths []string
 	set := map[string]bool{}

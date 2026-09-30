@@ -116,11 +116,10 @@ func TestLsofOpenFilesMapsNames(t *testing.T) {
 	files := []string{openLog, closedLog, exactLog}
 	dirs := []string{busy, idle}
 	f := &fakeLsof{reply: func(args []string) ([]byte, error) {
-		if args[len(args)-2] == "+D" {
-			if args[len(args)-1] == busy {
-				return []byte("p1\x00\nf3\x00n" + strings.ToUpper(testPath("tmp/busy/x.log")) + "\x00\n"), nil
-			}
-			return nil, nil
+		if args[len(args)-1] == "-F0n" {
+			// The directory listing: every open file, spelled in another
+			// case for the busy directory (case-insensitive FS).
+			return []byte("p1\x00\nf3\x00n" + strings.ToUpper(testPath("tmp/busy/x.log")) + "\x00\n"), nil
 		}
 		// lsof spells the first file in another case (case-insensitive FS).
 		return []byte("p1\x00\nf3\x00n" + testPath("tmp/open.log") + "\x00\nf4\x00n" + exactLog + "\x00\n"), exitErrorNoSkip()
@@ -141,6 +140,42 @@ func TestLsofOpenFilesMapsNames(t *testing.T) {
 	}
 	if got := f.calls[0][len(f.calls[0])-len(files)-1]; got != "--" {
 		t.Errorf("paths must follow --, got args %q", f.calls[0])
+	}
+}
+
+// The number of lsof runs must not grow with the number of directories: many
+// directories are answered from one listing, and each is matched only against
+// names below its own prefix (a sibling with a common name prefix is not
+// below it).
+func TestLsofDirectoriesShareOneRun(t *testing.T) {
+	var dirs []string
+	for i := 0; i < 40; i++ {
+		dirs = append(dirs, testPath("ws/wt"+strconv.Itoa(i)))
+	}
+	f := &fakeLsof{reply: func([]string) ([]byte, error) {
+		out := "p1\x00\nf3\x00n" + filepath.Join(dirs[7], "a.log") + "\x00\n" +
+			"f4\x00n" + dirs[9] + "-other/b.log\x00\n"
+		return []byte(out), nil
+	}}
+	res := map[string]bool{}
+	if err := lsofOpenFiles(context.Background(), f.run, nil, dirs, res); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(f.calls) != 1 {
+		t.Fatalf("lsof ran %d times for %d directories, want 1", len(f.calls), len(dirs))
+	}
+	for i, d := range dirs {
+		if res[d] != (i == 7) {
+			t.Errorf("dir %d: got %v", i, res[d])
+		}
+	}
+	// Files and directories together: one run per file batch plus one.
+	f.calls = nil
+	if err := lsofOpenFiles(context.Background(), f.run, []string{testPath("f1"), testPath("f2")}, dirs, map[string]bool{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(f.calls) != 2 {
+		t.Errorf("lsof ran %d times for one file batch and %d directories, want 2", len(f.calls), len(dirs))
 	}
 }
 
@@ -175,31 +210,6 @@ func TestLsofOpenFilesExitStatuses(t *testing.T) {
 				t.Errorf("got %v, want %v", res["/a/f"], tt.want)
 			}
 		})
-	}
-}
-
-func TestLsofDirectoryTimeoutIsIncompleteButContinues(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	slow, fast := testPath("slow"), testPath("fast")
-	run := func(c context.Context, args []string) ([]byte, error) {
-		if args[len(args)-1] == slow {
-			<-c.Done() // the per-directory slice must expire
-			return nil, c.Err()
-		}
-		return []byte("p1\x00\nf3\x00n" + filepath.Join(fast, "x") + "\x00\n"), nil
-	}
-	res := map[string]bool{slow: false, fast: false}
-	start := time.Now()
-	err := lsofOpenFiles(ctx, run, nil, []string{slow, fast}, res)
-	if !errors.Is(err, ErrIncomplete) {
-		t.Fatalf("got %v, want ErrIncomplete", err)
-	}
-	if time.Since(start) > 3*time.Second {
-		t.Errorf("slice did not bound the slow directory: %v", time.Since(start))
-	}
-	if !res[fast] || res[slow] {
-		t.Errorf("unexpected result %v", res)
 	}
 }
 

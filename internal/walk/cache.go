@@ -178,19 +178,32 @@ var marshalCache = func(cf cacheFile) ([]byte, error) { return json.Marshal(cf) 
 const minRecordJSON = len(`{"mtime_unix_nano":0,"id":"","racy":false,"direct_bytes":0,"direct_files":0,"direct_newest":0,"subdirs":null}`)
 
 // encodedSizeLowerBound returns a size the encoded document cannot fall
-// below: the fixed part of every record plus its key and subdirectory names.
-// It is cheap (no allocation) and lets storeCache skip the marshal when the
-// tree is far beyond maxCacheBytes.
+// below: per entry the quoted key and colon plus either the fixed part of the
+// record or, for a nil record, its "null". A record with subdirectories
+// replaces the "null" of an empty list by a bracketed list of quoted names
+// separated by commas, which is the sum of the name lengths plus three bytes
+// per name (two quotes, one separator) minus the separator that is missing
+// after the last one and minus the four bytes of "null" that no longer
+// appear. The separators between entries, the escaping of special characters
+// and the document header are left out. It is cheap (no allocation) and lets
+// storeCache skip the marshal when the tree is far beyond maxCacheBytes.
 func encodedSizeLowerBound(dirs map[string]*dirRecord) int64 {
 	var n int64
 	for rel, rec := range dirs {
-		n += int64(len(rel)+minRecordJSON) + 4 // quoted key, colon, comma
+		n += int64(len(rel)) + 3 // quoted key and colon
 		if rec == nil {
+			n += int64(len("null"))
+			continue
+		}
+		n += int64(minRecordJSON)
+		if len(rec.Subdirs) == 0 {
 			continue
 		}
 		for _, name := range rec.Subdirs {
 			n += int64(len(name)) + 3
 		}
+		n -= 1 + int64(len("null")) // last separator, the replaced "null"
+		n += 2                      // the brackets
 	}
 	return n
 }

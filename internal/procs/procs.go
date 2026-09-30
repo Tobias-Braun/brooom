@@ -14,12 +14,13 @@
 //     standing in a directory or a running binary inside it counts as open
 //     (links to deleted paths and "/" are ignored). Memory-mapped files
 //     without an fd are not seen.
-//   - macOS runs lsof. Files are checked in batches, directories with the
-//     recursive +D option and one time slice each. lsof only reports other
-//     users' processes when permitted to. +D also counts working directories
-//     and memory maps of subdirectories, which errs on the side of "open".
-//     APFS is usually case-insensitive,
-//     so names are matched case-insensitively as a fallback.
+//   - macOS runs lsof. Files are checked in batches; all directories share
+//     one listing of every open file that is matched against their prefixes,
+//     so the number of lsof runs does not grow with the number of
+//     directories. lsof only reports other users' processes when permitted
+//     to. The listing also counts working directories and memory maps of
+//     subdirectories, which errs on the side of "open". APFS is usually
+//     case-insensitive, so names are matched case-insensitively as a fallback.
 //   - Windows uses the Restart Manager. It only knows handles it can attribute
 //     to a process and does not cover network shares. It cannot say which
 //     registered file is locked, so batches are bisected. Directories are
@@ -55,8 +56,9 @@ var ErrIncomplete = errors.New("open-file detection incomplete")
 const DefaultTimeout = 3 * time.Second
 
 // PerPathBudget is added to DefaultTimeout for every path beyond the first
-// when the caller sets no deadline, so a batch over many directories (one
-// lsof +D each on macOS) does not share the budget of a single one.
+// when the caller sets no deadline, so a batch over many paths (matching
+// them against a large listing, or one syscall each) does not share the
+// budget of a single one.
 const PerPathBudget = 50 * time.Millisecond
 
 // MaxBudget caps Budget so that a huge batch cannot block a scan for long.

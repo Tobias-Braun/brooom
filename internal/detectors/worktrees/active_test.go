@@ -131,8 +131,9 @@ func TestInUseWorktreeIsBlocked(t *testing.T) {
 }
 
 // TestOpenCheckIsBatchedPerScan: three candidate worktrees are checked with
-// one open-file call (one lsof run per scan on macOS), not one call each, and
-// the answer still lands on the right worktree.
+// one open-file call, not one call each, and the answer still lands on the
+// right worktree. That the call then costs one lsof run on macOS is pinned in
+// internal/procs (TestLsofDirectoriesShareOneRun).
 func TestOpenCheckIsBatchedPerScan(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	wt1 := repo.AddWorktree("wt1", "feat1")

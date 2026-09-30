@@ -360,8 +360,9 @@ an older or unparseable git is an error (`ErrGitTooOld`). On git older than
 determined as locked.
 
 The `worktrees` detector protects active worktrees the same way (one batched
-`procs.OpenFiles` call per scan covers all worktrees, so macOS runs lsof once
-instead of once per candidate): a candidate
+`procs.OpenFiles` call per scan covers all worktrees, and on macOS `procs`
+answers all directories of a call from a single lsof listing, so the lsof runs
+do not grow with the number of candidates): a candidate
 containing the current directory or open by a process gets the blocking
 `file_open_by_process` flag (evidence `worktree_in_use`, action `none`), and a
 candidate modified within `thresholds.recent_days` (fresh mtimes) gets
