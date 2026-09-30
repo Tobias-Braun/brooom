@@ -341,6 +341,23 @@ restores trashed ones via a `--no-checkout` placeholder, `Trasher.Restore`,
 `git worktree repair` and a mixed `reset` (staged/unstaged split is not kept).
 `Entry.Undo` carries `worktree`, `branch`, `head` and `repo`.
 
+Scope of a run from a linked worktree: the guard allows that worktree only.
+The main worktree is registered with `Guard.WithRepoMeta` and is accepted by
+`Guard.ResolveRepoMeta` as that exact directory, never anything below it
+(sibling worktrees, files). `ResolveRepoMeta` is used only to locate the
+repository: the branch and worktree detectors (`merged-branch`, `stale-branch`,
+`worktrees`), `delete-branch`, the worktree actions and `clean --from` vetting
+of a git finding's repository. Git maintenance (`git-bloat`, `git-gc` and
+friends) uses `Resolve`; `brooom git purge` from a linked worktree runs in the
+linked worktree itself (same shared repository). A linked worktree the guard
+does not allow (a sibling below main, or one outside the repository, which is
+git's default for `git worktree add ../x`) is never listed; `worktrees`
+returns a non-fatal note per existing one ("outside the allowed scope; add its
+parent as a root and use --workspaces", `scope.OutsideWorktreeHint`), and the
+`current_branch` block reason of `merged-branch` and `stale-branch` names the
+worktree and carries the same hint when it is out of scope. Missing (prunable)
+worktrees are still reported whenever the repository is reachable.
+
 `prune-worktrees` requires the recorded path to be prunable, unlocked and
 missing on disk. Apply drops only the finding's own registration with
 `git worktree remove --force -- <path>` (never the repository-wide `git worktree

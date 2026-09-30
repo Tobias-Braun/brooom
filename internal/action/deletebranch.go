@@ -343,7 +343,7 @@ func openRepo(ctx context.Context, env *Env, f findings.Finding) (*gitx.Repo, er
 	if env.Guard == nil || env.Git == nil {
 		return nil, errors.New("delete-branch: no scope guard or git runner configured")
 	}
-	path, err := env.Guard.Resolve(f.Path)
+	path, err := env.Guard.ResolveRepoMeta(f.Path)
 	if err != nil {
 		return nil, skipf("repository outside allowed roots or unresolvable: %v", err)
 	}
@@ -516,7 +516,7 @@ func (deleteBranch) Undo(ctx context.Context, env *Env, e session.Entry) error {
 	if env.Guard == nil || env.Git == nil {
 		return errors.New("undo delete-branch: no scope guard or git runner configured")
 	}
-	path, err := env.Guard.Resolve(e.Path)
+	path, err := env.Guard.ResolveRepoMeta(e.Path)
 	if err != nil {
 		return fmt.Errorf("undo delete-branch: repository %s: %w", e.Path, err)
 	}
@@ -528,7 +528,7 @@ func (deleteBranch) Undo(ctx context.Context, env *Env, e session.Entry) error {
 	// operates on the enclosing repository, which can lie outside every
 	// allowed root (a forged path below a checkout in a scan root nested in
 	// a larger repo). Writing a ref there is refused.
-	if _, err := env.Guard.Resolve(repo.Dir); err != nil {
+	if _, err := env.Guard.ResolveRepoMeta(repo.Dir); err != nil {
 		return fmt.Errorf("undo delete-branch: repository %s lies outside the allowed roots: %w", repo.Dir, err)
 	}
 	if err := checkRefFormat(ctx, env, repo.Dir, name); err != nil {

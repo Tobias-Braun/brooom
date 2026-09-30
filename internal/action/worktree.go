@@ -60,7 +60,7 @@ func openWorktreeRepo(ctx context.Context, env *Env, f findings.Finding) (*gitx.
 // openRepoDir is openWorktreeRepo for a directory that is already known, which is
 // what undo has (the repository comes from the manifest, not a finding).
 func openRepoDir(ctx context.Context, env *Env, dir string) (*gitx.Repo, error) {
-	resolved, err := env.Guard.Resolve(dir)
+	resolved, err := env.Guard.ResolveRepoMeta(dir)
 	switch {
 	case errors.Is(err, scope.ErrOutsideScope):
 		return nil, skipf("%s", errOutsideScope)

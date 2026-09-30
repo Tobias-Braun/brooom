@@ -230,7 +230,8 @@ func (sc *cleanScope) checkGit(f findings.Finding) string {
 	if !filepath.IsAbs(repo) {
 		return "repository path is not absolute"
 	}
-	resolved, err := sc.project.Resolve(repo)
+	// The main worktree of a linked worktree is accepted as a repository only.
+	resolved, err := sc.project.ResolveRepoMeta(repo)
 	if err != nil {
 		return "repository " + pathRefusal(err)
 	}

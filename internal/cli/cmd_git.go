@@ -278,13 +278,29 @@ func purgeRepos(ctx context.Context, res *scanResult, warn io.Writer) ([]purgeRe
 		if err != nil {
 			continue
 		}
-		path, err := res.Guard.Resolve(main)
-		if err != nil {
+		path, ok := purgeRepoPath(res.Guard, main, t.Path)
+		if !ok {
 			continue
 		}
 		repos = append(repos, purgeRepo{path: path, scope: t.Scope})
 	}
 	return repos, nil
+}
+
+// purgeRepoPath picks the directory maintenance runs in. The main worktree is
+// used when the guard allows it. When it is only known as repository metadata
+// (a run from a linked worktree) the linked worktree itself stands in: it is in
+// scope, and git maintenance there acts on the same shared repository, so
+// purge keeps working without the main checkout becoming a general location.
+func purgeRepoPath(g *scope.Guard, main, linked string) (string, bool) {
+	if path, err := g.Resolve(main); err == nil {
+		return path, true
+	}
+	if _, err := g.ResolveRepoMeta(main); err != nil {
+		return "", false
+	}
+	path, err := g.Resolve(linked)
+	return path, err == nil
 }
 
 // skipOpenError decides what a failed gitx.Open means for purge: not a

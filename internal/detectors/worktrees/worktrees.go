@@ -81,15 +81,29 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	if err != nil {
 		return err
 	}
+	var notes []error
 	for _, wt := range wts {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err := s.visit(ctx, wt, emit); err != nil {
-			return err
+			var skip *outOfScopeError
+			if !errors.As(err, &skip) {
+				return err
+			}
+			notes = append(notes, err)
 		}
 	}
-	return nil
+	return errors.Join(notes...)
+}
+
+// outOfScopeError is the non-fatal note for a linked worktree that the guard
+// does not allow. It is returned after every other worktree was examined, so
+// it ends up as a scan error (shown with --verbose) and never hides findings.
+type outOfScopeError struct{ path string }
+
+func (e *outOfScopeError) Error() string {
+	return "linked worktree " + e.path + " skipped: " + scope.OutsideWorktreeHint
 }
 
 // visit examines one worktree entry and emits its finding, if any. The main
@@ -100,7 +114,7 @@ func (s *scan) visit(ctx context.Context, wt gitx.Worktree, emit func(findings.F
 	}
 	e, ok := s.entry(wt)
 	if !ok {
-		return nil
+		return s.skipNote(wt)
 	}
 	f, ok, err := s.examine(ctx, e)
 	if err != nil || !ok {
@@ -190,7 +204,20 @@ func (s *scan) entry(wt gitx.Worktree) (*entry, bool) {
 	return e, true
 }
 
+// skipNote explains a skipped entry: a worktree that exists but lies outside
+// the guard gets a note, the scan scope itself and unreachable missing
+// worktrees stay silent.
+func (s *scan) skipNote(wt gitx.Worktree) error {
+	if wt.DirMissing || wt.Prunable || gitx.SamePath(wt.Path, s.target.Scope.Path) {
+		return nil
+	}
+	if s.env.Guard.OutsideNote(wt.Path) == "" {
+		return nil
+	}
+	return &outOfScopeError{path: wt.Path}
+}
+
 func (s *scan) mainInGuard() bool {
-	_, err := s.env.Guard.Resolve(s.main)
+	_, err := s.env.Guard.ResolveRepoMeta(s.main)
 	return err == nil
 }

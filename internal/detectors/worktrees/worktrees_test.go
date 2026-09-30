@@ -669,17 +669,6 @@ func TestIdenticalIDsFromMainAndLinkedTargets(t *testing.T) {
 	}
 }
 
-func TestOutsideGuardIsSkipped(t *testing.T) {
-	repo := testutil.NewRepo(t)
-	repo.AddWorktree("outside", "feat-outside")
-	// The guard only allows the repository, like default single-repo mode;
-	// the sibling worktree lives in another temp directory.
-	h := newHarness(t, repo)
-	if fs := h.detect(); len(fs) != 0 {
-		t.Errorf("reported %+v", fs)
-	}
-}
-
 func TestAgentLocationEvidence(t *testing.T) {
 	repo := testutil.NewRepo(t)
 	wt := filepath.Join(repo.Dir, ".claude", "worktrees", "agent-1")

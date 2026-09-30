@@ -31,10 +31,29 @@ var (
 type targetSet struct {
 	targets []scope.Target
 	// allowed are the guard locations. They are a superset of the target
-	// paths' parents: the repo, the selected roots, the main worktree of a
-	// linked worktree and the user-level targets.
+	// paths' parents: the repo, the selected roots and the user-level targets.
 	allowed []string
-	errs    []findings.ScanError
+	// repoMeta are directories the guard accepts only as the repository a
+	// branch or worktree operation runs git in (scope.Guard.WithRepoMeta): the
+	// main worktree of a linked worktree. Nothing below them is in scope.
+	repoMeta []string
+	errs     []findings.ScanError
+}
+
+// newGuard builds the scan guard: the allowed locations plus the repository
+// metadata locations, which only Guard.ResolveRepoMeta accepts.
+func (ts *targetSet) newGuard() (*scope.Guard, error) {
+	return guardWithMeta(ts.allowed, ts.repoMeta)
+}
+
+// guardWithMeta is scope.NewGuard(allowed...) plus repository metadata
+// locations.
+func guardWithMeta(allowed, meta []string) (*scope.Guard, error) {
+	g, err := scope.NewGuard(allowed...)
+	if err != nil || len(meta) == 0 {
+		return g, err
+	}
+	return g.WithRepoMeta(meta...)
 }
 
 // allow adds an optional location to the guard after checking that the guard
@@ -66,9 +85,10 @@ func (a *app) buildTargets(ctx context.Context, req *scanRequest, runner gitx.Ru
 }
 
 // repoTargets builds the single repo target of the working directory. Inside
-// a linked worktree the repository's main worktree is additionally allowed
-// in the guard (never scanned) so the branch and worktree detectors can
-// resolve paths that point back to it.
+// a linked worktree the repository's main worktree is additionally accepted
+// as repository metadata location (never scanned, and nothing below it is in
+// scope) so the branch and worktree detectors can resolve the repository
+// that their git commands run in.
 func repoTargets(ctx context.Context, runner gitx.Runner) (*targetSet, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -96,7 +116,8 @@ func repoTargets(ctx context.Context, runner gitx.Runner) (*targetSet, error) {
 	return ts, nil
 }
 
-// allowMainWorktree allows the main worktree of the linked worktree at root.
+// allowMainWorktree registers the main worktree of the linked worktree at root
+// as a repository metadata location.
 // A failed listing is a scan error, not a failure: scanning continues with
 // the linked worktree only.
 func (ts *targetSet) allowMainWorktree(ctx context.Context, runner gitx.Runner, root string) {
@@ -105,7 +126,12 @@ func (ts *targetSet) allowMainWorktree(ctx context.Context, runner gitx.Runner, 
 		ts.errs = append(ts.errs, findings.ScanError{Path: root, Message: "cannot locate the main worktree, scanning the linked worktree only: " + err.Error()})
 		return
 	}
-	ts.allow(main, "main worktree", false)
+	g, err := scope.NewGuard(main)
+	if err != nil {
+		ts.errs = append(ts.errs, findings.ScanError{Path: main, Message: fmt.Sprintf("main worktree not allowed: %v", err)})
+		return
+	}
+	ts.repoMeta = append(ts.repoMeta, g.Allowed()[0])
 }
 
 // isLinkedWorktree reports whether root's .git is a regular file, which is
