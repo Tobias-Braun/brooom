@@ -12,7 +12,7 @@
 //     --yes; a session manifest is created before the first step and
 //     updated after every step; each step's undo information is recorded.
 //  4. Summary: reclaimed bytes, failures, the session ID and recovery hints
-//     (e.g. how to restore a deleted branch from the reflog).
+//     (e.g. the command that recreates a deleted branch at its old tip).
 //
 // Each action type (trash, delete-branch, remove-worktree, prune-worktrees,
 // git-gc, git-prune, git-reflog-expire) implements Action and registers

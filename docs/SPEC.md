@@ -88,8 +88,13 @@ cleanup safe, fast and reviewable.
 - `delete`: immediate permanent deletion (requires explicit config or flag,
   and a warning on first use).
 
-Branch deletion is always recoverable via reflog for the reflog expiry
-window; this is documented and the recovery command is surfaced in output.
+Branch deletion stays recoverable: deleting a branch also deletes its own
+reflog, so Brooom records the tip commit of every deleted branch in the
+session manifest, `brooom undo` recreates it, and the output prints the
+manual recovery command (`git branch <name> <sha>`). The commits exist until
+git garbage-collects unreachable objects (`gc.pruneExpire`, default two
+weeks; commits still referenced from the HEAD reflog are kept for
+`gc.reflogExpireUnreachable`, default 30 days).
 
 ## Output formats
 
