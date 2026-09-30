@@ -17,15 +17,15 @@ import (
 // fail closed: it reports "same" so the caller refuses. It is a variable so
 // tests can simulate aliases a Linux file system cannot create.
 var isSameEntry = func(a, b string) bool {
-	fa, err := lstat(a)
+	ia, err := identityOf(a, false)
 	if err != nil {
 		return !isAbsent(err)
 	}
-	fb, err := lstat(b)
+	ib, err := identityOf(b, false)
 	if err != nil {
 		return !isAbsent(err)
 	}
-	return os.SameFile(fa, fb)
+	return ia.sameAs(ib)
 }
 
 // lstat is os.Lstat, replaceable by tests that need a stat failure a

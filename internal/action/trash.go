@@ -169,11 +169,7 @@ func checkTracked(ctx context.Context, env *Env, path string) (bool, error) {
 	}
 	out, err := env.Git.Run(ctx, root, "ls-files", "-z", "--", ":(literal)"+path)
 	if err != nil {
-		if ctx.Err() != nil {
-			// Ctrl-C killed git: that is no reason to advise --force.
-			return false, fmt.Errorf("list tracked files: %w", ctx.Err())
-		}
-		return unknownTracked(env, fmt.Sprintf("cannot list tracked files: %v", err))
+		return lsFilesFailed(ctx, env, err)
 	}
 	if strings.Trim(out, "\x00 \n") == "" {
 		return false, nil
@@ -182,6 +178,21 @@ func checkTracked(ctx context.Context, env *Env, path string) (bool, error) {
 		return false, skipf("contains files tracked by git")
 	}
 	return true, nil
+}
+
+// lsFilesFailed maps a failed "git ls-files" to the checkTracked outcome.
+func lsFilesFailed(ctx context.Context, env *Env, err error) (bool, error) {
+	if ctx.Err() != nil {
+		// Ctrl-C killed git: that is no reason to advise --force.
+		return false, fmt.Errorf("list tracked files: %w", ctx.Err())
+	}
+	// A path git places outside the repository (a separate git dir, a
+	// bare layout) is not "unknown": it is metadata or foreign data, and
+	// --force must not lift the refusal.
+	if strings.Contains(err.Error(), "outside repository") {
+		return false, skipf("git reports the path is outside its repository (%v)", err)
+	}
+	return unknownTracked(env, fmt.Sprintf("cannot list tracked files: %v", err))
 }
 
 // unknownTracked is the outcome when tracked files cannot be ruled out.

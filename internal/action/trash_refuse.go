@@ -132,6 +132,18 @@ func refusePath(env *Env, path string, refuseRepoRoot bool) error {
 	case refuseRepoRoot && isRepoRoot(path):
 		return skipf("refusing to remove a repository root")
 	}
+	if err := refuseGitDir(env, path); err != nil {
+		return err
+	}
+	if err := refuseBrooomAndHome(path); err != nil {
+		return err
+	}
+	return RefuseByIdentity(path)
+}
+
+// refuseBrooomAndHome refuses the home directories and Brooom's own state,
+// including any directory that contains them.
+func refuseBrooomAndHome(path string) error {
 	for p, why := range protectedPaths() {
 		if covers(path, p) {
 			return skipf("refusing to remove %s or a directory containing it", why)
@@ -142,7 +154,7 @@ func refusePath(env *Env, path string, refuseRepoRoot bool) error {
 			return skipf("refusing to remove Brooom's own session or quarantine data")
 		}
 	}
-	return RefuseByIdentity(path)
+	return nil
 }
 
 // isRepoRoot reports whether path is itself the top of a git repository.
@@ -215,25 +227,55 @@ func refuseRestoreTarget(dest string) error {
 // file identity. Missing path elements are skipped: they cannot alias
 // anything yet.
 func refuseRestoreByIdentity(dest string) error {
-	var state []os.FileInfo
+	var state []fileID
 	for _, p := range restoreForbiddenDirs() {
-		if fi, err := os.Stat(p); err == nil {
-			state = append(state, fi)
+		if id, err := identityOf(p, true); err == nil {
+			state = append(state, id)
 		}
 	}
 	for cur := dest; ; cur = filepath.Dir(cur) {
-		if fi, err := os.Stat(cur); err == nil {
-			for _, s := range state {
-				if os.SameFile(fi, s) {
-					return fmt.Errorf("trash undo: refusing to restore to %s: inside Brooom's own data (home, sessions or quarantine)", dest)
-				}
-			}
-			if g, err := os.Stat(filepath.Join(filepath.Dir(cur), ".git")); err == nil && os.SameFile(fi, g) {
-				return fmt.Errorf("trash undo: refusing to restore to %s: inside .git", dest)
-			}
+		if err := refuseAncestorIdentity(dest, cur, state); err != nil {
+			return err
 		}
 		if isVolumeRoot(cur) {
 			return nil
 		}
 	}
+}
+
+// refuseAncestorIdentity compares one existing ancestor of dest with the
+// state directories and its sibling ".git". An ancestor whose identity cannot
+// be read although it exists is unknown and refuses, as everywhere else; a
+// missing ancestor cannot alias anything yet.
+func refuseAncestorIdentity(dest, cur string, state []fileID) error {
+	if !statable(cur) {
+		return nil
+	}
+	id, err := identityOf(cur, true)
+	if err != nil {
+		if isAbsent(err) {
+			return nil
+		}
+		return fmt.Errorf("trash undo: refusing to restore to %s: cannot read the identity of %s", dest, cur)
+	}
+	for _, s := range state {
+		if id.sameAs(s) {
+			return fmt.Errorf("trash undo: refusing to restore to %s: inside Brooom's own data (home, sessions or quarantine)", dest)
+		}
+	}
+	gitPath := filepath.Join(filepath.Dir(cur), ".git")
+	if !statable(gitPath) {
+		return nil
+	}
+	if g, err := identityOf(gitPath, true); err != nil || id.sameAs(g) {
+		return fmt.Errorf("trash undo: refusing to restore to %s: inside .git", dest)
+	}
+	return nil
+}
+
+// statable reports whether path exists and can be stat'ed. Callers use it to
+// skip missing path elements, which cannot alias anything yet.
+func statable(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
