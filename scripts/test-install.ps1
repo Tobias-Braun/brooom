@@ -145,6 +145,49 @@ try {
     Write-Host "installed binary reports: $reported"
   }
 
+  # The br shortcut checks need a machine where nothing else owns br.
+  $brFree = -not (Get-Command br, broot -ErrorAction SilentlyContinue)
+  if ($brFree) {
+    Write-Host '== br.exe is installed as a hardlink when free'
+    $br = Join-Path $dir 'br.exe'
+    if (-not (Test-Path $br)) { Fail "br.exe was not installed: $($result.Output)" }
+    if ((Get-FileHash $br).Hash -ne (Get-FileHash $exe).Hash) { Fail 'br.exe differs from brooom.exe' }
+    if ($result.Output -notmatch 'Installed .*br\.exe') { Fail "expected the br install message: $($result.Output)" }
+
+    Write-Host '== br.exe is refreshed on upgrade'
+    $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dir })
+    if ($result.Code -ne 0 -or $result.Output -notmatch 'Installed .*br\.exe') { Fail "br.exe not refreshed on upgrade: $($result.Output)" }
+    if ((Get-FileHash $br).Hash -ne (Get-FileHash $exe).Hash) { Fail 'br.exe differs from brooom.exe after the upgrade' }
+
+    Write-Host '== a foreign br.exe is kept'
+    $dirF = Join-Path $work 'install-foreign-br'
+    New-Item -ItemType Directory -Path $dirF | Out-Null
+    Set-Content -Path (Join-Path $dirF 'br.exe') -Value 'mine'
+    $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirF })
+    if ($result.Code -ne 0 -or -not (Test-Path (Join-Path $dirF 'brooom.exe'))) { Fail "install next to a foreign br.exe failed: $($result.Output)" }
+    if ((Get-Content (Join-Path $dirF 'br.exe')) -ne 'mine') { Fail 'a foreign br.exe was overwritten' }
+    if ($result.Output -notmatch 'Skipped the br shortcut: .*br\.exe already exists') { Fail "missing skip reason for a foreign br.exe: $($result.Output)" }
+
+    Write-Host '== another br on PATH is respected'
+    $other = Join-Path $work 'other-bin'
+    New-Item -ItemType Directory -Path $other | Out-Null
+    Set-Content -Path (Join-Path $other 'br.exe') -Value 'other'
+    $dirP = Join-Path $work 'install-br-on-path'
+    $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirP; Path = "$other;$env:Path" })
+    if ($result.Code -ne 0) { Fail "install with br on PATH failed: $($result.Output)" }
+    if (Test-Path (Join-Path $dirP 'br.exe')) { Fail 'br.exe installed although another br is on PATH' }
+    if ($result.Output -notmatch 'is already on your PATH') { Fail "missing skip reason for br on PATH: $($result.Output)" }
+
+    Write-Host '== a br function in the session is respected'
+    $dirB = Join-Path $work 'install-br-function'
+    $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirB }) "function br { 'broot' }; Get-Content -Raw '$installer' | Invoke-Expression"
+    if ($result.Code -ne 0) { Fail "install with a br function failed: $($result.Output)" }
+    if (Test-Path (Join-Path $dirB 'br.exe')) { Fail 'br.exe installed although br is a function' }
+    if ($result.Output -notmatch 'br is already a PowerShell function') { Fail "missing skip reason for a br function: $($result.Output)" }
+  } else {
+    Write-Host '== skipping br shortcut checks: br or broot exists on this machine'
+  }
+
   Write-Host '== PATH hint is usable with iex'
   if ($result.Output -notmatch [regex]::Escape('& ([scriptblock]::Create((irm ')) { Fail "expected a scriptblock based -AddToPath hint: $($result.Output)" }
   if ($result.Output -notmatch '-AddToPath') { Fail "expected the -AddToPath hint: $($result.Output)" }
@@ -160,7 +203,7 @@ Get-Content -Raw '$installer' | Invoke-Expression
 if (`$ErrorActionPreference -ne 'Continue') { `$leaks += 'ErrorActionPreference' }
 if (`$ProgressPreference -ne 'Continue') { `$leaks += 'ProgressPreference' }
 `$leaks += @(Get-Variable | ForEach-Object Name | Where-Object { `$vars -notcontains `$_ -and @('_', '?', 'args', 'input', 'PSItem') -notcontains `$_ })
-`$leaks += @(Get-ChildItem Function: | Where-Object { @('Get-Arch', 'Get-LatestTag', 'Install-Binary') -contains `$_.Name } | ForEach-Object { 'function:' + `$_.Name })
+`$leaks += @(Get-ChildItem Function: | Where-Object { @('Get-Arch', 'Get-LatestTag', 'Install-Binary', 'Get-Sha256', 'Get-BrTakenReason', 'Install-Br') -contains `$_.Name } | ForEach-Object { 'function:' + `$_.Name })
 if (`$leaks) { Write-Host ('LEAK: ' + (`$leaks -join ',')); exit 3 }
 "@
   $result = Invoke-Installer (Merge-Env $baseEnv @{ BROOOM_INSTALL_DIR = $dirI }) $probe

@@ -23,8 +23,8 @@ clutter modern AI-assisted development leaves behind:
 - Files go to your **OS trash** (or a quarantine folder); branches are
   deleted with `git branch -d`; worktrees are moved to the trash and then deregistered from git.
   Linked worktrees outside the scanned repository (such as `../repo-wt`) are
-  never touched; `brooom worktrees` lists them with a hint to run
-  `brooom roots add <parent>` or use `--workspaces` (not in `--format plain`,
+  never touched; `br worktrees` lists them with a hint to run
+  `br roots add <parent>` or use `--workspaces` (not in `--format plain`,
   which stays a bare path list).
   On Windows the Recycle Bin cannot take paths longer than 259 characters
   (the shell API rejects `\\?\` paths) or items larger than the bin limit;
@@ -36,7 +36,7 @@ clutter modern AI-assisted development leaves behind:
   (a junction is a name-surrogate link, and its target is never followed).
   Directories holding version control metadata (`.git`, `.hg`, `.jj`, `.svn`)
   are never removed.
-- Every applied session is recorded and can be reverted with `brooom undo`.
+- Every applied session is recorded and can be reverted with `br undo`.
 - Without flags Brooom only touches the repository you are in; paths outside
   the allowed scope are refused, symlinks are never followed out of it.
 
@@ -68,7 +68,14 @@ scriptblock, or set `BROOOM_ADD_TO_PATH=1` first:
 Upgrading while brooom is running works: the old `brooom.exe` is renamed to
 `brooom.exe.old` and removed on the next run.
 
-With a Go toolchain:
+Both install scripts also add `br`, a short command for `brooom` (a symlink,
+or a hardlinked `br.exe` on Windows), as long as nothing else uses `br`. If
+`br` is taken, for example by [broot](https://github.com/Canop/broot)'s shell
+function, by an alias or by another binary, the installer leaves it alone and
+tells you why. `brooom` always works, and every `br` example below works with
+`brooom` too.
+
+With a Go toolchain (installs `brooom` only, without `br`):
 
 ```sh
 go install github.com/Tobias-Braun/brooom/cmd/brooom@latest
@@ -102,16 +109,16 @@ network access in the whole tool is the opt-in update check:
 ## Usage
 
 ```sh
-brooom                      # scan the current repo, dry run
-brooom sweep                # the no-brainer: safe preset, cleans up right away
-brooom sweep --dry-run      # ...or only show what it would do
-brooom branches --merged    # merged branches, incl. squash merges
-brooom worktrees --apply    # remove leftover worktrees
-brooom ai --user            # agent artifacts, incl. user-level caches
-brooom scan -w -f json      # all workspace roots, machine-readable
-brooom undo                 # show what restoring the last session would do
-brooom undo --apply         # restore it (from the same repo, or with -w)
-brooom purge --apply        # delete quarantined sessions past their retention
+br                      # scan the current repo, dry run
+br sweep                # the no-brainer: safe preset, cleans up right away
+br sweep --dry-run      # ...or only show what it would do
+br branches --merged    # merged branches, incl. squash merges
+br worktrees --apply    # remove leftover worktrees
+br ai --user            # agent artifacts, incl. user-level caches
+br scan -w -f json      # all workspace roots, machine-readable
+br undo                 # show what restoring the last session would do
+br undo --apply         # restore it (from the same repo, or with -w)
+br purge --apply        # delete quarantined sessions past their retention
 ```
 
 Every command, flag and example is listed in the [CLI reference](docs/cli.md)

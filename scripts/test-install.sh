@@ -1,7 +1,8 @@
 #!/bin/sh
 # Smoke test for scripts/install.sh. It serves a fake release from a local
 # python3 http.server (through BROOOM_DOWNLOAD_BASE) and checks a successful
-# install, a tampered checksum, an unknown version and the PATH warning.
+# install, the br shortcut, a tampered checksum, an unknown version and the
+# PATH warning.
 # Runs on Linux and macOS; CI runs it on both.
 set -eu
 
@@ -82,6 +83,12 @@ port=$(cat "$port_file")
 BROOOM_DOWNLOAD_BASE="http://127.0.0.1:$port"
 export BROOOM_DOWNLOAD_BASE
 
+# An empty HOME keeps the developer's rc files and a real broot install from
+# deciding whether the br shortcut is free.
+HOME="$work/home"
+mkdir -p "$HOME"
+export HOME
+
 # 1. Successful install into a directory that is not on PATH.
 dest="$work/bin"
 out=$(BROOOM_VERSION="$version" BROOOM_INSTALL_DIR="$dest" sh "$installer" 2>&1) || fail "install failed: $out"
@@ -92,6 +99,45 @@ case "$out" in *"not in your PATH"*) ;; *) fail "missing PATH warning: $out" ;; 
 # The v prefix on BROOOM_VERSION is optional.
 rm -f "$dest/brooom"
 BROOOM_VERSION="$tag" BROOOM_INSTALL_DIR="$dest" sh "$installer" >/dev/null 2>&1 || fail "install with v prefix failed"
+
+# 1b. The br shortcut: installed when free, refreshed on upgrade, skipped with a
+# reason (and left untouched) whenever something else already owns br.
+if command -v br >/dev/null 2>&1 || command -v broot >/dev/null 2>&1; then
+  echo "skipping br shortcut checks: br or broot is on this machine's PATH"
+else
+  [ -L "$dest/br" ] || fail "br shortcut not installed"
+  [ "$("$dest/br")" = "brooom $version" ] || fail "br shortcut does not run brooom"
+  out=$(BROOOM_VERSION="$version" BROOOM_INSTALL_DIR="$dest" sh "$installer" 2>&1) || fail "upgrade failed: $out"
+  case "$out" in *"Installed $dest/br"*) ;; *) fail "br not refreshed on upgrade: $out" ;; esac
+
+  foreign="$work/foreign"
+  mkdir -p "$foreign"
+  printf 'mine\n' > "$foreign/br"
+  out=$(BROOOM_VERSION="$version" BROOOM_INSTALL_DIR="$foreign" sh "$installer" 2>&1) || fail "install next to a foreign br failed: $out"
+  [ "$(cat "$foreign/br")" = "mine" ] || fail "a foreign br was overwritten"
+  [ -x "$foreign/brooom" ] || fail "brooom not installed next to a foreign br"
+  case "$out" in *"Skipped the br shortcut: $foreign/br already exists"*) ;; *) fail "missing skip reason for a foreign br: $out" ;; esac
+
+  other="$work/other-bin"
+  mkdir -p "$other"
+  printf '#!/bin/sh\n' > "$other/br"
+  chmod 755 "$other/br"
+  out=$(PATH="$other:$PATH" BROOOM_VERSION="$version" BROOOM_INSTALL_DIR="$work/onpath" sh "$installer" 2>&1) || fail "install with br on PATH failed: $out"
+  [ ! -e "$work/onpath/br" ] || fail "br installed although another br is on PATH"
+  case "$out" in *"$other/br is already on your PATH"*) ;; *) fail "missing skip reason for br on PATH: $out" ;; esac
+
+  mkdir -p "$HOME/.config/broot/launcher"
+  out=$(BROOOM_VERSION="$version" BROOOM_INSTALL_DIR="$work/broot" sh "$installer" 2>&1) || fail "install with broot failed: $out"
+  [ ! -e "$work/broot/br" ] || fail "br installed although broot is set up"
+  case "$out" in *"used by broot"*) ;; *) fail "missing broot skip reason: $out" ;; esac
+  rm -rf "$HOME/.config"
+
+  printf 'alias br="echo hi"\n' > "$HOME/.zshrc"
+  out=$(BROOOM_VERSION="$version" BROOOM_INSTALL_DIR="$work/alias" sh "$installer" 2>&1) || fail "install with a br alias failed: $out"
+  [ ! -e "$work/alias/br" ] || fail "br installed although an alias exists"
+  case "$out" in *"alias or function in $HOME/.zshrc"*) ;; *) fail "missing alias skip reason: $out" ;; esac
+  rm -f "$HOME/.zshrc"
+fi
 
 # 2. Tampered archive: checksum verification must abort and install nothing.
 tamper="$work/tamper"
