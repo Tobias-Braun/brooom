@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Animated replay of `brooom sweep` and `brooom sweep --apply`. The initial
+ * Animated replay of `brooom sweep --dry-run` and `brooom sweep`. The initial
  * state is the completed final frame, so server rendering, no-JS viewers and
  * pre-hydration viewers all see the finished output and hydration cannot
  * mismatch. Only after mounting, and only if the visitor allows motion, is

@@ -88,11 +88,11 @@ func TestApplyHintNamesOnlyWorkingShortcuts(t *testing.T) {
 	}{
 		{"scope flags on shortcut", []string{"scan", "-w", "--root", "/r"},
 			[]findings.Finding{hintFinding("merged-branch", high, "b")},
-			[]string{"`brooom sweep --workspaces --root /r --apply`", "`brooom branches --workspaces --root /r --apply`"},
+			[]string{"`brooom sweep --workspaces --root /r`", "`brooom branches --workspaces --root /r --apply`"},
 			[]string{"brooom worktrees", "brooom logs"}},
 		{"no branch findings", []string{"scan"},
 			[]findings.Finding{hintFinding(config.DetectorLogs, high, "l")},
-			[]string{"`brooom sweep --apply`", "`brooom logs --apply`"},
+			[]string{"`brooom sweep`", "`brooom logs --apply`"},
 			[]string{"brooom branches"}},
 		{"safe preset skips medium findings", []string{"scan"},
 			[]findings.Finding{hintFinding("build-artifacts", med, "dist")},
@@ -100,7 +100,7 @@ func TestApplyHintNamesOnlyWorkingShortcuts(t *testing.T) {
 			[]string{"`brooom sweep --apply`"}},
 		{"partial coverage is stated", []string{"scan"},
 			[]findings.Finding{hintFinding(config.DetectorLogs, high, "l"), hintFinding("build-artifacts", med, "dist")},
-			[]string{"`brooom sweep --apply`", "covers up to 1 of 2", "brooom clean --from brooom-findings.json --apply"},
+			[]string{"`brooom sweep`", "covers up to 1 of 2", "brooom clean --from brooom-findings.json --apply"},
 			nil},
 		{"detector outside the preset", []string{"scan"},
 			[]findings.Finding{hintFinding("git-bloat", high, "g")},
@@ -133,7 +133,7 @@ func TestSweepHintFollowsConfiguredPreset(t *testing.T) {
 	cfg := config.Default()
 	cfg.Sweep.Preset = "standard"
 	got := hintFor(t, cfg, []string{"scan"}, hintFinding("build-artifacts", findings.ConfidenceMedium, "dist"))
-	if !strings.Contains(got, "`brooom sweep --apply`") {
+	if !strings.Contains(got, "`brooom sweep`") {
 		t.Errorf("standard preset covers medium findings:\n%s", got)
 	}
 }

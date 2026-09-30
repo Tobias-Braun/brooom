@@ -88,7 +88,7 @@ Without flags Brooom only looks at the git repository you are in. Use
 ```sh
 brooom
 brooom --workspaces --format json
-brooom sweep --apply
+brooom sweep
 brooom undo
 ```
 
@@ -975,16 +975,21 @@ Without --preset the config key sweep.preset decides (default "safe").
 does not include. Findings below the preset's minimum confidence are dropped.
 Findings with blocking risk flags are shown as blocked and not planned; only
 an explicit --force lifts them, exactly as in every other command. Presets
-never change the trash strategy, protected branches or the confirmation.
+never change the trash strategy or protected branches.
 
-Like every command, sweep is a dry run unless you pass --apply.
+Unlike the other commands, sweep applies right away and does not ask: it
+prints how many items of each kind were removed and how much disk was
+reclaimed. --dry-run lists what it would do, with the commands, and changes
+nothing; --verbose lists every item before applying. Everything is recorded
+for 'brooom undo'.
 ```
 
 **Examples**
 
 ```sh
 brooom sweep
-brooom sweep --preset standard --apply
+brooom sweep --dry-run
+brooom sweep --preset standard
 brooom sweep --workspaces --root ~/code --detector build-artifacts
 ```
 
@@ -992,11 +997,10 @@ brooom sweep --workspaces --root ~/code --detector build-artifacts
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--apply` | - | execute the plan (default is a dry run) |
+| `--dry-run` | - | show what would be cleaned and change nothing |
 | `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
 | `-p`, `--preset` | - | preset: safe, standard, aggressive (default: sweep.preset from the config, else safe) |
 | `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
-| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
 ## `brooom undo`

@@ -217,7 +217,7 @@ per session.
 ```
 brooom                          # scan current repo, table output, dry-run
 brooom scan [--workspaces] [--detector X] [--format F]
-brooom sweep [--preset P] [--apply] [-y]   # the no-brainer command
+brooom sweep [--preset P] [--dry-run]      # the no-brainer command (applies right away)
 brooom branches [--stale] [--merged] [--apply]
 brooom worktrees [--apply]
 brooom git purge [--gc] [--reflog-expire D] [--prune D] [--apply]

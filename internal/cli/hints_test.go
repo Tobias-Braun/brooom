@@ -117,7 +117,7 @@ func TestApplyCommandKeepsTheInvocation(t *testing.T) {
 	}{
 		{"merged flag", []string{"branches", "--merged"}, "brooom branches --merged --apply"},
 		{"sweep with detector and strategy", []string{"sweep", "-d", "merged-branch", "--trash-strategy", "delete"},
-			"brooom sweep -d merged-branch --trash-strategy delete --apply"},
+			"brooom sweep -d merged-branch --trash-strategy delete"},
 		{"clean from file", []string{"clean", "--from", "f.json"}, "brooom clean --from f.json --apply"},
 		{"existing apply is not doubled", []string{"branches", "--apply", "--merged"}, "brooom branches --merged --apply"},
 		{"apply=true is replaced", []string{"branches", "--apply=false"}, "brooom branches --apply"},
@@ -154,8 +154,8 @@ func TestScanApplyHints(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"plain", []string{"scan"}, "brooom sweep --apply"},
-		{"scope flags", []string{"scan", "-w", "--root", "/r", "--config", "c.json"}, "brooom sweep --config c.json --workspaces --root /r --apply"},
+		{"plain", []string{"scan"}, "brooom sweep"},
+		{"scope flags", []string{"scan", "-w", "--root", "/r", "--config", "c.json"}, "brooom sweep --config c.json --workspaces --root /r"},
 		{"one shortcut", []string{"scan", "-d", "merged-branch"}, "brooom branches --detector merged-branch --apply"},
 		{"two detectors of one shortcut", []string{"scan", "-d", "stale-branch,merged-branch"}, "brooom branches --detector " + findings.Quote("stale-branch,merged-branch") + " --apply"},
 		{"detectors of no shortcut", []string{"scan", "-d", "git-bloat,logs"}, ""},

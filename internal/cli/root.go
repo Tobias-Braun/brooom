@@ -221,7 +221,7 @@ func newRootCmd(a *app) *cobra.Command {
 		Short: "Sweep disk clutter from AI-assisted development",
 		Example: `  brooom
   brooom --workspaces --format json
-  brooom sweep --apply
+  brooom sweep
   brooom undo`,
 		Long: `Brooom finds and safely cleans the clutter that heavy AI/agent-assisted
 development leaves behind: agent run logs and runtime files, stale and merged

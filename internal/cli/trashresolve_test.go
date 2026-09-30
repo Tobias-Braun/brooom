@@ -227,7 +227,7 @@ func TestApplyHint(t *testing.T) {
 	if got, want := a.applyHint(branches, nil), "nothing was changed; run `brooom branches --apply` or `brooom sweep`"; got != want {
 		t.Errorf("got %q", got)
 	}
-	if got := a.applyHint(scan, res); !strings.Contains(got, "nothing was changed") || !strings.Contains(got, "brooom sweep --apply") {
+	if got := a.applyHint(scan, res); !strings.Contains(got, "nothing was changed") || !strings.Contains(got, "brooom sweep") {
 		t.Errorf("got %q", got)
 	}
 	if got := a.rerunHint(branches); got != "re-run 'brooom branches --apply'" {

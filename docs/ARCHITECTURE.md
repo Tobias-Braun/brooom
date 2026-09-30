@@ -547,7 +547,15 @@ is `runExecutor`, shared with the shortcut commands.
 
 `brooom sweep` resolves the preset (flag, then `sweep.preset`, then `safe`) and
 calls `runCleanup` with the preset's detectors, its `MinConfidence` and an
-overlay. The overlay is applied right after `config.Load` in `newScanRequest`
+overlay. Sweep is the one cleanup command that applies by default: it sets
+`apply` and `yes` itself (`--dry-run` switches apply off; `--apply` and `--yes`
+are hidden no-ops kept for old scripts) and passes `compact`, which becomes
+`action.Options.Brief`. A brief run prints no plan and no prompts, only
+`renderBriefSummary` (`internal/action/brief.go`): failures, a skipped count,
+the undo line and, last, the counts per kind with the reclaimed size. `--verbose`
+turns Brief off and brings the plan and the full summary back; a dry run always
+shows the plan. A machine `--format` never applies, so without an explicit
+`--apply` it stays the read-only report. The overlay is applied right after `config.Load` in `newScanRequest`
 and before `ForTarget`, so root overrides and the tighten-only `.brooom.json`
 still act on top of it. Findings below the confidence floor are dropped in
 `execute`, before reporting and planning; blocked findings are not treated

@@ -36,6 +36,10 @@ type cleanupSelection struct {
 	configOverlay func(*config.Config)
 	// minConfidence drops findings below it before planning.
 	minConfidence findings.Confidence
+	// compact makes an applying run print one summary line ("2 worktrees
+	// deleted, 5 stale branches removed. 4.2 GB reclaimed") instead of the
+	// per-item plan; --verbose brings the plan back.
+	compact bool
 }
 
 // machineFormats print parseable output only. They show findings in a dry
@@ -88,7 +92,7 @@ func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags
 	case machine:
 		return a.runScan(cmd, opts)
 	}
-	return a.planAndRun(cmd, opts, af, strategy, format)
+	return a.planAndRun(cmd, opts, af, strategy, format, sel.compact)
 }
 
 // nothingSelected handles a selection whose detectors are all disabled in the
@@ -153,7 +157,7 @@ func (a *app) enabledDetectors(cfg *config.Config, names []string) []string {
 // explicit --format still selects how the report is shown before them: it was
 // accepted and silently ignored. Without --format an apply run stays terse and
 // prints no report.
-func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, strategy config.TrashStrategy, format string) error {
+func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, strategy config.TrashStrategy, format string, compact bool) error {
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
@@ -178,6 +182,8 @@ func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, st
 	}
 	result, err := a.runExecutor(ctx, cmd, execInput{
 		cfg: res.Config, git: res.Env.Git, guard: res.Guard, findings: res.Report.Findings,
+		// --verbose keeps the per-item plan, so it is the opt-out of the brief summary.
+		brief: compact && af.apply && !a.flags.verbose,
 	}, af, strategy)
 	return mapExecutorError(result, err, af.apply)
 }
@@ -205,6 +211,9 @@ type execInput struct {
 	git      gitx.Runner
 	guard    *scope.Guard
 	findings []findings.Finding
+	// brief selects the one-line summary instead of the per-item plan and
+	// summary (see action.Options.Brief).
+	brief bool
 }
 
 // runExecutor plans and, with --apply, executes the findings through the
@@ -220,6 +229,7 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 	exec := action.NewExecutor(action.Options{
 		Apply:      af.apply,
 		Quiet:      a.flags.quiet,
+		Brief:      in.brief,
 		Yes:        af.yes,
 		Force:      af.force,
 		IO:         action.IO{In: a.io.In, Out: a.io.Out, Err: a.io.Err},
