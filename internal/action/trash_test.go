@@ -431,6 +431,9 @@ func TestTrashTrackedFilesForeignGitDir(t *testing.T) {
 // characters is matched literally: a glob-like directory must not report
 // files tracked elsewhere as its own.
 func TestTrashTrackedLiteralPathspec(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows file names cannot contain an asterisk")
+	}
 	repo := testutil.NewRepo(t)
 	repo.WriteFile("a.txt", "tracked\n")
 	repo.CommitAll("add", testutil.BaseTime)
