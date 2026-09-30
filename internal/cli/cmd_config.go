@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/output"
 )
 
 func newConfigCmd(a *app) *cobra.Command {
@@ -80,7 +81,7 @@ never reverted.`,
 				if err != nil {
 					return err
 				}
-				_, err = fmt.Fprintln(a.io.Out, path)
+				_, err = fmt.Fprintln(a.io.Out, output.Sanitize(path))
 				return err
 			},
 		},
@@ -102,7 +103,7 @@ func (a *app) runConfigInit(force bool) error {
 	if err := config.SaveFull(path, config.Default()); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(a.io.Out, "wrote %s\n", path)
+	_, err = fmt.Fprintf(a.io.Out, "wrote %s\n", output.Sanitize(path))
 	return err
 }
 
@@ -142,7 +143,7 @@ func writeConfigTable(w io.Writer, data []byte) error {
 	sort.Slice(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	for _, r := range rows {
-		fmt.Fprintf(tw, "%s\t%s\n", r[0], r[1])
+		fmt.Fprintf(tw, "%s\t%s\n", output.Sanitize(r[0]), output.Sanitize(r[1]))
 	}
 	return tw.Flush()
 }
@@ -177,7 +178,7 @@ func (a *app) reportProblems(path string, err error) error {
 		return err
 	}
 	for _, p := range ve.Problems {
-		fmt.Fprintf(a.io.Err, "%s: %s: %s\n", path, p.Field, p.Message)
+		fmt.Fprintf(a.io.Err, "%s: %s: %s\n", output.Sanitize(path), output.Sanitize(p.Field), output.Sanitize(p.Message))
 	}
 	return fmt.Errorf("%s is invalid (%d problem(s))", path, len(ve.Problems))
 }
@@ -188,7 +189,7 @@ func (a *app) runConfigValidate() error {
 		return err
 	}
 	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
-		_, err = fmt.Fprintf(a.io.Out, "ok (no config file at %s; defaults apply)\n", path)
+		_, err = fmt.Fprintf(a.io.Out, "ok (no config file at %s; defaults apply)\n", output.Sanitize(path))
 		return err
 	}
 	if _, err := config.Load(path); err != nil {

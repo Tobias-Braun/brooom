@@ -81,7 +81,7 @@ func RunUndo(ctx context.Context, env *Env, m *session.Manifest, opts UndoOption
 	res.tally()
 	renderUndoPlan(opts.IO.Out, m, steps)
 	if !opts.Apply {
-		fmt.Fprintf(opts.IO.Out, "dry run: nothing was restored; %s to restore\n", opts.RerunHint)
+		fmt.Fprintf(opts.IO.Out, "dry run: nothing was restored; %s to restore\n", output.Sanitize(opts.RerunHint))
 		return res, nil
 	}
 	n := res.restorable()
@@ -192,7 +192,7 @@ func (r *UndoResult) fail(label, msg string, conflict bool) {
 }
 
 func renderUndoPlan(w io.Writer, m *session.Manifest, steps []UndoStep) {
-	fmt.Fprintf(w, "undo session %s", m.ID)
+	fmt.Fprintf(w, "undo session %s", output.Sanitize(m.ID))
 	if m.Command != "" {
 		fmt.Fprintf(w, " (%s)", output.Sanitize(m.Command))
 	}
@@ -237,5 +237,5 @@ func renderUndoSummary(w io.Writer, r *UndoResult) {
 	}
 	fmt.Fprintf(w, "summary: %d restored, %d conflicts, %d failed, %d not restorable, %d already restored\n",
 		r.Restored, r.Conflicts, r.Failed, r.NotRestorable, r.AlreadyRestored)
-	fmt.Fprintf(w, "session: %s\n", r.SessionID)
+	fmt.Fprintf(w, "session: %s\n", output.Sanitize(r.SessionID))
 }

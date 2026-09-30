@@ -151,6 +151,8 @@ func renderPlan(w io.Writer, p *Plan) {
 		for _, it := range g.Items {
 			fmt.Fprintf(w, "  %s (%s)\n", output.Sanitize(it.Step.Description), output.FormatSize(it.Step.Finding.SizeBytes))
 			if it.Step.Command != "" {
+				// Step.Command is deliberately not sanitized here: it is a
+				// copy-pasteable shell command whose quoting is handled in #129.
 				fmt.Fprintf(w, "    $ %s\n", it.Step.Command)
 			}
 		}
@@ -190,7 +192,7 @@ func renderSummary(w io.Writer, r *Result, applyPhaseSkips []Skip) {
 	fmt.Fprintf(w, "summary: %d applied, %d skipped, %d failed\n", r.Applied, r.Skipped, r.Failed)
 	fmt.Fprintf(w, "reclaimed: %s\n", output.FormatSize(r.ReclaimedBytes))
 	if r.SessionID != "" {
-		fmt.Fprintf(w, "session: %s\n", r.SessionID)
+		fmt.Fprintf(w, "session: %s\n", output.Sanitize(r.SessionID))
 	}
 	renderSkips(w, "skipped during apply", applyPhaseSkips)
 	if len(r.Failures) > 0 {
@@ -201,7 +203,7 @@ func renderSummary(w io.Writer, r *Result, applyPhaseSkips []Skip) {
 	}
 	renderHints(w, r)
 	if r.Restorable() {
-		fmt.Fprintf(w, "undo: brooom undo %s\n", r.SessionID)
+		fmt.Fprintf(w, "undo: brooom undo %s\n", output.Sanitize(r.SessionID))
 	}
 }
 

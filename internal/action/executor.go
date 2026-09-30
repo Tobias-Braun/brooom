@@ -214,7 +214,7 @@ func (e *Executor) Run(ctx context.Context, fs []findings.Finding) (*Result, err
 		return res, nil
 	}
 	if !e.opts.Apply {
-		fmt.Fprintf(out, "dry run: nothing was changed; %s to execute\n", e.opts.RerunHint)
+		fmt.Fprintf(out, "dry run: nothing was changed; %s to execute\n", output.Sanitize(e.opts.RerunHint))
 		return res, nil
 	}
 	return e.apply(ctx, plan, res)

@@ -59,7 +59,7 @@ func needsSanitize(s string) bool {
 // isUnsafeRune reports control runes plus the Unicode line and paragraph
 // separators, which some terminals and log viewers treat as line breaks.
 func isUnsafeRune(r rune) bool {
-	return unicode.IsControl(r) || r == ' ' || r == ' '
+	return unicode.IsControl(r) || r == '\u2028' || r == '\u2029'
 }
 
 func escapeRune(r rune) string {

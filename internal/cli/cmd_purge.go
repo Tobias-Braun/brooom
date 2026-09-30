@@ -91,7 +91,7 @@ func (a *app) printPurgeListing(l *trash.QuarantineListing, days int, now time.T
 	}
 	fmt.Fprintf(a.io.Out, "quarantined sessions older than %d days:\n", days)
 	for _, s := range l.Expired {
-		fmt.Fprintf(a.io.Out, "  %s  %d days old  %s\n", s.ID, int(s.Age(now).Hours()/24), output.FormatSize(s.SizeBytes))
+		fmt.Fprintf(a.io.Out, "  %s  %d days old  %s\n", output.Sanitize(s.ID), int(s.Age(now).Hours()/24), output.FormatSize(s.SizeBytes))
 	}
 	fmt.Fprintf(a.io.Out, "total: %d session(s), %s\n", len(l.Expired), output.FormatSize(l.TotalBytes()))
 }
