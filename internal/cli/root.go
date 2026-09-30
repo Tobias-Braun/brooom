@@ -28,9 +28,6 @@ const (
 	ExitUsage = 2
 )
 
-// errNotImplemented is returned by commands whose milestone is not done yet.
-var errNotImplemented = errors.New("not implemented yet")
-
 // IO bundles the standard streams so commands are testable.
 type IO struct {
 	In  io.Reader

@@ -24,6 +24,8 @@ permanently. A retention of 0 means quarantined files never expire, so
 nothing is listed. Only session directories are touched, never anything else
 in the quarantine directory, the OS trash or the session manifests; the
 manifests of purged sessions are marked as not restorable.`,
+		Example: `  brooom purge
+  brooom purge --apply`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runPurge(cmd, apply, yes)

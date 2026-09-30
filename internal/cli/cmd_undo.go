@@ -35,6 +35,9 @@ session worked on or use --workspaces.
 Exit status: 0 when every restorable entry was restored, 1 when one conflicted
 or failed, 2 when confirmation is needed but stdin is not a terminal (pass
 --yes).`,
+		Example: `  brooom undo
+  brooom undo 20260929-224501-3f9a
+  brooom undo --apply`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runUndo(cmd, args, af)
