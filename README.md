@@ -134,6 +134,7 @@ br sweep --yes          # no question (scripts)
 br review               # decide one by one on dirty worktrees and unmerged branches
 br undo                 # show what the last session removed, ask, restore
                         # (a sweep of a folder prints `br undo <id> --path <folder>`)
+br empty-trash          # permanently delete what brooom put in the OS trash
 br purge                # delete quarantined sessions past their retention
 ```
 

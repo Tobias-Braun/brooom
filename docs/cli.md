@@ -22,6 +22,7 @@ Every command that changes something shows its plan and asks once before it acts
 - [`brooom config path`](#brooom-config-path)
 - [`brooom config show`](#brooom-config-show)
 - [`brooom config validate`](#brooom-config-validate)
+- [`brooom empty-trash`](#brooom-empty-trash)
 - [`brooom git`](#brooom-git)
 - [`brooom git purge`](#brooom-git-purge)
 - [`brooom purge`](#brooom-purge)
@@ -92,6 +93,7 @@ brooom undo
 - [`brooom clean`](#brooom-clean): Act on a reviewed findings file (from --format json)
 - [`brooom completion`](#brooom-completion): Generate the autocompletion script for the specified shell
 - [`brooom config`](#brooom-config): Create, show, edit and validate the configuration
+- [`brooom empty-trash`](#brooom-empty-trash): Permanently delete what brooom moved to the OS trash
 - [`brooom git`](#brooom-git): Git history maintenance
 - [`brooom purge`](#brooom-purge): Permanently delete quarantined sessions past their retention and stale scan caches
 - [`brooom review`](#brooom-review): Decide one by one on dirty worktrees and unmerged branches
@@ -534,6 +536,42 @@ is only a warning, because a root on an unmounted volume is legitimate.
 brooom config validate
 brooom config validate --config ./brooom.json
 ```
+
+
+## `brooom empty-trash`
+
+Permanently delete what brooom moved to the OS trash
+
+```text
+brooom empty-trash [flags]
+```
+
+```text
+List the items brooom moved to the OS trash that are still there (from the
+session manifests), ask once and delete them permanently. Nothing else in the
+trash is touched: an item is only deleted when its stored copy still lies
+inside an OS trash directory (.Trash, the freedesktop Trash, $Recycle.Bin) and
+is still of the recorded type (and, for a file, of the recorded size). Items
+that changed are listed with the reason and kept.
+
+The manifest entries of deleted items are marked as not restorable, so
+'brooom undo' and 'brooom sessions' stay truthful. Quarantined sessions are
+emptied by 'brooom purge' instead.
+```
+
+**Examples**
+
+```sh
+brooom empty-trash
+brooom empty-trash --dry-run
+```
+
+**Flags**
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--dry-run` | - | only list the items and delete nothing |
+| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
 ## `brooom git`
