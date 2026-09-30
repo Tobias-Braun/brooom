@@ -26,6 +26,32 @@ clutter modern AI-assisted development leaves behind:
 - Without flags Brooom only touches the repository you are in; paths outside
   the allowed scope are refused, symlinks are never followed out of it.
 
+## Install
+
+Download an archive for your platform from the
+[GitHub releases](https://github.com/Tobias-Braun/brooom/releases) or use the
+install script (verifies the sha256 checksum, installs to `~/.local/bin`, never
+uses sudo):
+
+```sh
+# Linux and macOS
+curl -fsSL https://raw.githubusercontent.com/Tobias-Braun/brooom/main/scripts/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/Tobias-Braun/brooom/main/scripts/install.ps1 | iex
+```
+
+With a Go toolchain:
+
+```sh
+go install github.com/Tobias-Braun/brooom/cmd/brooom@latest
+```
+
+Coming soon: Homebrew, Scoop, winget, AUR and deb/rpm packages. See
+[releasing](docs/releasing.md) for the release process.
+
 ## Usage
 
 ```sh
@@ -47,6 +73,7 @@ Output formats: `table` (default), `tree`, `json`, `ndjson`, `plain`,
 - [Product specification](docs/SPEC.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Findings schema](docs/findings.md)
+- [Releasing](docs/releasing.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License

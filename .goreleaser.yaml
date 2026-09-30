@@ -1,0 +1,179 @@
+# GoReleaser configuration, see docs/releasing.md for the release process.
+#
+# The archive name_template and the download logic in scripts/install.sh and
+# scripts/install.ps1 depend on each other: change them together.
+#
+# Only the GitHub release is published. Every package manager integration
+# below is prepared with skip_upload: true, so nothing is pushed anywhere
+# until a maintainer flips it to auto (docs/releasing.md).
+version: 2
+
+project_name: brooom
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: brooom
+    main: ./cmd/brooom
+    binary: brooom
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X github.com/Tobias-Braun/brooom/internal/buildinfo.Version={{.Version}}
+      - -X github.com/Tobias-Braun/brooom/internal/buildinfo.Commit={{.Commit}}
+      - -X github.com/Tobias-Braun/brooom/internal/buildinfo.Date={{.Date}}
+
+archives:
+  - id: brooom
+    formats: [tar.gz]
+    name_template: "brooom_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# Conventional commit prefixes, with optional scope and breaking marker. The
+# trailing "(#12)" that squash merges append is part of the subject and stays
+# in the entry, where GitHub renders it as a PR link. Entries are ordered by
+# the group order; chore, ci, test and build changes are excluded because
+# they say nothing to users.
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Breaking changes
+      regexp: '^.*?(feat|fix|perf|refactor)(\([[:word:]\-/]+\))?!:.+$'
+      order: 0
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]\-/]+\))?:.+$'
+      order: 1
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]\-/]+\))?:.+$'
+      order: 2
+    - title: Performance
+      regexp: '^.*?perf(\([[:word:]\-/]+\))?:.+$'
+      order: 3
+    - title: Refactoring
+      regexp: '^.*?refactor(\([[:word:]\-/]+\))?:.+$'
+      order: 4
+    - title: Documentation
+      regexp: '^.*?docs(\([[:word:]\-/]+\))?:.+$'
+      order: 5
+    - title: Other changes
+      order: 999
+  filters:
+    exclude:
+      - '^.*?(chore|ci|test|build|style)(\([[:word:]\-/]+\))?!?:'
+      - "^Merge (pull request|branch)"
+
+release:
+  github:
+    owner: Tobias-Braun
+    name: brooom
+  prerelease: auto
+
+nfpms:
+  - id: brooom
+    package_name: brooom
+    file_name_template: "brooom_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    maintainer: Tobias Braun <mail@tobi-braun.com>
+    homepage: https://github.com/Tobias-Braun/brooom
+    license: MIT
+    description: Sweep disk clutter left behind by AI-assisted development.
+    formats: [deb, rpm, apk]
+    bindir: /usr/bin
+    # Only Linux binaries can be packaged; ids limits it to our build.
+    ids: [brooom]
+
+# Package manager integrations. All are prepared but not enabled: with
+# skip_upload: true GoReleaser renders the manifests into dist/ and pushes
+# nothing. The commit author is the project identity for every commit the
+# pipeline creates in other repositories, and the message template carries no
+# trailers.
+homebrew_casks:
+  - name: brooom
+    ids: [brooom]
+    repository:
+      owner: Tobias-Braun
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/Tobias-Braun/brooom
+    description: Sweep disk clutter left behind by AI-assisted development.
+    skip_upload: true
+    commit_author:
+      name: Tobias Braun
+      email: mail@tobi-braun.com
+    commit_msg_template: "brew: update {{ .ProjectName }} to {{ .Tag }}"
+
+scoops:
+  - name: brooom
+    ids: [brooom]
+    repository:
+      owner: Tobias-Braun
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+    homepage: https://github.com/Tobias-Braun/brooom
+    description: Sweep disk clutter left behind by AI-assisted development.
+    license: MIT
+    skip_upload: true
+    commit_author:
+      name: Tobias Braun
+      email: mail@tobi-braun.com
+    commit_msg_template: "scoop: update {{ .ProjectName }} to {{ .Tag }}"
+
+winget:
+  - name: brooom
+    ids: [brooom]
+    publisher: Tobias-Braun
+    package_identifier: Tobias-Braun.brooom
+    short_description: Sweep disk clutter left behind by AI-assisted development.
+    description: Fast, safe, cross-platform CLI that finds and cleans disk clutter from AI-assisted development.
+    license: MIT
+    homepage: https://github.com/Tobias-Braun/brooom
+    publisher_url: https://github.com/Tobias-Braun
+    skip_upload: true
+    commit_author:
+      name: Tobias Braun
+      email: mail@tobi-braun.com
+    commit_msg_template: "New version: {{ .PackageIdentifier }} version {{ .Version }}"
+    repository:
+      owner: Tobias-Braun
+      name: winget-pkgs
+      branch: "brooom-{{ .Version }}"
+      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+
+aurs:
+  - name: brooom-bin
+    ids: [brooom]
+    homepage: https://github.com/Tobias-Braun/brooom
+    description: Sweep disk clutter left behind by AI-assisted development.
+    license: MIT
+    maintainers:
+      - "Tobias Braun <mail@tobi-braun.com>"
+    git_url: ssh://aur@aur.archlinux.org/brooom-bin.git
+    private_key: "{{ .Env.AUR_SSH_PRIVATE_KEY }}"
+    skip_upload: true
+    commit_author:
+      name: Tobias Braun
+      email: mail@tobi-braun.com
+    commit_msg_template: "Update to {{ .Tag }}"

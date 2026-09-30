@@ -1,0 +1,59 @@
+# Validates the release pipeline on pull requests that touch it. Nothing is
+# uploaded or published and the token is read-only.
+name: Release check
+
+on:
+  pull_request:
+    paths:
+      - .goreleaser.yaml
+      - .github/workflows/release*.yml
+      - scripts/install.*
+      - scripts/test-install.sh
+      - docs/releasing.md
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  goreleaser:
+    name: GoReleaser snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish
+      - name: Snapshot binary reports the stamped version
+        run: |
+          ./dist/brooom_linux_amd64_v1/brooom version --format plain | grep -q SNAPSHOT
+
+  install-script:
+    name: Install script (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Syntax check
+        run: sh -n scripts/install.sh
+      - name: ShellCheck
+        if: runner.os == 'Linux'
+        run: shellcheck scripts/install.sh scripts/test-install.sh
+      - name: Install against a local fake release
+        run: sh scripts/test-install.sh

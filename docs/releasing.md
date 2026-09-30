@@ -1,0 +1,104 @@
+# Releasing Brooom
+
+Releases are built by [GoReleaser](https://goreleaser.com) from
+`.goreleaser.yaml` and published by `.github/workflows/release.yml`. Only the
+GitHub release is published today; every package manager integration is
+prepared but has `skip_upload: true`.
+
+## Cutting a release
+
+1. Make sure `main` is green and contains everything for the release.
+2. Tag `main` with a semantic version and push the tag:
+
+   ```sh
+   git switch main && git pull --ff-only
+   git tag -a v0.1.0 -m "v0.1.0"
+   git push origin v0.1.0
+   ```
+
+3. The `Release` workflow runs on the tag (`v*`). It builds linux, darwin and
+   windows binaries for amd64 and arm64 with `CGO_ENABLED=0`, stamps
+   `buildinfo.Version`, `Commit` and `Date`, creates the archives,
+   `checksums.txt` (sha256), the deb, rpm and apk packages, and publishes a
+   GitHub release with the generated changelog. Tags with a pre-release suffix
+   (for example `v0.2.0-rc.1`) are marked as pre-releases.
+4. Check the release page and try the install script:
+   `curl -fsSL https://raw.githubusercontent.com/Tobias-Braun/brooom/main/scripts/install.sh | sh`.
+
+Archive names are `brooom_<version>_<os>_<arch>.tar.gz` (`.zip` on windows),
+without the leading `v`. `scripts/install.sh`, `scripts/install.ps1` and the
+`archives.name_template` in `.goreleaser.yaml` depend on each other and must
+change together.
+
+## Changelog
+
+The changelog is generated from commit subjects (`changelog.use: github`, so
+entries link to the author and PR). Conventional prefixes decide the group,
+with an optional scope and a `!` for breaking changes. Squash merge titles such
+as `feat(cli): add sweep (#12)` are matched too, because the trailing PR
+number is part of the subject.
+
+| Prefix | Group |
+| --- | --- |
+| `type!:` (feat, fix, perf, refactor) | Breaking changes |
+| `feat` | Features |
+| `fix` | Bug fixes |
+| `perf` | Performance |
+| `refactor` | Refactoring |
+| `docs` | Documentation |
+| anything else | Other changes (last) |
+| `chore`, `ci`, `test`, `build`, `style`, merge commits | excluded |
+
+Write PR titles in this form, since squash merges turn them into commit
+subjects.
+
+## Testing locally
+
+```sh
+go run github.com/goreleaser/goreleaser/v2@latest check
+go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish
+./dist/brooom_linux_amd64_v1/brooom version   # pick the folder of your platform
+```
+
+The snapshot writes archives, `checksums.txt`, packages and the rendered
+Homebrew, Scoop, winget and AUR manifests to `dist/` (git-ignored) and uploads
+nothing. `scripts/test-install.sh` tests the install script against a local
+fake release. Pull requests touching the release files run the same checks in
+`.github/workflows/release-check.yml`.
+
+## Enabling package managers
+
+Each integration is configured but disabled. To enable one, create the
+repository and secret listed below, then change its `skip_upload: true` to
+`auto` (which skips pre-releases) or `false` in `.goreleaser.yaml`. The
+workflow already passes the secrets as optional environment variables; an
+unset secret is harmless while uploads are skipped.
+
+| Channel | Repository to create | Secret (repository secret in Tobias-Braun/brooom) | Token / key scope |
+| --- | --- | --- | --- |
+| Homebrew | `Tobias-Braun/homebrew-tap` (public) | `HOMEBREW_TAP_GITHUB_TOKEN` | fine-grained PAT, contents: write on the tap |
+| Scoop | `Tobias-Braun/scoop-bucket` (public) | `SCOOP_BUCKET_GITHUB_TOKEN` | fine-grained PAT, contents: write on the bucket |
+| winget | fork of `microsoft/winget-pkgs` as `Tobias-Braun/winget-pkgs` | `WINGET_GITHUB_TOKEN` | PAT that can push to the fork and open pull requests against `microsoft/winget-pkgs` |
+| AUR | package `brooom-bin` registered on aur.archlinux.org | `AUR_SSH_PRIVATE_KEY` | private key whose public half is on the AUR account |
+
+The deb, rpm and apk packages are already attached to the GitHub release; they
+are not pushed to a package repository.
+
+winget and AUR stay `skip_upload: true` even after the tap and bucket are
+enabled: they need separate accounts and manual review (the winget PR is
+reviewed by Microsoft, the first AUR push needs the package registered).
+
+## Identity
+
+All commits for this project use `Tobias Braun <mail@tobi-braun.com>`: the
+maintainer's own commits, the commits and pull request of the release pipeline
+issue, and every commit the release pipeline creates in other repositories
+(Homebrew tap, Scoop bucket, winget fork, AUR). Each publisher sets it as
+`commit_author`, and the `commit_msg_template` values add no trailers. No bot
+or AI identity and no `Co-Authored-By` trailer is used.
+
+## Future work
+
+- Signing of checksums and artifacts (cosign or GPG).
+- SBOMs attached to releases.
+- Publishing the deb, rpm and apk packages to a package repository.

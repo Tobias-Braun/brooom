@@ -25,7 +25,11 @@ func resolvedTemp(t *testing.T) string {
 // on this machine (no lsof, restricted /proc, Restart Manager failing).
 func query(t *testing.T, paths ...string) map[string]bool {
 	t.Helper()
-	res, err := OpenFiles(context.Background(), paths)
+	// The production default budget is tuned for interactive use; a loaded CI
+	// runner (macOS under -race) can need longer for a machine-wide lsof.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	res, err := OpenFiles(ctx, paths)
 	if errors.Is(err, ErrUnavailable) {
 		t.Skipf("open-file detection unavailable: %v", err)
 	}
