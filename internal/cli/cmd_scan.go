@@ -1,14 +1,23 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"context"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Tobias-Braun/brooom/internal/output"
+)
 
 // scanOptions narrows a scan to a subset of detectors or categories; the
 // shortcut commands (branches, logs, artifacts, ai, ...) are scans with a
 // preset selection.
 type scanOptions struct {
-	// detectors restricts the scan to these detector names (in addition to
-	// the --detector flag).
-	detectors []string //nolint:unused // read by runScan once the scan command is implemented
+	// detectors restricts the scan to these detector names; it is combined
+	// with the --detector flag by intersection.
+	detectors []string
+	// force is passed to the detectors as detect.Env.Force (--force of the
+	// commands that can apply).
+	force bool
 }
 
 func newScanCmd(a *app) *cobra.Command {
@@ -26,8 +35,50 @@ modifies anything; use 'brooom sweep', a specific command with --apply, or
 	}
 }
 
-// runScan resolves scope and config, runs the selected detectors and prints
-// the report in the requested format.
+// runScan validates the request (so a typo fails before a long scan), runs
+// the scan and prints the report in the requested format. Formats that
+// implement streamingFormatter print findings while the scan runs. On
+// interruption the partial report is still rendered before the error is
+// returned.
 func (a *app) runScan(cmd *cobra.Command, opts scanOptions) error {
-	return errNotImplemented
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := a.newScanRequest(opts)
+	if err != nil {
+		return err
+	}
+	formatter, err := output.Get(req.format)
+	if err != nil {
+		return usageError{err}
+	}
+	renderOpts := a.outputOptions(req.cfg)
+	if sf, ok := formatter.(streamingFormatter); ok {
+		return a.scanStreaming(ctx, req, sf, renderOpts)
+	}
+	res, err := a.execute(ctx, req, nil)
+	if res == nil {
+		return err
+	}
+	a.logScanErrors(res.Report.Errors, false)
+	if werr := formatter.Write(a.io.Out, res.Report, renderOpts); werr != nil {
+		return werr
+	}
+	return err
+}
+
+// scanStreaming runs the scan with the formatter's stream callbacks. The
+// report is not rendered afterwards (the findings were already written), so
+// scan errors go to stderr instead.
+func (a *app) scanStreaming(ctx context.Context, req *scanRequest, sf streamingFormatter, opts output.Options) error {
+	onFinding, finish := sf.NewStream(a.io.Out, opts)
+	res, err := a.execute(ctx, req, onFinding)
+	if ferr := finish(); ferr != nil && err == nil {
+		err = ferr
+	}
+	if res != nil {
+		a.logScanErrors(res.Report.Errors, true)
+	}
+	return err
 }

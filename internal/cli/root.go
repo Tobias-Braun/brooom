@@ -9,10 +9,12 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 
 	"github.com/spf13/cobra"
 )
@@ -80,20 +82,31 @@ func (e usageError) Unwrap() error { return e.err }
 
 // Main runs the CLI with args (without the program name) and returns the
 // process exit code.
+//
+// The command runs with a context that is cancelled by Ctrl-C, so a scan can
+// stop early and still print its partial report.
 func Main(args []string, stdio IO) int {
-	return execute(&app{io: stdio}, args)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return executeContext(ctx, &app{io: stdio}, args)
 }
 
 // execute runs the command tree of a. Tests build the app themselves to
 // inject collaborators before calling it.
 func execute(a *app, args []string) int {
+	return executeContext(context.Background(), a, args)
+}
+
+// executeContext is execute with a caller-supplied context, which lets tests
+// cancel a run without sending real signals.
+func executeContext(ctx context.Context, a *app, args []string) int {
 	stdio := a.io
 	root := newRootCmd(a)
 	root.SetArgs(args)
 	root.SetIn(stdio.In)
 	root.SetOut(stdio.Out)
 	root.SetErr(stdio.Err)
-	err := root.Execute()
+	err := root.ExecuteContext(ctx)
 	if err == nil {
 		return ExitOK
 	}
