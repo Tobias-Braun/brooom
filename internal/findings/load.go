@@ -28,8 +28,15 @@ const MaxReportBytes = 256 << 20
 func ReadReport(r io.Reader) (*Report, error) {
 	lr := &io.LimitedReader{R: r, N: MaxReportBytes + 1}
 	dec := json.NewDecoder(decodeText(lr))
-	var rep Report
-	err := dec.Decode(&rep)
+	var probe struct {
+		Report
+		// ID and Detector only exist on a bare Finding, which is what every
+		// line of brooom's ndjson output is.
+		ID       string `json:"id"`
+		Detector string `json:"detector"`
+	}
+	err := dec.Decode(&probe)
+	rep := probe.Report
 	switch {
 	case lr.N <= 0:
 		return nil, fmt.Errorf("input is larger than %d MiB", MaxReportBytes>>20)
@@ -37,6 +44,12 @@ func ReadReport(r io.Reader) (*Report, error) {
 		return nil, errors.New("input is empty")
 	case err != nil:
 		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+	// Checked before the trailing-data test so that a multi-line stream gets
+	// the actionable hint instead of a generic error. Reading ndjson directly
+	// is deliberately unsupported: it carries no scopes or schema version.
+	if rep.SchemaVersion == 0 && (probe.ID != "" || probe.Detector != "") {
+		return nil, errors.New("input looks like ndjson; clean --from needs --format json output")
 	}
 	// A second JSON value means the file is not a single report (for example
 	// two concatenated scans or an ndjson stream), and guessing is unsafe.

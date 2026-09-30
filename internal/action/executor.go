@@ -88,7 +88,26 @@ type Plan struct {
 type Group struct {
 	Detector string
 	Action   findings.ActionType
+	// Strategy is the resolved trash strategy of the group's items, empty for
+	// actions that do not remove through a trasher. Items of one detector and
+	// action can differ in it, so it is part of the group key.
+	Strategy config.TrashStrategy
 	Items    []Item
+}
+
+// Label is how prompts and plan headers name the group's action. The action
+// type of a removal is always "trash", which would understate a permanent
+// delete when the confirmation is the user's last chance to stop it, so the
+// resolved strategy is spelled out instead. The manifest and JSON output keep
+// the plain action type.
+func (g Group) Label() string {
+	switch g.Strategy {
+	case config.StrategyDelete:
+		return "delete permanently"
+	case config.StrategyQuarantine:
+		return "quarantine"
+	}
+	return string(g.Action)
 }
 
 // Item is one planned step and whether the user confirmed it.

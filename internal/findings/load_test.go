@@ -89,6 +89,8 @@ func TestReadReportEncodings(t *testing.T) {
 		{"utf-8 bom", append([]byte{0xEF, 0xBB, 0xBF}, doc...)},
 		{"utf-16 le bom", encode16([]byte{0xFF, 0xFE}, binary.LittleEndian.PutUint16)},
 		{"utf-16 be bom", encode16([]byte{0xFE, 0xFF}, binary.BigEndian.PutUint16)},
+		{"utf-16 le without bom", encode16(nil, binary.LittleEndian.PutUint16)},
+		{"utf-16 be without bom", encode16(nil, binary.BigEndian.PutUint16)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -106,4 +108,24 @@ func TestReadReportEncodings(t *testing.T) {
 			t.Fatal("want an error")
 		}
 	})
+}
+
+// TestReadReportNDJSONHint checks that brooom's own ndjson output, which is
+// not accepted as input, is named as such instead of failing with a generic
+// JSON error.
+func TestReadReportNDJSONHint(t *testing.T) {
+	const want = "input looks like ndjson; clean --from needs --format json output"
+	one := `{"id":"a","detector":"logs","path":"/x"}` + "\n"
+	tests := []struct{ name, input string }{
+		{"one finding", one},
+		{"two findings", one + `{"id":"b","detector":"logs","path":"/y"}` + "\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ReadReport(strings.NewReader(tt.input))
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("error %v, want %q", err, want)
+			}
+		})
+	}
 }

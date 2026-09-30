@@ -24,7 +24,8 @@ clutter modern AI-assisted development leaves behind:
   deleted with `git branch -d`; worktrees with `git worktree remove`.
   Linked worktrees outside the scanned repository (such as `../repo-wt`) are
   never touched; `brooom worktrees` lists them with a hint to run
-  `brooom roots add <parent>` or use `--workspaces`.
+  `brooom roots add <parent>` or use `--workspaces` (not in `--format plain`,
+  which stays a bare path list).
   On Windows the Recycle Bin cannot take paths longer than 259 characters
   (the shell API rejects `\\?\` paths) or items larger than the bin limit;
   Brooom refuses those instead of letting Windows delete them permanently and

@@ -21,6 +21,13 @@ func decodeText(r io.Reader) io.Reader {
 	br := bufio.NewReader(r)
 	head, _ := br.Peek(3)
 	switch {
+	// Without a BOM, a JSON document starts with an ASCII character (`{` or
+	// whitespace), so a NUL in one of the first two bytes gives away UTF-16
+	// and its byte order (tools such as `iconv -t UTF-16LE` omit the BOM).
+	case len(head) >= 2 && head[0] != 0 && head[1] == 0:
+		return &utf16Reader{r: br, order: binary.LittleEndian}
+	case len(head) >= 2 && head[0] == 0 && head[1] != 0:
+		return &utf16Reader{r: br, order: binary.BigEndian}
 	case bytes.HasPrefix(head, []byte{0xEF, 0xBB, 0xBF}):
 		_, _ = br.Discard(3)
 		return br

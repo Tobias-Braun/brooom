@@ -625,6 +625,13 @@ Validate the config file
 brooom config validate [flags]
 ```
 
+```text
+Check the config file and report every problem. Inside a git repository the
+repository's .brooom.json is checked as well, exactly as a scan would apply
+it, so the result depends on the current directory. A root that does not exist
+is only a warning, because a root on an unmounted volume is legitimate.
+```
+
 **Examples**
 
 ```sh
@@ -1086,7 +1093,8 @@ metadata whose directory is gone. Dirty or locked worktrees are reported but
 never suggested for removal. Linked worktrees outside the scanned scope (for
 example ../repo-wt) are listed as informational findings with the hint to run
 'brooom roots add <parent>' or use --workspaces; they are never examined or
-removed. With --apply, worktrees are removed with
+removed. The plain format is a bare path list for pipes and omits these
+informational findings; use another format to see them. With --apply, worktrees are removed with
 'git worktree remove' and metadata is pruned with 'git worktree prune'.
 ```
 
