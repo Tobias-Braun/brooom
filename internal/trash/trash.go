@@ -78,7 +78,7 @@ type Options struct {
 
 // errNotImplemented marks skeleton functions that are implemented by the
 // milestone issues. It is never returned by a released binary.
-var errNotImplemented = errors.New("trash: not implemented yet")
+var errNotImplemented = errors.New("trash: not implemented yet") //nolint:unused // still used by the darwin and windows stubs
 
 // New returns the trasher for a strategy. The OS trash is implemented per
 // platform in ostrash_<os>.go (newOSTrasher), quarantine in quarantine.go and
