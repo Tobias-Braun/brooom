@@ -144,6 +144,7 @@ type Repo struct {
 	remoteBranches memo[struct{}, []RemoteBranch]
 	worktrees      memo[struct{}, []Worktree]
 	bases          memo[string, Base]
+	candidates     memo[string, []Base]
 	remoteHolder   memo[string, string]
 	unpushed       memo[string, int]
 	patches        patchCache

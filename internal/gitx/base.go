@@ -33,6 +33,19 @@ type Base struct {
 	Remote string
 	// Source says how the base was found (BaseSource* constants).
 	Source string
+	// Unpushed is set on a local candidate that ranks behind a remote primary
+	// base: a merge into it exists only in this clone, so no remote has proof
+	// of it. It is always false on the primary base.
+	Unpushed bool
+}
+
+// Display is the base in the words shown to the user: the short ref, or
+// "local main (not pushed)" for a local candidate behind a remote primary.
+func (b Base) Display() string {
+	if b.Unpushed {
+		return "local " + b.Name + " (not pushed)"
+	}
+	return b.Ref
 }
 
 const originRemote = "origin"
@@ -58,6 +71,70 @@ func (r *Repo) DefaultBase(ctx context.Context, configured []string) (Base, erro
 		}
 		return Base{}, ErrNoBase
 	})
+}
+
+// BaseCandidates returns every existing base ref merge detection may compare
+// against, primary first (what DefaultBase returns), then origin/HEAD, then for
+// every configured name origin/<name> and the local <name>. Preferring the
+// remote base stays the default for safety decisions (a stale local main misses
+// merges), but a branch merged only into a local main that is ahead of origin
+// is still merged; such local candidates carry Unpushed so callers do not
+// mistake them for remote-verified. Duplicates are dropped by full ref. The
+// returned slice is shared and must not be modified.
+func (r *Repo) BaseCandidates(ctx context.Context, configured []string) ([]Base, error) {
+	return cached(r, &r.candidates, strings.Join(configured, "\x00"), func() ([]Base, error) {
+		primary, err := r.DefaultBase(ctx, configured)
+		if err != nil {
+			return nil, err
+		}
+		out := []Base{primary}
+		seen := map[string]bool{primary.FullRef: true}
+		add := func(b Base) {
+			if seen[b.FullRef] || !r.refExists(ctx, b.FullRef) {
+				return
+			}
+			seen[b.FullRef] = true
+			b.Unpushed = b.Remote == "" && primary.Remote != ""
+			out = append(out, b)
+		}
+		if b, ok := r.originHeadBase(ctx); ok {
+			add(b)
+		}
+		for _, name := range configured {
+			add(Base{Ref: originRemote + "/" + name, FullRef: "refs/remotes/" + originRemote + "/" + name, Name: name, Remote: originRemote, Source: BaseSourceConfigRemote})
+			add(Base{Ref: name, FullRef: "refs/heads/" + name, Name: name, Source: BaseSourceConfigLocal})
+		}
+		return out, nil
+	})
+}
+
+// MergedIntoAny reports whether branch is merged into any of the bases, in
+// order, and which base matched. Ancestry against every base is tried before
+// any patch-id (squash/rebase) detection, so a cheap certain answer against a
+// later candidate wins over an expensive guess against the first. A failing
+// check is unknown and never merged; its error is returned only when no base
+// matched.
+func (r *Repo) MergedIntoAny(ctx context.Context, bases []Base, branch string, includeSquash bool) (Base, MergeResult, error) {
+	var firstErr error
+	modes := []bool{false}
+	if includeSquash {
+		modes = append(modes, true)
+	}
+	for _, squash := range modes {
+		for _, b := range bases {
+			res, err := r.MergedInto(ctx, b.FullRef, branch, squash)
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			if res.Merged {
+				return b, res, nil
+			}
+		}
+	}
+	return Base{}, MergeResult{}, firstErr
 }
 
 // originHeadBase follows refs/remotes/origin/HEAD when it points at an

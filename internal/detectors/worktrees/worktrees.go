@@ -129,8 +129,10 @@ type scan struct {
 	repo   *gitx.Repo
 	// main is the path git reports for the main worktree; actions run git
 	// there because a finding's Path is the linked worktree.
-	main     string
-	base     gitx.Base
+	main string
+	base gitx.Base
+	// bases lists every candidate a merge counts against, base first.
+	bases    []gitx.Base
 	hasBase  bool
 	squash   bool
 	branches map[string]gitx.Branch
@@ -166,8 +168,8 @@ func newScan(ctx context.Context, env *detect.Env, target scope.Target) (*scan, 
 	}
 	// Without a resolvable base branch merge checks are skipped; the other
 	// classifications still work, so this is not an error.
-	if base, err := repo.DefaultBase(ctx, cfg.Git.BaseBranches); err == nil {
-		s.base, s.hasBase = base, true
+	if bases, err := repo.BaseCandidates(ctx, cfg.Git.BaseBranches); err == nil {
+		s.base, s.bases, s.hasBase = bases[0], bases, true
 	}
 	branches, err := repo.ListBranches(ctx)
 	if err != nil {
