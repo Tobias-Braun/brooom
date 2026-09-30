@@ -1,0 +1,12 @@
+  1.0 MB  -    medium  trash          dist
+  1.2 GB  1y   high    trash          node_modules
+500.0 MB  1mo  low     trash          node_modules/.cache
+ 88.0 MB  6mo  high    trash          packages/storefront/.next/cache/webpack/client-production
+       -  3mo  high    delete-branch  .                                                          feat/old-cart  gone
+       -  12d  medium  none           .                                                          feat/wip       unpushed,no-remote
+  -> unpushed
+ 52.0 MB  3d   low     none           /work/shop-wt                                                             dirty
+  -> worktree has uncommitted changes
+
+Scan errors (1):
+  git-bloat /work/shop: git count-objects failed

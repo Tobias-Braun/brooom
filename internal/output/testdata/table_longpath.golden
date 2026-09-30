@@ -1,0 +1,6 @@
+build-artifacts - rebuildable build output (1)
+  SIZE  AGE  CONF  ACTION  PATH
+2.0 kB  2mo  high  trash   deeply/nested/deeply/nested/deeply/nested/deeply/nested/deeply/nested/deeply/nested/deeply/nested/deeply/nested/artifact.log
+1 finding, 1 actionable, 2.0 kB reclaimable
+
+1 finding, 1 actionable, 2.0 kB reclaimable
