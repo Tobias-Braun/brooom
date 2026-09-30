@@ -16,7 +16,7 @@
 //
 // # macOS and Full Disk Access
 //
-// The macOS trasher hands items to NSFileManager (through osascript), which
+// The macOS trasher hands items to NSFileManager (called directly through purego), which
 // works without special permissions and returns the resulting path in the
 // Trash. Since macOS 10.15, however, ~/.Trash is protected by TCC: a CLI
 // without Full Disk Access gets "Operation not permitted" when it stats,
@@ -24,7 +24,7 @@
 // Restore (and any inspection of Record.StoredPath) may fail. Restore then
 // returns an error wrapping ErrNotRestorable that says so; restore such items
 // with Finder's "Put Back" or grant Full Disk Access to the terminal. Items
-// moved by the ~/.Trash fallback (used when osascript is unavailable or fails
+// moved by the ~/.Trash fallback (used when the native call is unavailable or fails
 // for an item) have no Put Back metadata; only brooom's own undo restores them.
 package trash
 

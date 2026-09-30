@@ -10,8 +10,10 @@ import (
 	"testing"
 )
 
-// newRealMacTrash returns the real trasher and registers a cleanup that
-// removes every item this test trashed, and only those, from the Trash.
+// newRealMacTrash returns the real trasher and registers a cleanup that puts
+// every item this test trashed, and only those, back where it came from. Tests
+// must create their temporary directory before calling it: cleanups run last
+// in first out, so the directory is removed after the items were restored.
 func newRealMacTrash(t *testing.T) (*macTrash, func(Record)) {
 	t.Helper()
 	home, err := os.UserHomeDir()
@@ -22,9 +24,9 @@ func newRealMacTrash(t *testing.T) (*macTrash, func(Record)) {
 	var trashed []Record
 	t.Cleanup(func() {
 		for _, r := range trashed {
-			// Best effort: without Full Disk Access the item stays, which is
-			// the documented TCC limitation, not a test failure.
-			_ = os.RemoveAll(r.StoredPath)
+			if err := m.Restore(context.Background(), r); err != nil && !errors.Is(err, ErrNotRestorable) && !errors.Is(err, ErrRestoreConflict) {
+				t.Logf("cleanup restore of %q: %v", r.OriginalPath, err)
+			}
 		}
 	})
 	return m, func(r Record) { trashed = append(trashed, r) }
@@ -39,8 +41,8 @@ func skipIfTrashDenied(t *testing.T, stored string) {
 }
 
 func TestDarwinTrashRoundTrip(t *testing.T) {
-	m, track := newRealMacTrash(t)
 	root := t.TempDir()
+	m, track := newRealMacTrash(t)
 	orig := filepath.Join(root, "it's \"q\" $x `y` üñí.txt")
 	writeFile(t, orig, "hello", 0o644)
 	rec, err := m.Remove(context.Background(), orig)
@@ -74,8 +76,8 @@ func TestDarwinTrashRoundTrip(t *testing.T) {
 }
 
 func TestDarwinTrashSymlinkKeepsTarget(t *testing.T) {
-	m, track := newRealMacTrash(t)
 	root := t.TempDir()
+	m, track := newRealMacTrash(t)
 	writeFile(t, filepath.Join(root, "dir", "a"), "1", 0o644)
 	link := filepath.Join(root, "link")
 	symlinkOrSkip(t, filepath.Join(root, "dir"), link)
@@ -93,8 +95,8 @@ func TestDarwinTrashSymlinkKeepsTarget(t *testing.T) {
 }
 
 func TestDarwinTrashBatchWithMissingPath(t *testing.T) {
-	m, track := newRealMacTrash(t)
 	root := t.TempDir()
+	m, track := newRealMacTrash(t)
 	a, b := filepath.Join(root, "a.txt"), filepath.Join(root, "b.txt")
 	writeFile(t, a, "1", 0o644)
 	writeFile(t, b, "22", 0o644)
@@ -113,23 +115,17 @@ func TestDarwinTrashBatchWithMissingPath(t *testing.T) {
 	}
 }
 
-// TestDarwinTrashFallbackWithoutOsascript uses a temporary home so it neither
-// touches the real ~/.Trash nor depends on TCC, and a name with characters
-// that are dangerous in shells and scripts.
-func TestDarwinTrashFallbackWithoutOsascript(t *testing.T) {
-	home := t.TempDir()
-	m := newMacTrash(home)
-	m.osascript = filepath.Join(t.TempDir(), "missing-osascript")
-	orig := filepath.Join(t.TempDir(), "it's \"q\" $x `y` üñí\n.txt")
-	writeFile(t, orig, "x", 0o644)
-	rec, err := m.Remove(context.Background(), orig)
+func TestDarwinTrashDirectory(t *testing.T) {
+	root := t.TempDir()
+	m, track := newRealMacTrash(t)
+	dir := filepath.Join(root, "some dir")
+	writeFile(t, filepath.Join(dir, "sub", "a"), "123", 0o644)
+	rec, err := m.Remove(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(home, ".Trash", filepath.Base(orig)); rec.StoredPath != want || !exists(want) {
-		t.Errorf("record %+v, want stored at %q", rec, want)
-	}
-	if exists(orig) {
-		t.Error("original still exists")
+	track(rec)
+	if !rec.IsDir || rec.SizeBytes != 3 || !isInsideTrash(rec.StoredPath) || exists(dir) {
+		t.Errorf("record %+v", rec)
 	}
 }

@@ -2,7 +2,6 @@ package trash
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,113 +18,46 @@ import (
 
 var _ BatchTrasher = (*macTrash)(nil)
 
-// fakeOsascript stands in for the osascript process: it moves items into
-// <home>/.Trash exactly like NSFileManager would (unique names, resulting
-// path) and reports per-item failures for paths in fail.
-type fakeOsascript struct {
+// fakeNative stands in for the NSFileManager call: it moves items into
+// <home>/.Trash exactly like the system would (unique names, resulting path)
+// and reports failures for paths in fail or, for every path, err.
+type fakeNative struct {
 	home  string
 	fail  map[string]string
 	err   error
-	calls [][]string
+	calls []string
 }
 
-func (f *fakeOsascript) run(_ context.Context, argv []string) ([]byte, error) {
-	var paths []string
-	if err := json.Unmarshal([]byte(argv[len(argv)-1]), &paths); err != nil {
-		return nil, err
-	}
-	f.calls = append(f.calls, paths)
+func (f *fakeNative) trash(p string) (string, error) {
+	f.calls = append(f.calls, p)
 	if f.err != nil {
-		return nil, f.err
+		return "", f.err
+	}
+	if msg, bad := f.fail[p]; bad {
+		return "", errors.New(msg)
 	}
 	trashDir := filepath.Join(f.home, ".Trash")
 	if err := os.MkdirAll(trashDir, 0o700); err != nil {
-		return nil, err
+		return "", err
 	}
-	results := make([]jxaResult, len(paths))
-	for i, p := range paths {
-		results[i] = jxaResult{Path: p}
-		if msg, bad := f.fail[p]; bad {
-			results[i].Error = msg
-			continue
-		}
-		name, _ := uniqueTrashName(filepath.Base(p), false, func(c string) (bool, error) {
-			_, err := os.Lstat(filepath.Join(trashDir, c))
-			return err == nil, nil
-		})
-		dst := filepath.Join(trashDir, name)
-		if err := os.Rename(p, dst); err != nil {
-			results[i].Error = err.Error()
-			continue
-		}
-		results[i].Resulting = dst
+	name, _ := uniqueTrashName(filepath.Base(p), false, func(c string) (bool, error) {
+		_, err := os.Lstat(filepath.Join(trashDir, c))
+		return err == nil, nil
+	})
+	dst := filepath.Join(trashDir, name)
+	if err := os.Rename(p, dst); err != nil {
+		return "", err
 	}
-	return json.Marshal(results)
+	return dst, nil
 }
 
-func newFakeTrash(t *testing.T) (*macTrash, *fakeOsascript, string) {
+func newFakeTrash(t *testing.T) (*macTrash, *fakeNative, string) {
 	t.Helper()
 	home := t.TempDir()
-	f := &fakeOsascript{home: home}
+	f := &fakeNative{home: home}
 	m := newMacTrash(home)
-	m.run = f.run
+	m.native = f.trash
 	return m, f, home
-}
-
-func TestBuildTrashArgv(t *testing.T) {
-	paths := []string{
-		`/tmp/it's "quoted"`, "/tmp/$HOME and `id`", "/tmp/new\nline", "/tmp/üñí 日本 🚀", "/tmp/with space", `/tmp/back\slash`,
-	}
-	argv, err := buildTrashArgv(paths)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(argv) != 5 || argv[0] != "-l" || argv[1] != "JavaScript" || argv[2] != "-e" {
-		t.Fatalf("unexpected argv shape: %q", argv[:3])
-	}
-	var got []string
-	if err := json.Unmarshal([]byte(argv[4]), &got); err != nil {
-		t.Fatal(err)
-	}
-	if fmt.Sprint(got) != fmt.Sprint(paths) {
-		t.Errorf("paths do not round-trip: %q", got)
-	}
-	for _, p := range paths {
-		if strings.Contains(argv[3], p) {
-			t.Errorf("script source contains path %q", p)
-		}
-	}
-}
-
-func TestParseTrashOutput(t *testing.T) {
-	paths := []string{"/a", "/b"}
-	tests := []struct {
-		name    string
-		out     string
-		wantErr string
-	}{
-		{"ok", `[{"path":"/a","resulting":"/t/a","error":""},{"path":"/b","resulting":"","error":"boom"}]` + "\n", ""},
-		{"empty output", ``, "unexpected osascript output"},
-		{"not json", `hello`, "unexpected osascript output"},
-		{"unknown field", `[{"path":"/a","resulting":"","error":"","x":1},{"path":"/b"}]`, "unexpected osascript output"},
-		{"trailing data", `[{"path":"/a"},{"path":"/b"}] extra`, "trailing data"},
-		{"too few", `[{"path":"/a"}]`, "1 results for 2 paths"},
-		{"wrong order", `[{"path":"/b"},{"path":"/a"}]`, "expected"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			res, err := parseTrashOutput([]byte(tt.out), paths)
-			if tt.wantErr == "" {
-				if err != nil || len(res) != 2 || res[0].Resulting != "/t/a" || res[1].Error != "boom" {
-					t.Fatalf("res=%+v err=%v", res, err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("err = %v, want containing %q", err, tt.wantErr)
-			}
-		})
-	}
 }
 
 func TestUniqueTrashName(t *testing.T) {
@@ -164,9 +96,10 @@ func TestUniqueTrashName(t *testing.T) {
 func TestRemoveManyBatchWithMissingPathAndSpecialNames(t *testing.T) {
 	m, f, home := newFakeTrash(t)
 	root := t.TempDir()
-	names := []string{"plain.txt", `q"uote'.txt`, "$dollar `tick`.txt", "üñí 日本.txt"}
+	names := []string{"plain.txt", "q'uote.txt", "$dollar `tick`.txt", "üñí 日本.txt"}
 	if runtime.GOOS != "windows" {
-		names = append(names, "new\nline.txt")
+		// Double quotes and newlines are not valid in Windows file names.
+		names = append(names, `q"uote'.txt`, "new\nline.txt")
 	}
 	var paths []string
 	for _, n := range names {
@@ -193,8 +126,8 @@ func TestRemoveManyBatchWithMissingPathAndSpecialNames(t *testing.T) {
 		}
 		checkTrashedFile(t, recs[i], p, home)
 	}
-	if len(f.calls) != 1 || len(f.calls[0]) != len(paths)-1 {
-		t.Errorf("want one call without the missing path, got %d calls", len(f.calls))
+	if len(f.calls) != len(paths)-1 {
+		t.Errorf("want one native call per existing path, got %d calls", len(f.calls))
 	}
 }
 
@@ -211,30 +144,6 @@ func checkTrashedFile(t *testing.T, r Record, orig, home string) {
 	}
 	if filepath.Dir(r.StoredPath) != filepath.Join(home, ".Trash") {
 		t.Errorf("stored path %q outside the trash", r.StoredPath)
-	}
-}
-
-func TestRemoveManyChunksAtHundred(t *testing.T) {
-	m, f, _ := newFakeTrash(t)
-	root := t.TempDir()
-	var paths []string
-	for i := 0; i < 250; i++ {
-		p := filepath.Join(root, fmt.Sprintf("f%03d", i))
-		writeFile(t, p, "x", 0o644)
-		paths = append(paths, p)
-	}
-	_, errs := m.RemoveMany(context.Background(), paths)
-	for i, err := range errs {
-		if err != nil {
-			t.Fatalf("%q: %v", paths[i], err)
-		}
-	}
-	var sizes []int
-	for _, c := range f.calls {
-		sizes = append(sizes, len(c))
-	}
-	if fmt.Sprint(sizes) != "[100 100 50]" {
-		t.Errorf("batch sizes = %v", sizes)
 	}
 }
 
@@ -281,6 +190,7 @@ func TestMacRemoveRefusals(t *testing.T) {
 		{"uppercase volume trashes", "/Volumes/Data/.TRASHES/501/x", true},
 		{"volume trashes", "/Volumes/Data/.Trashes", true},
 		{"inside volume trashes", "/Volumes/Data/.Trashes/501/x", true},
+		{"NUL byte", filepath.Join(home, "a\x00b"), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -293,14 +203,14 @@ func TestMacRemoveRefusals(t *testing.T) {
 		})
 	}
 	if len(f.calls) != 0 {
-		t.Errorf("osascript was called for refused paths: %v", f.calls)
+		t.Errorf("the native trash was called for refused paths: %v", f.calls)
 	}
 	if _, err := m.Remove(context.Background(), filepath.Join(t.TempDir(), "nope")); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("nonexistent: err = %v, want ErrNotExist", err)
 	}
 }
 
-func TestPerItemScriptErrorFallsBackToHomeTrash(t *testing.T) {
+func TestPerItemNativeErrorFallsBackToHomeTrash(t *testing.T) {
 	m, f, home := newFakeTrash(t)
 	root := t.TempDir()
 	bad := filepath.Join(root, "file.txt")
@@ -323,10 +233,10 @@ func TestPerItemScriptErrorFallsBackToHomeTrash(t *testing.T) {
 	}
 }
 
-func TestOsascriptUnavailableFallsBack(t *testing.T) {
+func TestNativeUnavailableFallsBack(t *testing.T) {
 	home := t.TempDir()
 	m := newMacTrash(home)
-	m.osascript = filepath.Join(t.TempDir(), "no-such-osascript")
+	m.native = func(string) (string, error) { return "", errors.New("Foundation missing") }
 	p := filepath.Join(t.TempDir(), "doc.txt")
 	writeFile(t, p, "abc", 0o644)
 	rec, err := m.Remove(context.Background(), p)
@@ -338,9 +248,21 @@ func TestOsascriptUnavailableFallsBack(t *testing.T) {
 	}
 }
 
+func TestNativeResultMustBeAbsolute(t *testing.T) {
+	home := t.TempDir()
+	m := newMacTrash(home)
+	m.native = func(string) (string, error) { return "relative/x", nil }
+	p := filepath.Join(t.TempDir(), "doc.txt")
+	writeFile(t, p, "abc", 0o644)
+	rec, err := m.Remove(context.Background(), p)
+	if err != nil || rec.StoredPath != filepath.Join(home, ".Trash", "doc.txt") {
+		t.Errorf("rec %+v err %v", rec, err)
+	}
+}
+
 func TestFallbackFailureNeverDeletesAndSuggestsQuarantine(t *testing.T) {
 	m, f, _ := newFakeTrash(t)
-	f.err = errors.New("osascript unavailable")
+	f.err = errors.New("native trash unavailable")
 	m.move = func(context.Context, string, string) error {
 		return &fs.PathError{Op: "rename", Path: "x", Err: syscall.EPERM}
 	}
@@ -350,7 +272,8 @@ func TestFallbackFailureNeverDeletesAndSuggestsQuarantine(t *testing.T) {
 	if err == nil {
 		t.Fatal("want error")
 	}
-	for _, want := range []string{p, "--trash-strategy quarantine", "osascript unavailable"} {
+	// The errors quote paths with %q, which doubles Windows backslashes.
+	for _, want := range []string{fmt.Sprintf("%q", p), "--trash-strategy quarantine", "native trash unavailable"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q lacks %q", err, want)
 		}
@@ -362,7 +285,7 @@ func TestFallbackFailureNeverDeletesAndSuggestsQuarantine(t *testing.T) {
 
 func TestFallbackWithoutHome(t *testing.T) {
 	m := newMacTrash("")
-	m.osascript = filepath.Join(t.TempDir(), "no-such-osascript")
+	m.native = func(string) (string, error) { return "", errors.New("unavailable") }
 	p := filepath.Join(t.TempDir(), "x")
 	writeFile(t, p, "a", 0o644)
 	if _, err := m.Remove(context.Background(), p); err == nil || !exists(p) {
@@ -372,7 +295,7 @@ func TestFallbackWithoutHome(t *testing.T) {
 
 func TestFallbackKeepsRecordOnPartialSourceRemoval(t *testing.T) {
 	m, f, home := newFakeTrash(t)
-	f.err = errors.New("osascript unavailable")
+	f.err = errors.New("native trash unavailable")
 	m.move = func(_ context.Context, src, dst string) error {
 		return &SourceNotRemovedError{Src: src, Dst: dst, Err: errors.New("busy")}
 	}
@@ -385,57 +308,15 @@ func TestFallbackKeepsRecordOnPartialSourceRemoval(t *testing.T) {
 	}
 }
 
-func TestCancelledContextDoesNotFallBack(t *testing.T) {
-	m, _, home := newFakeTrash(t)
+func TestCancelledContextDoesNotTrashOrFallBack(t *testing.T) {
+	m, f, home := newFakeTrash(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	m.run = func(context.Context, []string) ([]byte, error) {
-		cancel()
-		return nil, errors.New("killed")
-	}
+	cancel()
 	p := filepath.Join(t.TempDir(), "x")
 	writeFile(t, p, "a", 0o644)
 	_, err := m.Remove(ctx, p)
-	if !errors.Is(err, context.Canceled) || !exists(p) || exists(filepath.Join(home, ".Trash", "x")) {
+	if !errors.Is(err, context.Canceled) || !exists(p) || exists(filepath.Join(home, ".Trash", "x")) || len(f.calls) != 0 {
 		t.Errorf("err = %v", err)
-	}
-}
-
-func TestExecScriptTimeoutAndFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a /bin/sh script as a stand-in for osascript")
-	}
-	dir := t.TempDir()
-	slow := filepath.Join(dir, "slow")
-	writeFile(t, slow, "#!/bin/sh\nexec sleep 5\n", 0o755)
-	failing := filepath.Join(dir, "failing")
-	writeFile(t, failing, "#!/bin/sh\necho 'script exploded' >&2\nexit 3\n", 0o755)
-	ok := filepath.Join(dir, "ok")
-	writeFile(t, ok, "#!/bin/sh\nfor a; do :; done\necho '[]' > \"$a\"\n", 0o755)
-
-	m := newMacTrash(t.TempDir())
-	m.timeout = 200 * time.Millisecond
-	tests := []struct {
-		bin     string
-		wantErr string
-	}{
-		{slow, "timed out"},
-		{failing, "script exploded"},
-		{ok, ""},
-	}
-	for _, tt := range tests {
-		t.Run(filepath.Base(tt.bin), func(t *testing.T) {
-			m.osascript = tt.bin
-			out, err := m.execScript(context.Background(), []string{"x"})
-			if tt.wantErr == "" {
-				if err != nil || strings.TrimSpace(string(out)) != "[]" {
-					t.Errorf("out %q err %v", out, err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("err = %v, want containing %q", err, tt.wantErr)
-			}
-		})
 	}
 }
 
@@ -559,59 +440,23 @@ func TestIsPermissionErr(t *testing.T) {
 	}
 }
 
-func TestChunkFailurePartwayNeverFallsBackForTrashedItems(t *testing.T) {
+func TestNativeFailureAfterItemVanishedNeverFallsBack(t *testing.T) {
 	m, _, home := newFakeTrash(t)
 	gone := filepath.Join(t.TempDir(), "gone.txt")
-	kept := filepath.Join(t.TempDir(), "kept.txt")
 	writeFile(t, gone, "a", 0o644)
-	writeFile(t, kept, "b", 0o644)
-	// The process trashes the first item and dies before reporting anything.
-	m.run = func(context.Context, []string) ([]byte, error) {
+	// The item disappears while the native call reports a failure.
+	m.native = func(string) (string, error) {
 		if err := os.Rename(gone, filepath.Join(home, "elsewhere.txt")); err != nil {
-			return nil, err
+			return "", err
 		}
-		return nil, errors.New("osascript timed out")
+		return "", errors.New("unexpected failure")
 	}
-	recs, errs := m.RemoveMany(context.Background(), []string{gone, kept})
-	if errs[0] == nil || !strings.Contains(errs[0].Error(), "may already be in the Trash") {
-		t.Errorf("gone item: err = %v", errs[0])
+	rec, err := m.Remove(context.Background(), gone)
+	if err == nil || !strings.Contains(err.Error(), "may already be in the Trash") {
+		t.Errorf("err = %v", err)
 	}
-	if recs[0].StoredPath != "" {
-		t.Errorf("gone item got a record: %+v", recs[0])
-	}
-	// The untouched item still takes the ~/.Trash fallback.
-	if errs[1] != nil || recs[1].StoredPath != filepath.Join(home, ".Trash", "kept.txt") || exists(kept) {
-		t.Errorf("kept item: rec %+v err %v", recs[1], errs[1])
-	}
-}
-
-func TestCompletedRunRecordsSuccessesDespiteCancelledContext(t *testing.T) {
-	m, f, home := newFakeTrash(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	m.run = func(c context.Context, argv []string) ([]byte, error) {
-		out, err := f.run(c, argv)
-		cancel() // cancelled after osascript finished successfully
-		return out, err
-	}
-	p := filepath.Join(t.TempDir(), "done.txt")
-	writeFile(t, p, "a", 0o644)
-	rec, err := m.Remove(ctx, p)
-	if err != nil || rec.StoredPath != filepath.Join(home, ".Trash", "done.txt") || exists(p) {
-		t.Errorf("rec %+v err %v", rec, err)
-	}
-}
-
-func TestInvalidUTF8PathFailsOnlyThatItem(t *testing.T) {
-	m, _, _ := newFakeTrash(t)
-	ok := filepath.Join(t.TempDir(), "ok.txt")
-	writeFile(t, ok, "a", 0o644)
-	bad := filepath.Join(t.TempDir(), "bad\xff.txt")
-	recs, errs := m.RemoveMany(context.Background(), []string{bad, ok})
-	if errs[0] == nil || !strings.Contains(errs[0].Error(), "UTF-8") {
-		t.Errorf("bad path: err = %v", errs[0])
-	}
-	if errs[1] != nil || recs[1].StoredPath == "" {
-		t.Errorf("good path: rec %+v err %v", recs[1], errs[1])
+	if rec.StoredPath != "" {
+		t.Errorf("got a record: %+v", rec)
 	}
 }
 
