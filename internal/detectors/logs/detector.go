@@ -113,8 +113,12 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	}
 	r := &run{d: d, env: env, cfg: cfg, cat: cat, target: target}
 	cands, err := r.candidates(ctx)
-	if err != nil || len(cands) == 0 {
+	if err != nil {
 		return err
+	}
+	cands = verified(cands)
+	if len(cands) == 0 {
+		return nil
 	}
 	items, err := r.measureAll(ctx, cands)
 	if err != nil {
@@ -128,6 +132,17 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 		emit(r.finding(it))
 	}
 	return nil
+}
+
+// verified drops the candidates whose catalog entry demands a content check
+// (crash dumps: a script named core or a database export named *.dmp share the
+// name only) that their header fails. Dropping instead of downgrading keeps
+// an unverified file out of every plan, so it can never reach the delete
+// strategy.
+func verified(cands []candidate) []candidate {
+	return slices.DeleteFunc(cands, func(c candidate) bool {
+		return c.entry.Verify != "" && !catalog.VerifyFile(c.entry.Verify, c.path)
+	})
 }
 
 // effectiveConfig applies the per-root and per-repo overlay for project

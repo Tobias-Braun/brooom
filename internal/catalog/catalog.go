@@ -83,6 +83,10 @@ type Entry struct {
 	MinAgeDays  *int   `json:"min_age_days,omitempty"`
 	Description string `json:"description"`
 	Source      string `json:"source,omitempty"`
+	// Verify optionally names a content check (VerifyCoreDump,
+	// VerifyMinidump) that a file match must pass before it is reported:
+	// the pattern alone only proves the name, which other files share.
+	Verify string `json:"verify,omitempty"`
 }
 
 // Protect lists paths that are never clutter, typically the tool's

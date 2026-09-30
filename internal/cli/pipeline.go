@@ -338,6 +338,9 @@ func newEnv(req *scanRequest, runner gitx.Runner, guard *scope.Guard) (*detect.E
 		// One lazily loaded listing serves every detector of the scan.
 		Open: procs.NewSnapshot(),
 	}
+	for _, d := range req.detectors {
+		env.Selected = append(env.Selected, d.Name())
+	}
 	if runner != nil {
 		env.Repos = gitx.NewCache(runner)
 	}

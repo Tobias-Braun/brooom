@@ -37,6 +37,10 @@ func TestRepresentativeMatches(t *testing.T) {
 	for _, m := range matched {
 		put(t, repo.Dir, m, 100)
 	}
+	// Crash dumps are reported only with the header of a real dump.
+	putDump(t, repo.Dir, "core.123", elfCore, 100)
+	putDump(t, repo.Dir, "core", elfCore, 100)
+	putDump(t, repo.Dir, "crash.dmp", minidump, 100)
 	// Look-alikes: wrong kind or plain names that no entry claims.
 	put(t, repo.Dir, "core-dir/core/x.txt", 100)      // a directory called core
 	put(t, repo.Dir, "e/.eslintcache/inner.txt", 100) // a directory called .eslintcache
@@ -102,6 +106,10 @@ func TestKindRules(t *testing.T) {
 			sandbox(t)
 			dir := testutil.ResolvedTempDir(t)
 			for _, f := range tc.files {
+				if f == "core.123" {
+					putDump(t, dir, f, elfCore, 100)
+					continue
+				}
 				put(t, dir, f, 100)
 			}
 			oldDirs(t, dir)
@@ -137,6 +145,10 @@ func TestCategoryToggles(t *testing.T) {
 			sandbox(t)
 			dir := testutil.ResolvedTempDir(t)
 			for _, f := range files {
+				if f == "core.5" {
+					putDump(t, dir, f, elfCore, 100)
+					continue
+				}
 				put(t, dir, f, 100)
 			}
 			oldDirs(t, dir)
@@ -275,5 +287,43 @@ func TestFreshDirectoryMtimeAfterCachedSize(t *testing.T) {
 	got := mustScan(t, newEnv(t, cfg, dir), projectTarget(dir, dir))
 	if len(got) != 1 || !hasFlag(got[0], findings.RiskRecentlyModified) || got[0].AgeDays != 0 {
 		t.Fatalf("third run: %+v", got)
+	}
+}
+
+// TestCrashDumpsAreVerifiedByContent pins issue #203: a script named core or a
+// database export named *.dmp is no crash dump and must never be reported
+// (under the delete strategy that would be permanent loss); real dumps still
+// are, whatever their name variant.
+func TestCrashDumpsAreVerifiedByContent(t *testing.T) {
+	macho := "\xcf\xfa\xed\xfe\x07\x00\x00\x01\x03\x00\x00\x00\x04\x00\x00\x00"
+	cases := []struct {
+		name, rel, content string
+		want               bool
+	}{
+		{"shell script named core", "bin/core", "#!/bin/sh\necho hi\n", false},
+		{"empty core", "core", "", false},
+		{"ELF executable named core", "core.42", "\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00", false},
+		{"truncated ELF", "core", "\x7fELF\x02\x01", false},
+		{"ELF core little endian", "core", elfCore, true},
+		{"ELF core big endian", "core.7", "\x7fELF\x02\x02\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x00\x3e", true},
+		{"Mach-O core", "core.9", macho, true},
+		{"Mach-O executable named core", "core", "\xcf\xfa\xed\xfe\x07\x00\x00\x01\x03\x00\x00\x00\x02\x00\x00\x00", false},
+		{"data pump export", "db/prod-export.dmp", "\x00\x03\x01\x00 oracle export", false},
+		{"minidump", "crash.dmp", minidump, true},
+		{"kernel dump", "kernel.dmp", "PAGEDU64rest", true},
+		{"32-bit kernel dump", "k32.dmp", "PAGEDUMPrest", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sandbox(t)
+			dir := testutil.ResolvedTempDir(t)
+			putDump(t, dir, tc.rel, tc.content, 100)
+			oldDirs(t, dir)
+			env := newEnv(t, config.Default(), dir)
+			got := contains(relPaths(t, mustScan(t, env, projectTarget(dir, dir)), dir), tc.rel)
+			if got != tc.want {
+				t.Errorf("reported(%s) = %v, want %v", tc.rel, got, tc.want)
+			}
+		})
 	}
 }

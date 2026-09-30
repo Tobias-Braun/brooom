@@ -43,7 +43,7 @@ mode `0600`, rename) and never writes an invalid configuration.
 | `version` | `1` | File format version. |
 | `roots[]` | `[]` | Workspace roots scanned with `--workspaces`. |
 | `roots[].path` | | Root directory; `~`, `$VAR`, `${VAR}` (and `%VAR%` on Windows) are expanded on use, the file keeps the text as written. |
-| `roots[].exclude[]` | | Globs (relative to the root, forward slashes, `**` segments allowed) that discovery and detectors skip. |
+| `roots[].exclude[]` | | Globs (relative to the root, forward slashes only, a backslash is rejected because it is a glob escape; `**` segments allowed) that discovery and detectors skip. |
 | `roots[].thresholds` | | Overrides for `min_age_days`, `min_size_bytes`, `recent_days`; absent fields inherit the global value. Not tighten-only. |
 | `roots[].detectors` | | `{"<detector>": true/false}` enables or disables a detector for this root. |
 | `thresholds.min_age_days` | `14` | Findings younger than this are not reported. Honoured by `ai-artifacts` and `log-and-runtime-files` (file age, unless the detector or catalog entry sets its own), and, as a floor, by `stale-branch` and `worktrees` (own `min_age_days` = max of both), `merged-branch` (tip commit age) and remote merged branches. The branch and worktree detectors apply it (`Thresholds.AgeFloor`) only when it is raised above the built-in `14`: a value of `14` or lower never floors `stale-branch`, `worktrees` or `merged-branch`, so the default never hides a recently merged branch or lowers a deliberately short per-detector age. `build-artifacts` (`inactive_days`) and `git-bloat` have no age filter; `large-untracked` reports files whatever their age. |

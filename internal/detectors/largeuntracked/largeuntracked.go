@@ -105,7 +105,7 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 	if !cfg.Detectors.LargeUntracked.Enabled {
 		return nil
 	}
-	cl, err := newClaims(target.Path, cfg)
+	cl, err := newClaims(target.Path, cfg, env)
 	if err != nil {
 		return err
 	}

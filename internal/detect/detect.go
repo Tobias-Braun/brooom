@@ -19,6 +19,7 @@ package detect
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -97,6 +98,12 @@ type Env struct {
 	// one per target. When nil, OpenFiles asks per call. The snapshot is a
 	// conservative pre-filter; actions still re-check their own target.
 	Open *procs.Snapshot
+	// Selected names the detectors chosen for this run; empty means all.
+	// Detectors that derive claims about what another detector reports
+	// (large-untracked) must claim only for detectors that actually run,
+	// otherwise a narrowed run leaves the paths unreported by anyone. Use
+	// Selects rather than reading the slice.
+	Selected []string
 }
 
 // OpenFilesFunc is the signature of procs.OpenFiles.
@@ -110,6 +117,12 @@ func (e *Env) OpenFiles(ctx context.Context, paths []string, fallback OpenFilesF
 		return e.Open.OpenAmong(ctx, paths)
 	}
 	return fallback(ctx, paths)
+}
+
+// Selects reports whether the detector called name runs in this scan. An empty
+// selection means every detector; a nil Env (tests, direct calls) does too.
+func (e *Env) Selects(name string) bool {
+	return e == nil || len(e.Selected) == 0 || slices.Contains(e.Selected, name)
 }
 
 // AgeDays returns the whole number of days between t and the scan time.

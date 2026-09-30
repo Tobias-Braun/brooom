@@ -3,10 +3,12 @@ package largeuntracked
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/Tobias-Braun/brooom/internal/catalog"
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/detectors/buildartifacts"
 )
 
@@ -31,31 +33,36 @@ type claimSet interface {
 // can never double-report a directory and a common name like dist without a
 // project marker stays reportable here.
 type claims struct {
+	// dir is the repository root; verify-bearing entries need the absolute
+	// path of a candidate to read its header.
+	dir       string
 	buildDirs func(rel string, isDir bool) bool
 	matchers  []*catalog.ProjectMatcher
 }
 
 // newClaims builds the claims for the effective configuration cfg of the
 // repository at dir: the build-artifacts matcher plus the project-level patterns of the
-// ai-artifacts and log-and-runtime-files catalogs.
-func newClaims(dir string, cfg *config.Config) (*claims, error) {
-	c := &claims{}
+// ai-artifacts and log-and-runtime-files catalogs. A detector claims only when
+// it is enabled and selected for the run (env.Selects), since one that does not
+// run reports nothing.
+func newClaims(dir string, cfg *config.Config, env *detect.Env) (*claims, error) {
+	c := &claims{dir: dir}
 	d := cfg.Detectors
-	if d.BuildArtifacts.Enabled {
+	if d.BuildArtifacts.Enabled && env.Selects(config.DetectorBuildArtifacts) {
 		fn, err := buildartifacts.ClaimsWith(dir, d.BuildArtifacts)
 		if err != nil {
 			return nil, fmt.Errorf("largeuntracked: %w", err)
 		}
 		c.buildDirs = fn
 	}
-	if d.AIArtifacts.Enabled {
+	if d.AIArtifacts.Enabled && env.Selects(config.DetectorAIArtifacts) {
 		cat, err := catalog.Load(catalog.Options{Extra: d.AIArtifacts.Extra, Tools: d.AIArtifacts.Tools, DefaultCategory: catalog.CategoryAI})
 		if err != nil {
 			return nil, fmt.Errorf("largeuntracked: ai-artifacts catalog: %w", err)
 		}
 		c.matchers = append(c.matchers, cat.ProjectMatcher(catalog.CategoryAI))
 	}
-	if d.Logs.Enabled {
+	if d.Logs.Enabled && env.Selects(config.DetectorLogs) {
 		cat, err := catalog.Load(catalog.Options{Extra: d.Logs.Extra, Categories: d.Logs.Categories, DefaultCategory: catalog.CategoryLogs})
 		if err != nil {
 			return nil, fmt.Errorf("largeuntracked: log-and-runtime-files catalog: %w", err)
@@ -84,9 +91,18 @@ func (c *claims) claimed(prefix string, isDir bool) bool {
 		return true
 	}
 	for _, m := range c.matchers {
-		if _, ok := m.Match(prefix, isDir); ok {
-			return true
+		match, ok := m.Match(prefix, isDir)
+		if !ok {
+			continue
 		}
+		// An entry with a content check (core, *.dmp) claims a file only when
+		// the logs detector would report it, that is when the header verifies.
+		// Otherwise the file would be dropped by logs and reported by nobody.
+		if match.Entry.Verify != "" && !isDir &&
+			!catalog.VerifyFile(match.Entry.Verify, filepath.Join(c.dir, filepath.FromSlash(prefix))) {
+			continue
+		}
+		return true
 	}
 	return false
 }

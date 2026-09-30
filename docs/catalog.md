@@ -64,6 +64,7 @@ ignored by the tools loader.
 | `entries[].os` | Optional filter of `linux`, `darwin`, `windows`; empty means all. |
 | `entries[].kind` | `file` or `dir`. A `file` entry never matches a directory and vice versa (a directory named `core` is not a crash dump). `any` exists only for config extras. |
 | `entries[].confidence` | `high`, `medium` or `low`. |
+| `entries[].verify` | Optional content check a file match must pass before it is reported: `core-dump` (ELF of type ET_CORE or Mach-O MH_CORE) or `minidump` (`MDMP`, `PAGEDUMP` or `PAGEDU64`). A file that fails it (a script named `core`, a database export named `*.dmp`), a symlink or an unreadable file is dropped, never reported at lower confidence. |
 | `entries[].min_age_days` | Optional. An explicit `0` means "no age requirement", unset means "use the detector default". |
 | `entries[].description` | Required, one short sentence. |
 | `entries[].source` | Optional in the format, required for contributions (see the checklist). |
@@ -294,8 +295,8 @@ Notes on the shape of the data:
 | editors | `*~` | project | all | os-junk | file | medium | 0d | Backup copies left by Emacs, gedit and Vim |
 | editors | `.#*` | project | all | os-junk | file | medium | 0d | Emacs lock files, present while the file is being edited |
 | editors | `#*#` | project | all | os-junk | file | medium | 0d | Emacs auto-save files, present while the file is being edited or after a crash |
-| crash-dumps | `core`, `core.[0-9]*` | project | all | crash | file | medium | 14d | Unix core dump of a crashed process; only useful for debugging that crash |
-| crash-dumps | `*.dmp` | project | all | crash | file | medium | 14d | Windows minidump of a crashed process; only useful for debugging that crash |
+| crash-dumps | `core`, `core.[0-9]*` | project | all | crash | file | medium | 14d | Unix core dump of a crashed process (verified: ELF ET_CORE or Mach-O MH_CORE header); only useful for debugging that crash |
+| crash-dumps | `*.dmp` | project | all | crash | file | medium | 14d | Windows minidump of a crashed process (verified: `MDMP`, `PAGEDUMP` or `PAGEDU64` signature); only useful for debugging that crash |
 | crash-dumps | `*.stackdump` | project | all | crash | file | medium | 14d | Cygwin and MSYS stack dump of a crashed process |
 | crash-dumps | `~/Library/Logs/DiagnosticReports/node-20[0-9][0-9]-*`, `~/Library/Logs/DiagnosticReports/java-20[0-9][0-9]-*`, `~/Library/Logs/DiagnosticReports/python*-20[0-9][0-9]-*`, `~/Library/Logs/DiagnosticReports/go-20[0-9][0-9]-*`, `~/Library/Logs/DiagnosticReports/Code-20[0-9][0-9]-*`, `~/Library/Logs/DiagnosticReports/Code Helper*-20[0-9][0-9]-*` | user | darwin | crash | file | medium | 14d | macOS crash reports of dev tools only (node, java, python, go, VS Code), matched by process prefix and date; other apps' reports are never matched |
 

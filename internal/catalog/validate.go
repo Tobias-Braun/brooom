@@ -94,6 +94,9 @@ func validateEntry(pr *problemList, label string, e Entry, o validateOptions) {
 	if e.MinAgeDays != nil && *e.MinAgeDays < 0 {
 		pr.add(label, "min_age_days must not be negative, got %d", *e.MinAgeDays)
 	}
+	if e.Verify != "" && !slices.Contains(knownVerifiers, e.Verify) {
+		pr.add(label, "unknown verify %q (want %s)", e.Verify, strings.Join(knownVerifiers, " or "))
+	}
 	if strings.TrimSpace(e.Description) == "" {
 		pr.add(label, "description must not be empty")
 	}

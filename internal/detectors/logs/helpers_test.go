@@ -207,3 +207,19 @@ func symlinkOrSkip(t *testing.T, target, link string) {
 		t.Skipf("cannot create symlinks here: %v", err)
 	}
 }
+
+// elfCore is the start of a little-endian 64-bit ELF file of type ET_CORE, all
+// a core dump needs to pass content verification.
+const elfCore = "\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x00\x3e\x00"
+
+// minidump is the signature of a Windows minidump.
+const minidump = "MDMP\x93\xa7\x00\x00"
+
+// putDump writes a file with the given header and backdates it, so a crash
+// dump passes the content check that a plain put file fails.
+func putDump(t *testing.T, dir, rel, content string, ageDays int) string {
+	t.Helper()
+	p := testutil.WriteFile(t, dir, rel, content)
+	testutil.SetMTime(t, p, daysAgo(ageDays))
+	return p
+}
