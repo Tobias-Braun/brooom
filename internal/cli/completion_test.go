@@ -192,7 +192,7 @@ func TestCompletePathArguments(t *testing.T) {
 	emptyHome(t)
 	t.Setenv(NoUpdateCheckEnv, "1")
 	dirs := fmt.Sprintf(":%d", cobra.ShellCompDirectiveFilterDirs)
-	for _, args := range [][]string{{""}, {"scan", ""}, {"git", "purge", ""}, {"sweep", "tidy", ""}, {"undo", "--path", ""}, {"clean", "--path", ""}} {
+	for _, args := range [][]string{{""}, {"scan", ""}, {"review", ""}, {"git", "purge", ""}, {"sweep", "tidy", ""}, {"undo", "--path", ""}, {"clean", "--path", ""}} {
 		if _, directive := complete(t, args...); directive != dirs {
 			t.Errorf("%q: directive %q, want %q", args, directive, dirs)
 		}

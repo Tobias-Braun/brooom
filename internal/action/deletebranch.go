@@ -200,7 +200,7 @@ func (d *decision) run(ctx context.Context, env *Env) (string, error) {
 		return "", fmt.Errorf("delete branch %q: %w", d.name, err)
 	}
 	if _, ok := d.verifiedWhy(ctx); !ok && !env.Force {
-		return "", skipf("not fully merged; re-run with --force to delete with -D")
+		return "", skipf("not fully merged; decide with `brooom review` to delete with -D")
 	}
 	return d.deleteForced(ctx, env)
 }
@@ -503,7 +503,7 @@ func (d *decision) chooseFlag(ctx context.Context, env *Env, b gitx.Branch, f fi
 func (d *decision) refusal(ctx context.Context) error {
 	m := d.mergedFact(ctx)
 	if !m.ok || (!m.heuristic && !m.unpushed) {
-		return skipf("not fully merged; re-run with --force to delete with -D")
+		return skipf("not fully merged; decide with `brooom review` to delete with -D")
 	}
 	found := "the merge is only detected by the patch-id heuristic"
 	if !m.heuristic {
@@ -514,7 +514,7 @@ func (d *decision) refusal(ctx context.Context) error {
 		phrase = gitx.OnlyOnBranchPhrase(n)
 	}
 	return skipf("not fully merged; %s; %s and no remote has the commits; "+
-		"re-run with --force to delete with -D", phrase, found)
+		"decide with `brooom review` to delete with -D", phrase, found)
 }
 
 // gitAccepts predicts git's own merge check for -d: the tip must be reachable

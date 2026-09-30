@@ -91,7 +91,7 @@ func registerSessionArgs(root *cobra.Command, a *app) {
 		}
 	}
 	root.ValidArgsFunction = firstArgDirs
-	for _, path := range [][]string{{"scan"}, {"git", "purge"}} {
+	for _, path := range [][]string{{"scan"}, {"review"}, {"git", "purge"}} {
 		if c, _, err := root.Find(path); err == nil && c != root {
 			c.ValidArgsFunction = firstArgDirs
 		}

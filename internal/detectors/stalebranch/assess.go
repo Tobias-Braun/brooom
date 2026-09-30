@@ -249,7 +249,7 @@ func blockedReason(b gitx.Branch, st remoteState, blocking []findings.RiskFlag, 
 		case findings.RiskUnpushedCommits:
 			parts = append(parts, gitx.OnlyOnBranchPhrase(st.unique)+"; "+unpushedConsequence(st.unique)+forceHint(st.unique))
 		case findings.RiskHasOpenPR:
-			parts = append(parts, "an open pull request uses this branch (re-run with --force to override)")
+			parts = append(parts, "an open pull request uses this branch (decide with `brooom review`)")
 		case findings.RiskCurrentBranch:
 			why := "the branch is checked out in " + b.WorktreePath + " and cannot be deleted"
 			if outsideNote != "" {
@@ -266,9 +266,9 @@ func blockedReason(b gitx.Branch, st remoteState, blocking []findings.RiskFlag, 
 // second one would read as "((...)"; a semicolon is used then.
 func forceHint(unique int) string {
 	if unique == 0 {
-		return "; re-run with --force to override"
+		return "; decide with `brooom review`"
 	}
-	return " (re-run with --force to override)"
+	return " (decide with `brooom review`)"
 }
 
 // unpushedConsequence states what the unpushed block protects: commits that

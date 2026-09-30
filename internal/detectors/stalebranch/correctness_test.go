@@ -60,7 +60,7 @@ func TestRemotelessCountsOnlyOwnCommits(t *testing.T) {
 	if !got.Blocked() || got.SuggestedAction.Type != findings.ActionNone {
 		t.Fatalf("the unpushed block must remain: %+v", got)
 	}
-	wantReason := "1 commit exists only on this branch; deleting would lose them (re-run with --force to override)"
+	wantReason := "1 commit exists only on this branch; deleting would lose them (decide with `brooom review`)"
 	if got.SuggestedAction.Reason != wantReason {
 		t.Errorf("reason = %q, want %q", got.SuggestedAction.Reason, wantReason)
 	}
@@ -90,7 +90,7 @@ func TestBranchSafeOnSiblingIsStillBlockedButNotCounted(t *testing.T) {
 		t.Errorf("reason = %q", r)
 	}
 	// The phrase already carries a parenthesis; the hint must not add another.
-	if strings.Contains(r, ")") && strings.Count(r, "(") != 1 || !strings.Contains(r, "; re-run with --force to override") {
+	if strings.Contains(r, ")") && strings.Count(r, "(") != 1 || !strings.Contains(r, "; decide with `brooom review`") {
 		t.Errorf("reason = %q, want a semicolon-separated override hint", r)
 	}
 }
