@@ -38,7 +38,7 @@ func TestDeleteBranchSquashOnlyUnpushedNeedsForce(t *testing.T) {
 			f := fx.finding("feat/sq", tc.detector, tc.verified)
 
 			_, err := fx.plan(f)
-			wantBranchSkip(t, err, "--force")
+			wantBranchSkip(t, err, "brooom review")
 			if r := skipReason(err); !strings.Contains(r, "no remote has the commits") || strings.Contains(r, "))") {
 				t.Fatalf("reason = %q", r)
 			}

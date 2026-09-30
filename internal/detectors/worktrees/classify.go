@@ -439,7 +439,7 @@ func (s *scan) decideAction(v *verdict, e *entry, dirty bool) {
 	case dirty && v.action == findings.ActionRemoveWorktree && s.env.Force:
 		v.reason = "forced: uncommitted changes will be moved to the trash, not deleted"
 	case dirty && v.action == findings.ActionRemoveWorktree:
-		v.action, v.reason = findings.ActionNone, "uncommitted changes; commit, stash or re-run with --force to trash the directory"
+		v.action, v.reason = findings.ActionNone, "uncommitted changes; commit, stash or decide with `brooom review`"
 	}
 }
 

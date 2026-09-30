@@ -574,8 +574,26 @@ confidence floors and an overlay. Presets are named by intent:
   worked on, and trashing its `node_modules` is not what "everything" means.
 
 No preset runs stale-branch or large-untracked: sweep never removes unmerged
-work, and it has no `--force`. Those findings are listed by `brooom scan -d ...`
-and can be acted on through `clean --from` with `--force`.
+work, and it has no `--force`. Skip reasons that used to say "re-run with
+--force" point to `brooom review` instead.
+
+### Review (`internal/cli/cmd_review.go`)
+
+`brooom review [path]` is where unmerged and dirty work is decided on (#291).
+It scans the worktrees and stale-branch detectors with `Env.Force` and an
+overlay that withholds nothing for its age (`StaleBranch.MinAgeDays` 0,
+`IncludeUnpushed`, `Worktrees.IncludeStale`), and keeps every stale branch and
+every worktree with a blocking flag. Per item it shows the changed and
+untracked files (`git status --porcelain`), the commits no remote-tracking
+branch holds (`rev-list --count <rev> --not --remotes` and the first subjects),
+the last activity and the blocking flags, then asks `[d]elete / [k]eep /
+[q]uit` (enter keeps; q or the end of input discards every choice). Findings
+without an action even under force (in use, locked, current or protected
+branch) are listed as kept. The chosen findings go through the shared executor
+with `yes` and `force` set, so each is re-planned against the live state, the
+session records them and `brooom undo` restores worktrees (untracked files
+included, from the trash) and branches (from the recorded tip). Without a
+terminal, or with `--dry-run`, review only lists.
 
 The executor shows the plan, asks `Proceed with N items (SIZE)? [y/N]` once
 (`action.confirmer.confirm`, naming permanent deletions in the question) and

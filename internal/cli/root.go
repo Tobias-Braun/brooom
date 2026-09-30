@@ -290,6 +290,7 @@ below it.`,
 	root.AddCommand(
 		newScanCmd(a),
 		newSweepCmd(a),
+		newReviewCmd(a),
 		newGitCmd(a),
 		newCleanCmd(a),
 		newUndoCmd(a),

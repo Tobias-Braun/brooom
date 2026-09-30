@@ -14,7 +14,7 @@ import (
 // --root and -d mean anything and all of them read --format. `undo` builds a
 // scope too but has no detectors and no report, see scopeOnlyCommands.
 var scopeCommands = map[string]bool{
-	"brooom": true, "brooom scan": true, "brooom sweep": true,
+	"brooom": true, "brooom scan": true, "brooom sweep": true, "brooom review": true,
 	"brooom clean": true, "brooom git purge": true,
 }
 
