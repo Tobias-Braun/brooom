@@ -17,7 +17,7 @@ packages and the same findings schema.
 3. **Detectors find, actions act.** Detectors never modify anything (no file
    writes, no git commands that take locks). Actions consume findings.
 4. **Reversible by default.** Files go to the OS trash (or quarantine);
-   branches are deleted with `git branch -d` unless `--force`; worktrees are
+   branches are deleted with `git branch -d`; `-D` is used only when the merge (squash/rebase/base ancestry) or remote containment is re-verified at apply time, or with `--force`; worktrees are
    removed with `git worktree remove`; git maintenance uses conservative
    expiries. Every applied session writes a manifest for `brooom undo`.
 5. **Fast.** Parallel walking, skip lists, cached directory sizes invalidated

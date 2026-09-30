@@ -40,7 +40,9 @@ cleanup safe, fast and reviewable.
    produce structured findings. Actions consume findings, are individually
    configurable, and always have a dry-run mode.
 4. **Reversible by default.** Removed files go to a configurable trash
-   strategy; branches use `git branch -d` unless `--force`; worktrees are
+   strategy; branches are deleted with `git branch -d`; `-D` is used only
+   when the merge (squash/rebase/base ancestry) or remote containment is
+   re-verified at apply time, or with `--force`; worktrees are
    removed with `git worktree remove` and pruned; git history pruning uses a
    conservative expiry. Every applied session writes a manifest so
    `brooom undo` can restore what is restorable.
@@ -88,13 +90,18 @@ cleanup safe, fast and reviewable.
 - `delete`: immediate permanent deletion (requires explicit config or flag,
   and a warning on first use).
 
-Branch deletion stays recoverable: deleting a branch also deletes its own
-reflog, so Brooom records the tip commit of every deleted branch in the
-session manifest, `brooom undo` recreates it, and the output prints the
-manual recovery command (`git branch <name> <sha>`). The commits exist until
-git garbage-collects unreachable objects (`gc.pruneExpire`, default two
-weeks; commits still referenced from the HEAD reflog are kept for
-`gc.reflogExpireUnreachable`, default 30 days).
+Branches are deleted with `git branch -d`; `-D` is used only when the merge
+(squash/rebase/base ancestry) or remote containment is re-verified at apply
+time, or with `--force`. It is never used for protected, base or checked-out
+branches.
+
+Branch deletion is recoverable for a limited time only. Git deletes a branch's
+own reflog together with the branch, so the reflog is no safety net. Brooom
+records the tip commit of every deleted branch in the session manifest,
+`brooom undo` recreates the branch there, and the output prints the manual
+recovery command: `git branch <name> <sha>`, run inside the repository. The
+commits remain only as unreachable objects and may be pruned by the next
+`git gc` after `gc.pruneExpire` (default 2 weeks), so recover promptly.
 
 ## Output formats
 
