@@ -43,9 +43,6 @@ func (r *run) flag(ctx context.Context, items []*item) error {
 		if r.cfg.Thresholds.RecentDays > it.age {
 			it.flags = append(it.flags, findings.RiskRecentlyModified)
 		}
-		if r.target.Kind == scope.TargetUser {
-			it.flags = append(it.flags, findings.RiskOutsideRepo)
-		}
 		if it.cand.symlink {
 			it.flags = append(it.flags, findings.RiskSymlink)
 		}

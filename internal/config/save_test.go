@@ -16,7 +16,6 @@ func roundTripConfigs(t *testing.T) map[string]*Config {
 	custom.Detectors.StaleBranch.MinAgeDays = 10
 	custom.Detectors.AIArtifacts.MinAgeDays = intp(3)
 	custom.Detectors.AIArtifacts.Tools = map[string]bool{"cursor": false}
-	custom.Detectors.Logs.UserLocations = true
 	custom.Detectors.Logs.Extra = []CatalogTool{
 		{ID: "x-y", Name: "X", Project: []string{"a/b"}},
 		{

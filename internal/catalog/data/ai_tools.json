@@ -6,11 +6,12 @@
       "name": "Claude Code",
       "category": "ai",
       "homepage": "https://www.anthropic.com/claude-code",
+      "repo_key": "claude-code",
       "entries": [
         {
           "scope": "user",
           "patterns": [
-            "~/.claude/projects/*/*.jsonl"
+            "~/.claude/projects/{repo}/*.jsonl"
           ],
           "kind": "file",
           "confidence": "medium",

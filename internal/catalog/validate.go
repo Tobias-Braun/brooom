@@ -76,8 +76,18 @@ func validateTool(pr *problemList, label string, t Tool, o validateOptions) {
 	if o.requireEntries && len(t.Entries) == 0 {
 		pr.add(label, "needs at least one entry")
 	}
+	if t.RepoKey != "" {
+		if _, ok := repoEncoders[t.RepoKey]; !ok {
+			pr.add(label, "unknown repo_key %q (want one of %v)", t.RepoKey, knownRepoKeys())
+		}
+	}
 	for i, e := range t.Entries {
 		validateEntry(pr, fmt.Sprintf("%s: entries[%d]", label, i), e, o)
+		for j, pat := range e.Patterns {
+			if err := validateRepoPattern(pat, t.RepoKey); err != nil {
+				pr.add(fmt.Sprintf("%s: entries[%d]: patterns[%d]", label, i, j), "%v", err)
+			}
+		}
 	}
 	for i, p := range t.Protect {
 		validateProtect(pr, fmt.Sprintf("%s: protect[%d]", label, i), p)
@@ -230,6 +240,11 @@ func validateUserPattern(pat string) error {
 // protected path of the same tool and scope. Wildcard entries cannot be
 // judged statically; for them Protect wins at match time.
 func checkProtectConsistency(pr *problemList, label string, t Tool) {
+	if t.RepoKey != "" {
+		if _, ok := repoEncoders[t.RepoKey]; !ok {
+			pr.add(label, "unknown repo_key %q (want one of %v)", t.RepoKey, knownRepoKeys())
+		}
+	}
 	for i, e := range t.Entries {
 		for j, p := range t.Protect {
 			if e.Scope != p.Scope {

@@ -112,11 +112,35 @@ first directory below the variable must be literal (`~/.tool/*.log` is fine,
 `~/*/x` is not) and `..` is rejected. `**` in a user pattern reaches at most
 8 segments below `Base`.
 
-## The `Base` contract
+## Repository-keyed user locations
 
-`Catalog.UserLocations(env, cats...)` expands user patterns for one OS and
-returns only locations that exist and are readable. `PathEnv{GOOS, Home,
-Getenv}` is injectable so tests can simulate any OS.
+Only user data that belongs to a scanned repository is cleaned. A tool that
+keeps such data in the home directory sets `repo_key` (the encoding of the
+repository path, today only `claude-code`) and writes `{repo}` as one whole
+segment of its user pattern, after a wildcard-free parent:
+
+```json
+{ "id": "claude-code", "repo_key": "claude-code",
+  "entries": [{ "scope": "user", "patterns": ["~/.claude/projects/{repo}/*.jsonl"], ... }] }
+```
+
+`Catalog.RepoLocations(env, repos, cats...)` lists the parent
+(`~/.claude/projects`) and returns one location per directory that belongs to
+one of the repositories: the exact encoded name, or the encoded name followed
+by `--claude-worktrees-` or `--worktrees-` (the agent worktrees of the
+repository, also after they were removed). A lookalike sibling such as
+`-work-app-site` next to `-work-app` never matches, because the encoding is
+lossy and a plain prefix would claim another repository. Each directory is its
+own `Base`, so the scope guard never allows the parent that holds the data of
+every other repository. `Catalog.RepoLocationsAt(env, base, cats...)` finds
+the locations of one such base again when a detector scans it.
+
+User entries without `{repo}` are kept as catalog data (with their protect
+rules) but no detector scans them: global caches that belong to no repository
+are not Brooom's to clean. `PathEnv{GOOS, Home, Getenv}` is injectable so
+tests can simulate any OS.
+
+## The `Base` contract
 
 Each `UserLocation` has a `Base`: the literal directory prefix of the expanded
 pattern up to the first wildcard segment (for wildcard-free patterns, the path
@@ -390,7 +414,7 @@ Support/<Name>` on macOS and `%APPDATA%/<Name>` on Windows).
 
 | Tool | Removed (medium 30d unless noted) | Protected | Deliberately left out and why |
 | --- | --- | --- | --- |
-| Claude Code (`claude-code`) | `~/.claude/projects/*/*.jsonl` transcripts, `~/.claude/file-history/*`, `~/.claude/todos/*` (legacy). High 14d: `~/.claude/shell-snapshots/*`, `~/.claude/debug/*`, `~/.claude/statsig/*` (legacy) | Project: `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.claude/{settings.json,settings.local.json,commands,agents,skills,hooks,rules,agent-memory,agent-memory-local}`, `.claude/worktrees`, `.worktrees`. User: `~/.claude.json`, `~/.claude/{CLAUDE.md,settings*.json,keybindings.json,.credentials.json,commands,agents,skills,hooks,rules,plugins,agent-memory,history.jsonl}`, `~/.claude/projects/*/memory` | `.claude/worktrees` and `.worktrees` are deliberately excluded: they hold git worktrees that may contain uncommitted or unpushed work and are owned by the worktrees detector (#15) and its dirty/locked/unpushed checks. `paste-cache`, `backups`, `session-env`, `plans`, `history.jsonl` and subagent/tool-result folders are not listed (config-adjacent or not verified as safe on their own). |
+| Claude Code (`claude-code`) | `~/.claude/projects/{repo}/*.jsonl` transcripts of the scanned repository and its worktrees (repository-keyed); not scanned: `~/.claude/file-history/*`, `~/.claude/todos/*` (legacy). High 14d: `~/.claude/shell-snapshots/*`, `~/.claude/debug/*`, `~/.claude/statsig/*` (legacy) | Project: `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.claude/{settings.json,settings.local.json,commands,agents,skills,hooks,rules,agent-memory,agent-memory-local}`, `.claude/worktrees`, `.worktrees`. User: `~/.claude.json`, `~/.claude/{CLAUDE.md,settings*.json,keybindings.json,.credentials.json,commands,agents,skills,hooks,rules,plugins,agent-memory,history.jsonl}`, `~/.claude/projects/*/memory` | `.claude/worktrees` and `.worktrees` are deliberately excluded: they hold git worktrees that may contain uncommitted or unpushed work and are owned by the worktrees detector (#15) and its dirty/locked/unpushed checks. `paste-cache`, `backups`, `session-env`, `plans`, `history.jsonl` and subagent/tool-result folders are not listed (config-adjacent or not verified as safe on their own). |
 | Cursor (`cursor`) | High 14d: `<user data>/logs/*`, `CachedData/*`, `Cache/*` per OS. Medium: `<user data>/User/workspaceStorage/*` (can contain chat history), `~/.cursor/projects/*/agent-transcripts/**/*.{jsonl,txt}` | `User/{settings.json,keybindings.json,snippets,mcp.json}`, `User/globalStorage/{state.vscdb*,storage.json}`, `~/.cursor/{mcp.json,rules,commands,skills,extensions,cli-config.json,argv.json}`, project `.cursorrules`, `.cursor/{rules,mcp.json,commands,skills}`, `.cursorignore`, `.cursorindexingignore` | `~/.cursor/chats/**/store.db` (a database that mixes sessions and state) and `globalStorage` (accounts, tokens). |
 | Aider (`aider`) | Project: `.aider.chat.history.md`, `.aider.input.history` (medium 30d), `.aider.tags.cache.v*/` (high 14d) | `.aider.conf.yml`, `.aiderignore`, `.env`, `.aider.model.settings.yml`, `.aider.model.metadata.json`, `CONVENTIONS.md`, and the same files in `~` | `--llm-history-file` (no default, user chosen). |
 | GitHub Copilot (`github-copilot`) | High 14d: `<Code user data>/logs/*/window*/exthost/GitHub.copilot-chat/*.log` | `~/.config/github-copilot` and `%LOCALAPPDATA%/github-copilot` entirely (`hosts.json`, `apps.json`, tokens), `~/.copilot`, Code `User/{settings.json,keybindings.json,snippets,prompts,mcp.json,globalStorage/github.copilot-chat}`, `.github/{copilot-instructions.md,instructions,prompts,agents,chatmodes}`, `.vscode/mcp.json` | Log and cache locations below `github-copilot` and `globalStorage/github.copilot-chat`: not verified, and the directories hold credentials. |

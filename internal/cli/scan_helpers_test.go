@@ -53,10 +53,13 @@ type sourcedDetector struct {
 	*fakeDetector
 	extra func(ctx context.Context, cfg *config.Config) ([]scope.Target, error)
 	calls atomic.Int64
+	// repos records the repositories of the last call.
+	repos []string
 }
 
-func (d *sourcedDetector) ExtraTargets(ctx context.Context, cfg *config.Config) ([]scope.Target, error) {
+func (d *sourcedDetector) ExtraTargets(ctx context.Context, cfg *config.Config, repos []string) ([]scope.Target, error) {
 	d.calls.Add(1)
+	d.repos = repos
 	return d.extra(ctx, cfg)
 }
 

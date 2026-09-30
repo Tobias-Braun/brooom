@@ -262,9 +262,6 @@ func TestAIToolsUserEntries(t *testing.T) {
 		conf   Confidence
 		minAge int
 	}{
-		{"claude transcript", "linux", ".claude/projects/-home-u-app/abc.jsonl", false, "claude-code", ConfidenceMedium, 30},
-		{"claude transcript mac", "darwin", ".claude/projects/-Users-u-app/abc.jsonl", false, "claude-code", ConfidenceMedium, 30},
-		{"claude transcript win", "windows", ".claude/projects/C--Users-u-app/abc.jsonl", false, "claude-code", ConfidenceMedium, 30},
 		{"claude todos", "linux", ".claude/todos/a.json", false, "claude-code", ConfidenceMedium, 30},
 		{"claude file history", "linux", ".claude/file-history/session-1", true, "claude-code", ConfidenceMedium, 30},
 		{"claude shell snapshot", "linux", ".claude/shell-snapshots/snapshot-zsh-1.sh", false, "claude-code", ConfidenceHigh, 14},
@@ -310,7 +307,7 @@ func TestAIToolsUserEntries(t *testing.T) {
 			m := newAIMachine(t)
 			abs := m.userPath(tt.rel)
 			ensureBase(t, abs)
-			locs := embeddedCatalog(t, tt.goos).UserLocations(m.env(tt.goos))
+			locs := embeddedCatalog(t, tt.goos).userLocations(m.env(tt.goos))
 			loc, ok := findMatch(locs, abs, tt.isDir)
 			if !ok {
 				t.Fatalf("no location designates %s", abs)
@@ -391,7 +388,7 @@ func TestAIToolsUserProtectWins(t *testing.T) {
 			if !c.UserProtection(env).Protected(abs) {
 				t.Errorf("%s is not protected", abs)
 			}
-			if loc, ok := findMatch(c.UserLocations(env), abs, tt.isDir); ok {
+			if loc, ok := findMatch(c.userLocations(env), abs, tt.isDir); ok {
 				t.Errorf("%s is designated by %s", abs, loc.ToolID)
 			}
 		})
@@ -416,9 +413,47 @@ func TestAIToolsOSFilters(t *testing.T) {
 			m := newAIMachine(t)
 			abs := m.userPath(tt.rel)
 			ensureBase(t, abs)
-			locs := embeddedCatalog(t, tt.goos).UserLocations(m.env(tt.goos))
+			locs := embeddedCatalog(t, tt.goos).userLocations(m.env(tt.goos))
 			if loc, ok := findMatch(locs, abs, tt.isDir); ok {
 				t.Errorf("%s designated by %s on %s", abs, loc.ToolID, tt.goos)
+			}
+		})
+	}
+}
+
+// TestClaudeTranscriptsAreRepositoryKeyed: the transcripts below
+// ~/.claude/projects are only designated for the repository they belong to,
+// with Claude Code's directory naming on every OS.
+func TestClaudeTranscriptsAreRepositoryKeyed(t *testing.T) {
+	tests := []struct{ goos, repo, dir string }{
+		{"linux", "/home/u/app", "-home-u-app"},
+		{"darwin", "/Users/u/app", "-Users-u-app"},
+		{"windows", `C:\Users\u\app`, "C--Users-u-app"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.goos, func(t *testing.T) {
+			m := newAIMachine(t)
+			abs := m.userPath(".claude/projects/" + tt.dir + "/abc.jsonl")
+			ensureBase(t, abs)
+			other := m.userPath(".claude/projects/-home-u-other/abc.jsonl")
+			ensureBase(t, other)
+			c := embeddedCatalog(t, tt.goos)
+			if _, ok := findMatch(c.userLocations(m.env(tt.goos)), abs, false); ok {
+				t.Fatalf("a global user location designates %s", abs)
+			}
+			locs := c.RepoLocations(m.env(tt.goos), []string{tt.repo}, CategoryAI)
+			loc, ok := findMatch(locs, abs, false)
+			if !ok {
+				t.Fatalf("no repository location designates %s (locations %+v)", abs, locs)
+			}
+			if loc.ToolID != "claude-code" || loc.Entry.Confidence != ConfidenceMedium || *loc.Entry.MinAgeDays != 30 {
+				t.Errorf("location %+v", loc)
+			}
+			if _, ok := findMatch(locs, other, false); ok {
+				t.Errorf("the transcripts of another repository are designated")
+			}
+			if c.UserProtection(m.env(tt.goos)).Protected(abs) {
+				t.Errorf("%s is designated by an entry and protected at once", abs)
 			}
 		})
 	}

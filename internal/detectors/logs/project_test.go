@@ -37,8 +37,10 @@ func TestRegistration(t *testing.T) {
 	if d.Category() != detect.CategoryLogs {
 		t.Errorf("category = %q, want logs", d.Category())
 	}
-	if _, ok := d.(detect.TargetSource); !ok {
-		t.Error("detector does not implement detect.TargetSource")
+	// Global caches and logs belong to no repository and are not cleaned
+	// (#288), so the detector declares no user-level targets.
+	if _, ok := d.(detect.TargetSource); ok {
+		t.Error("detector must not declare user-level targets")
 	}
 }
 

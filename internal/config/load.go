@@ -83,9 +83,21 @@ func normalizeNulls(c *Config) {
 // noteDeprecated records the keys of earlier releases the file still sets.
 // They are accepted so an old file keeps loading, but have no effect.
 //
-// `config init` wrote an empty "roots" list into every file, so an empty or
-// null list is dropped silently: it never had an effect.
+// `config init` wrote an empty "roots" list and user_locations false into
+// every file, so those are dropped silently: they never had an effect.
 func noteDeprecated(c *Config) {
+	for _, ul := range []struct {
+		key string
+		v   **bool
+	}{
+		{"detectors.ai-artifacts.user_locations", &c.Detectors.AIArtifacts.LegacyUserLocations},
+		{"detectors.log-and-runtime-files.user_locations", &c.Detectors.Logs.LegacyUserLocations},
+	} {
+		if *ul.v != nil && **ul.v {
+			c.Deprecated = append(c.Deprecated, ul.key+": is ignored; agent data of the scanned repositories is always included and global caches are no longer cleaned")
+		}
+		*ul.v = nil
+	}
 	roots := bytes.TrimSpace(c.LegacyRoots)
 	c.LegacyRoots = nil
 	if len(roots) > 0 && !bytes.Equal(roots, []byte("null")) && !bytes.Equal(bytes.Join(bytes.Fields(roots), nil), []byte("[]")) {

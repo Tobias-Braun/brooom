@@ -213,7 +213,6 @@ func TestApplyDoesNotMutateInput(t *testing.T) {
 	for _, name := range Names() {
 		in := config.Default()
 		in.Detectors.Logs.Categories = map[string]bool{"os-junk": true}
-		in.Detectors.AIArtifacts.UserLocations = true
 		snapshot := in.Clone()
 		out := Apply(in, mustGet(t, name))
 		if !reflect.DeepEqual(in, snapshot) {
@@ -265,7 +264,6 @@ func TestNeverLoosensSafetySettings(t *testing.T) {
 		cfg.Git.ProtectedBranches = []string{"main", "keep/*"}
 		cfg.Trash.Strategy = config.StrategyQuarantine
 		cfg.Trash.AllowDelete = false
-		cfg.Detectors.AIArtifacts.UserLocations = true // a preset may only turn this off
 		cfg.Detectors.Worktrees.IncludeStale = true
 		got := Apply(cfg, mustGet(t, name))
 		switch {
@@ -275,8 +273,6 @@ func TestNeverLoosensSafetySettings(t *testing.T) {
 			t.Errorf("%s changed the protected branches", name)
 		case got.Trash.Strategy != config.StrategyQuarantine || got.Trash.AllowDelete:
 			t.Errorf("%s changed the trash settings", name)
-		case got.Detectors.AIArtifacts.UserLocations || got.Detectors.Logs.UserLocations:
-			t.Errorf("%s left user_locations on", name)
 		case got.Detectors.Worktrees.IncludeStale:
 			t.Errorf("%s reports unmerged worktrees whose upstream is gone", name)
 		}

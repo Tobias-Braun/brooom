@@ -15,8 +15,7 @@ import (
 
 // Reasons that tests and users see verbatim.
 const (
-	reasonUserNotEnabled = "user location not enabled for this run (pass --user)"
-	forceNoneHint        = "the file carries no suggested action; --force cannot add one. " +
+	forceNoneHint = "the file carries no suggested action; --force cannot add one. " +
 		"Export again with `brooom scan --force --format json`"
 )
 
@@ -116,8 +115,8 @@ func checkAlias(f findings.Finding, resolved string) string {
 }
 
 // checkPath resolves the finding path through the guard that fits its scope.
-// User findings are only accepted with --user and only inside a user location;
-// everything else must lie inside the repository or the selected roots. The
+// User findings are only accepted inside a user location of the scope's
+// repositories; everything else must lie inside the repository or the folder. The
 // action decides how symlinks are treated: trash removes a link without
 // following it (ResolveParent), all other actions resolve fully.
 func (sc *cleanScope) checkPath(f findings.Finding) (string, string) {
@@ -126,11 +125,8 @@ func (sc *cleanScope) checkPath(f findings.Finding) (string, string) {
 	}
 	g := sc.project
 	if f.Scope.Type == findings.ScopeUser {
-		if !sc.userEnabled {
-			return "", reasonUserNotEnabled
-		}
 		if sc.user == nil {
-			return "", "no user location exists for this run"
+			return "", "no user location of the scanned repositories exists"
 		}
 		g = sc.user
 	}
