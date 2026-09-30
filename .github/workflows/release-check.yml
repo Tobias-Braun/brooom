@@ -96,11 +96,23 @@ jobs:
         with:
           name: snapshot-dist
           path: dist
-      - name: Install the snapshot with ${{ matrix.shell }}
-        shell: ${{ matrix.shell }}
+      # The shell key is not expression-evaluated, so each shell gets literal
+      # steps guarded by the matrix value.
+      - name: Install the snapshot with Windows PowerShell 5.1
+        if: matrix.shell == 'powershell'
+        shell: powershell
         run: ./scripts/test-install.ps1 -DistDir dist
-      - name: Install against a fake release with ${{ matrix.shell }}
-        shell: ${{ matrix.shell }}
+      - name: Install the snapshot with PowerShell 7
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: ./scripts/test-install.ps1 -DistDir dist
+      - name: Install against a fake release with Windows PowerShell 5.1
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./scripts/test-install.ps1
+      - name: Install against a fake release with PowerShell 7
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
         run: ./scripts/test-install.ps1
 
   install-script:
