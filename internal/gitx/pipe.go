@@ -45,6 +45,8 @@ func Pipe(ctx context.Context, r Runner, dir string, first, second []string, onL
 	if err != nil {
 		return err
 	}
+	// GIT_NO_LAZY_FETCH needs git 2.44 or newer; older versions ignore it, which
+	// is harmless because they only lazy-fetch when a promisor remote is set up.
 	env := append(Env(os.Environ()), "GIT_NO_LAZY_FETCH=1")
 	var stderr1, stderr2 bytes.Buffer
 	c1 := exec.CommandContext(ctx, path, append([]string{"-C", dir}, first...)...)
@@ -68,6 +70,10 @@ func Pipe(ctx context.Context, r Runner, dir string, first, second []string, onL
 		_ = c1.Wait()
 		return mapStartErr(err)
 	}
+	// c2 now holds its own copy of the pipe's read end. Closing ours means an
+	// early exit of c2 breaks c1's pipe (SIGPIPE) instead of leaving c1 blocked
+	// on a full buffer until the deadline.
+	_ = pr.Close()
 	scanErr := readLines(out, onLine)
 	if scanErr != nil {
 		// Stop producing so the waits below return promptly.

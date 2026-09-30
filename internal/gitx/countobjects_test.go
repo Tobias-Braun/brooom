@@ -3,8 +3,12 @@ package gitx_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/testutil"
@@ -118,6 +122,29 @@ func TestPipe(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	if len(lines) != 3 || !strings.Contains(joined, "commit ") || !strings.Contains(joined, "blob ") || !strings.Contains(joined, " README.md") {
 		t.Errorf("lines: %q", lines)
+	}
+}
+
+// TestPipeDeadlineKillsRunningProcesses covers the kill path: both commands
+// are alive and blocked when the deadline hits, so Pipe must kill them and
+// return promptly instead of waiting for them to finish.
+func TestPipeDeadlineKillsRunningProcesses(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs a POSIX shell script as fake git")
+	}
+	script := filepath.Join(t.TempDir(), "fakegit")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := gitx.Pipe(ctx, &gitx.ExecRunner{Path: script}, t.TempDir(), []string{"a"}, []string{"b"}, func(string) {})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want context.DeadlineExceeded, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("Pipe took %v, processes were not killed", elapsed)
 	}
 }
 
