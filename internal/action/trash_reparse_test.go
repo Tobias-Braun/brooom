@@ -11,7 +11,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
-// withRoot presents path to sizeAndNestedGit as the given entry type, with
+// withRoot presents path to sizeAndNestedVCS as the given entry type, with
 // the given answer for "is this a directory on disk", simulating what
 // Windows reports for reparse points.
 func withRoot(t *testing.T, typ fs.FileMode, dirOnDisk bool) {
@@ -40,7 +40,7 @@ func TestSizeAndNestedGitReparseRoots(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			withRoot(t, tc.typ, tc.dirOnDisk)
-			m, err := sizeAndNestedGit(context.Background(), dir)
+			m, err := sizeAndNestedVCS(context.Background(), dir)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("err = %v, want it to contain %q", err, tc.wantErr)
@@ -74,8 +74,8 @@ func TestSizeAndNestedGitRealDirectoryStillWalks(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "a", ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	m, err := sizeAndNestedGit(context.Background(), dir)
-	if err != nil || m.nestedGit == "" {
-		t.Fatalf("nestedGit = %q, err = %v, want the nested repository found", m.nestedGit, err)
+	m, err := sizeAndNestedVCS(context.Background(), dir)
+	if err != nil || m.nestedVCS == "" {
+		t.Fatalf("nestedVCS = %q, err = %v, want the nested repository found", m.nestedVCS, err)
 	}
 }

@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// TestDirSizeHasGit proves that the size pass reports a .git entry (directory
+// TestDirSizeHasVCS proves that the size pass reports a .git entry (directory
 // or file, at any depth) and that the answer survives the cache.
-func TestDirSizeHasGit(t *testing.T) {
+func TestDirSizeHasVCS(t *testing.T) {
 	cases := []struct {
 		name  string
 		setup func(t *testing.T, root string)
@@ -22,6 +22,15 @@ func TestDirSizeHasGit(t *testing.T) {
 		{"git dir at root", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, ".git", "HEAD"), 1) }, true},
 		{"git file deep", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, "a", "b", ".git"), 1) }, true},
 		{"similar name", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, ".github", "x"), 1) }, false},
+		{"hg dir deep", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, "a", ".hg", "store"), 1) }, true},
+		{"jj dir", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, "a", ".jj", "repo"), 1) }, true},
+		{"svn dir", func(t *testing.T, root string) { writeFile(t, filepath.Join(root, ".svn", "wc.db"), 1) }, true},
+		{"bare repo deep", func(t *testing.T, root string) { makeBare(t, filepath.Join(root, "a", "clone.git")) }, true},
+		{"bare repo is the root", func(t *testing.T, root string) { makeBare(t, root) }, true},
+		{"HEAD and objects only", func(t *testing.T, root string) {
+			writeFile(t, filepath.Join(root, "HEAD"), 1)
+			writeFile(t, filepath.Join(root, "objects", "x"), 1)
+		}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -30,12 +39,20 @@ func TestDirSizeHasGit(t *testing.T) {
 			ageTree(t, root)
 			for _, opts := range []Options{{}, {CacheDir: cache}, {CacheDir: cache}, {CacheDir: cache, Fresh: true}} {
 				sum := mustSize(t, root, opts)
-				if sum.HasGit != tc.want {
-					t.Fatalf("HasGit = %v, want %v (opts %+v)", sum.HasGit, tc.want, opts)
+				if sum.HasVCS != tc.want {
+					t.Fatalf("HasVCS = %v, want %v (opts %+v)", sum.HasVCS, tc.want, opts)
 				}
 			}
 		})
 	}
+}
+
+// makeBare lays out the shape of a bare git repository (HEAD, objects/, refs/).
+func makeBare(t *testing.T, dir string) {
+	t.Helper()
+	writeFile(t, filepath.Join(dir, "HEAD"), 1)
+	writeFile(t, filepath.Join(dir, "objects", "pack", "p"), 1)
+	writeFile(t, filepath.Join(dir, "refs", "heads", "main"), 1)
 }
 
 func mustSize(t *testing.T, path string, opts Options) DirSummary {

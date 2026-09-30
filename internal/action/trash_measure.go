@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,25 +27,31 @@ var (
 
 // measurement is what one traversal of a trash target yields.
 type measurement struct {
-	size      int64
-	newest    time.Time
-	nestedGit string
+	size   int64
+	newest time.Time
+	// nestedVCS is the smallest relative path of a nested repository marker
+	// (VCS metadata entry or bare repository directory, "" when none) and
+	// nestedWhy the skip reason describing it.
+	nestedVCS string
+	nestedWhy string
 }
 
-// sizeAndNestedGit measures a target and looks for nested git repositories
-// in one pass. Files and symlinks are sized from their own lstat data. A
-// directory is walked once with Fresh options, following the same rules as
-// walk.DirSize (links are never followed, hard links count once, symlinks
-// count as their own size), so the size matches what the rest of Brooom
-// reports for the same directory.
+// sizeAndNestedVCS measures a target and looks for nested repositories in one
+// pass. Files and symlinks are sized from their own lstat data. A directory is
+// walked once with Fresh options, following the same rules as walk.DirSize
+// (links are never followed, hard links count once, symlinks count as their
+// own size), so the size matches what the rest of Brooom reports for the same
+// directory.
 //
-// walk.Walk visits `.git` entries (files and directories, so nested repos,
-// linked worktrees and submodules alike) without descending into them, which
-// means the nested-repository check costs no extra traversal. The reported
-// nestedGit is the smallest relative path so the reason is deterministic
-// although the walk is parallel. A directory that cannot be read completely
-// is an error: an unreadable subtree could hide a repository.
-func sizeAndNestedGit(ctx context.Context, path string) (measurement, error) {
+// walk.Walk visits VCS metadata entries (.git as file or directory, so nested
+// repos, linked worktrees and submodules alike, plus .hg, .jj and .svn), and
+// bare repository shapes (HEAD, objects/, refs/ in one directory) come from
+// the per-directory entry sets, so the nested-repository check costs no extra
+// traversal. The reported nestedVCS is the smallest relative path so the
+// reason is deterministic although the walk is parallel. A directory that
+// cannot be read completely is an error: an unreadable subtree could hide a
+// repository.
+func sizeAndNestedVCS(ctx context.Context, path string) (measurement, error) {
 	root, err := statRoot(path)
 	if err != nil {
 		return measurement{}, err
@@ -65,12 +73,23 @@ func sizeAndNestedGit(ctx context.Context, path string) (measurement, error) {
 	return measureTree(ctx, path, root.ModTime)
 }
 
+// newTreeMeter returns an empty meter; ownGit is the relative path of the
+// target's own .git link file ("" for none).
+func newTreeMeter(ownGit string) *treeMeter {
+	return &treeMeter{links: map[string]struct{}{}, shapes: map[string]*walk.DirShape{}, ownGit: ownGit}
+}
+
 // treeMeter accumulates a walk; visit runs concurrently.
 type treeMeter struct {
 	mu    sync.Mutex
 	m     measurement
 	links map[string]struct{}
-	errs  []error
+	// shapes holds the bare-repository shape of every directory seen so far,
+	// keyed by its relative path ("" is the measured root). A bare clone has
+	// no VCS metadata name, so it is only recognisable from a directory's
+	// whole entry set.
+	shapes map[string]*walk.DirShape
+	errs   []error
 	// ownGit is the relative path of a .git entry that belongs to the target
 	// itself (the link file of a linked worktree) and is therefore not a
 	// nested repository.
@@ -83,11 +102,54 @@ func (t *treeMeter) visit(e walk.Entry) walk.Decision {
 	if e.ModTime.After(t.m.newest) {
 		t.m.newest = e.ModTime
 	}
-	if isGitName(e.Name) && e.Rel != t.ownGit && (t.m.nestedGit == "" || e.Rel < t.m.nestedGit) {
-		t.m.nestedGit = e.Rel
+	if walk.IsVCSName(e.Name) && e.Rel != t.ownGit {
+		t.markNested(e.Rel, nestedReason(e.Name, e.Rel))
 	}
+	parent := path.Dir(e.Rel)
+	if parent == "." {
+		parent = ""
+	}
+	if t.shapes[parent] == nil {
+		t.shapes[parent] = &walk.DirShape{}
+	}
+	t.shapes[parent].Add(e.Name, e.IsDir(), e.Type.IsRegular())
 	t.m.size += t.entrySize(e)
 	return walk.Continue
+}
+
+// nestedReason describes a VCS metadata entry for the skip reason. Git keeps
+// its historic wording.
+func nestedReason(name, rel string) string {
+	if strings.EqualFold(name, ".git") {
+		return fmt.Sprintf("contains a git repository (%s at %s)", name, rel)
+	}
+	return fmt.Sprintf("contains a nested repository (%s at %s)", name, rel)
+}
+
+// markNested records a nested repository marker, keeping the smallest
+// relative path so the reason is deterministic although the walk is
+// parallel. The caller holds the lock or the walk has finished.
+func (t *treeMeter) markNested(rel, why string) {
+	if t.m.nestedVCS == "" || rel < t.m.nestedVCS {
+		t.m.nestedVCS, t.m.nestedWhy = rel, why
+	}
+}
+
+// markBareRepos applies the collected directory shapes after the walk, when
+// every directory's entry set is complete.
+func (t *treeMeter) markBareRepos() {
+	for rel, shape := range t.shapes {
+		if !shape.IsBareRepo() {
+			continue
+		}
+		// The root's rel is "" and would look like "no marker", so a bare
+		// repository at the root is reported and keyed as ".".
+		at := rel
+		if at == "" {
+			at = "."
+		}
+		t.markNested(at, fmt.Sprintf("contains a bare git repository (at %s)", at))
+	}
 }
 
 // entrySize is the contribution of one entry to the directory size, with the
@@ -117,7 +179,7 @@ func (t *treeMeter) fail(path string, err error) {
 // measureTree walks a directory. rootMTime is used when the tree is empty so
 // LastModified never stays unset.
 func measureTree(ctx context.Context, path string, rootMTime time.Time) (measurement, error) {
-	return measureWith(ctx, &treeMeter{links: map[string]struct{}{}}, path, rootMTime)
+	return measureWith(ctx, newTreeMeter(""), path, rootMTime)
 }
 
 // measureWorktree is measureTree for a linked worktree directory: its own
@@ -128,7 +190,7 @@ func measureWorktree(ctx context.Context, path string) (measurement, error) {
 	if err != nil {
 		return measurement{}, err
 	}
-	t := &treeMeter{links: map[string]struct{}{}, ownGit: ".git"}
+	t := newTreeMeter(".git")
 	return measureWith(ctx, t, path, root.ModTime)
 }
 
@@ -138,8 +200,9 @@ func measureWith(ctx context.Context, t *treeMeter, path string, rootMTime time.
 		return measurement{}, err
 	}
 	if len(t.errs) > 0 {
-		return measurement{}, fmt.Errorf("cannot inspect the whole directory, so a nested git repository cannot be ruled out: %w", t.errs[0])
+		return measurement{}, fmt.Errorf("cannot inspect the whole directory, so a nested repository cannot be ruled out: %w", t.errs[0])
 	}
+	t.markBareRepos()
 	if t.m.newest.IsZero() {
 		t.m.newest = rootMTime
 	}
@@ -150,14 +213,14 @@ func measureWith(ctx context.Context, t *treeMeter, path string, rootMTime time.
 // resolved path, the freshly measured size and the newest mtime. It fails
 // with a skip when the path is gone or holds a git repository.
 func refreshFinding(ctx context.Context, f findings.Finding, path string) (findings.Finding, error) {
-	m, err := sizeAndNestedGit(ctx, path)
+	m, err := sizeAndNestedVCS(ctx, path)
 	switch {
 	case isGone(err):
 		return f, skipf("already gone")
 	case err != nil:
 		return f, skipf("cannot inspect %s: %v", path, err)
-	case m.nestedGit != "":
-		return f, skipf("contains a git repository (.git at %s)", m.nestedGit)
+	case m.nestedVCS != "":
+		return f, skipf("%s", m.nestedWhy)
 	}
 	f.Path = path
 	f.SizeBytes = m.size

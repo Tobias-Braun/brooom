@@ -13,8 +13,10 @@ import (
 
 const (
 	// cacheVersion is bumped whenever the record layout changes; files of
-	// another version are ignored and rebuilt. Version 2 added HasGit, version 3 Incomplete.
-	cacheVersion = 3
+	// another version are ignored and rebuilt. Version 2 added HasGit, version 3
+	// Incomplete, version 4 renamed HasGit to HasVCS and widened it (other VCS
+	// metadata, bare repository shape), so older records are rebuilt.
+	cacheVersion = 4
 	// maxCacheBytes caps the size of a cache file that is read. A larger
 	// file is treated as corrupt so a broken cache can never exhaust memory.
 	maxCacheBytes = 32 << 20
@@ -46,9 +48,10 @@ type dirRecord struct {
 	DirectFiles  int          `json:"direct_files"`
 	DirectNewest int64        `json:"direct_newest"`
 	Links        []linkRecord `json:"links,omitempty"`
-	// HasGit is true when the directory directly contains an entry named
-	// ".git" (a directory, or a file as in linked worktrees and submodules).
-	HasGit bool `json:"has_git,omitempty"`
+	// HasVCS is true when the directory directly contains VCS metadata
+	// (.git as directory or file, .hg, .jj, .svn) or has the shape of a bare
+	// git repository.
+	HasVCS bool `json:"has_vcs,omitempty"`
 	// Incomplete is true when the directory (or an entry of it) could not
 	// be read, so the totals above undercount.
 	Incomplete bool `json:"incomplete,omitempty"`
