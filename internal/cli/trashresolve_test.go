@@ -249,6 +249,9 @@ func TestDryRunResolvingDeleteWritesNothing(t *testing.T) {
 // permanently without saying anything.
 func TestDeleteWarningIsShownOnApplyNotInDryRun(t *testing.T) {
 	f := newCleanupFixture(t, nil)
+	// The delete strategy only removes what git proves regenerable, so the
+	// junk directories must be ignored, like real build output.
+	testutil.WriteFile(t, f.repo.Dir, ".gitignore", "target*/\n")
 	dir, _ := junkDir(t, f.repo.Dir, "target")
 	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
 	del := []string{"clean", "--from", report, "--trash-strategy", "delete"}
