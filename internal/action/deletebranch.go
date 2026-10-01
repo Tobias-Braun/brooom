@@ -89,18 +89,26 @@ func (deleteBranch) Plan(ctx context.Context, env *Env, f findings.Finding) (Ste
 	if d.why != "" {
 		desc += " (" + d.why + ")"
 	}
-	return Step{Finding: f, Description: desc, Command: d.command()}, nil
+	step := Step{Finding: f, Description: desc, Command: d.command()}
+	if runFactsFrom(ctx) != nil {
+		step.live = d
+	}
+	return step, nil
 }
 
 // Apply evaluates again, because the repository may have changed since Plan,
-// and runs git branch. A skip at this point is reported as a skipped entry.
+// and runs git branch. In the apply pass the executor re-plans every item
+// immediately before applying it, so that decision is used instead of a
+// second identical evaluation; the deletion itself is a compare-and-swap on
+// the evaluated tip either way. A skip at this point is reported as a skipped
+// entry.
 func (deleteBranch) Apply(ctx context.Context, env *Env, s Step) (session.Entry, error) {
 	f := s.Finding
 	en := session.Entry{
 		FindingID: f.ID, Detector: f.Detector, Action: findings.ActionDeleteBranch,
 		Path: f.Path, Ref: f.Ref, At: time.Now().UTC(),
 	}
-	d, err := evaluate(ctx, env, f)
+	d, err := s.branchDecision(ctx, env)
 	if errors.Is(err, ErrSkipped) {
 		en.Status, en.Error = session.StatusSkipped, skipReason(err)
 		return en, nil
@@ -131,6 +139,16 @@ func (deleteBranch) Apply(ctx context.Context, env *Env, s Step) (session.Entry,
 	en.Restorable = true
 	en.RecoveryHint = branchRecoveryHint(d.name, sha, d.reachableFrom(ctx, env, sha))
 	return en, nil
+}
+
+// branchDecision returns the decision the apply-pass re-plan attached to s,
+// or a fresh evaluation when there is none (a step from the pre-confirmation
+// plan, or Apply called on its own).
+func (s Step) branchDecision(ctx context.Context, env *Env) (decision, error) {
+	if d, ok := s.live.(decision); ok {
+		return d, nil
+	}
+	return evaluate(ctx, env, s.Finding)
 }
 
 // reachableFrom names a branch, remote-tracking branch or tag that still
@@ -382,12 +400,16 @@ func openRepo(ctx context.Context, env *Env, f findings.Finding) (*gitx.Repo, er
 	if err != nil {
 		return nil, skipf("repository outside allowed roots or unresolvable: %v", err)
 	}
-	// A Plan pass shares one memoizing handle per repository; Apply opens an
-	// uncached one so it sees the repository as it is now.
+	// A Plan pass shares one memoizing handle per repository; the apply pass
+	// opens an uncached one so it sees the repository as it is now, sharing
+	// only the run facts.
 	var repo *gitx.Repo
-	if snap := planSnapshotFrom(ctx); snap != nil {
+	switch snap, facts := planSnapshotFrom(ctx), runFactsFrom(ctx); {
+	case snap != nil:
 		repo, err = snap.cache.AnchorRepo(ctx, path)
-	} else {
+	case facts != nil:
+		repo, err = facts.OpenAnchor(ctx, path)
+	default:
 		repo, err = gitx.OpenAnchor(ctx, env.Git, path)
 	}
 	if errors.Is(err, gitx.ErrUnsafeRepo) {

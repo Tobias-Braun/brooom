@@ -51,10 +51,9 @@ var ghEnv = []string{"GH_PROMPT_DISABLED=1", "NO_COLOR=1", "GH_PAGER=cat"}
 // PRInfo{Known:false} immediately. The branch-name-only check ignores forks: a fork PR with the same
 // head name is a false positive, which errs on the safe side.
 func (r *Repo) OpenPRBranches(ctx context.Context, dir string, opts PROptions) PRInfo {
-	info, _ := cached(r, &r.prs, struct{}{}, func() (PRInfo, error) {
+	return r.sharedPRs(func() (PRInfo, error) {
 		return r.gh.do(func() (PRInfo, ghVerdict) { return fetchOpenPRs(ctx, dir, opts) }), nil
 	})
-	return info
 }
 
 func fetchOpenPRs(parent context.Context, dir string, opts PROptions) (PRInfo, ghVerdict) {

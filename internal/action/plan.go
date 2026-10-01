@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/progress"
 )
@@ -148,44 +149,61 @@ func dedupe(fs []findings.Finding) []findings.Finding {
 	return out
 }
 
-// planSteps asks each finding's action to re-validate it.
+// planWorkers bounds the findings planned at the same time. Planning is read
+// only and mostly waits on git processes (several per delete-branch finding),
+// so a few workers hide that latency without flooding the machine.
+const planWorkers = 4
+
+// planOutcome is what planning one finding produced. ran is false for the
+// findings no worker started because the context was cancelled first.
+type planOutcome struct {
+	ran       bool
+	available bool
+	step      Step
+	err       error
+}
+
+// planSteps asks each finding's action to re-validate it. The findings are
+// planned by a bounded worker pool, but their outcomes are consumed in
+// finding order, so the plan does not depend on scheduling.
 func (e *Executor) planSteps(ctx context.Context, fs []findings.Finding, p *Plan) []planned {
 	var out []planned
 	// One open-file check for the whole plan instead of one per finding.
 	ctx = e.batchOpenCheck(ctx, fs)
 	// Shared git state for this pass only (see planSnapshot).
-	ctx = withPlanSnapshot(ctx, e.env)
+	ctx = withPlanSnapshot(ctx, e.env, e.verdicts)
 	// Likewise one tracked-files check per repository.
 	ctx = e.batchTrackedForFindings(ctx, fs)
 	e.opts.Progress.Phase(progress.PhasePlan, len(fs))
-	for i, f := range fs {
-		// After Ctrl-C the remaining findings are reported as interrupted;
-		// asking their actions would only produce "context canceled" failures.
-		if ctx.Err() != nil {
-			for _, rest := range fs[i:] {
-				p.Skipped = append(p.Skipped, Skip{rest, "interrupted"})
-			}
-			break
-		}
-		t := f.SuggestedAction.Type
-		act, ok := e.opts.Lookup(t)
+	outcomes := detect.MapOrdered(ctx, fs, planWorkers, func(ctx context.Context, f findings.Finding) planOutcome {
+		act, ok := e.opts.Lookup(f.SuggestedAction.Type)
 		if !ok {
-			p.Skipped = append(p.Skipped, Skip{f, "action not available"})
-			continue
+			return planOutcome{ran: true}
 		}
 		step, err := act.Plan(ctx, e.env, f)
 		e.opts.Progress.Step(entryLabel(f.Path, f.Ref))
+		return planOutcome{ran: true, available: true, step: step, err: err}
+	})
+	for i, o := range outcomes {
+		f := fs[i]
 		switch {
-		case err == nil:
-			out = append(out, planned{t, step})
-		case ctx.Err() != nil && errors.Is(err, context.Canceled):
+		case !o.ran:
+			// After Ctrl-C the findings no worker started are reported as
+			// interrupted; asking their actions would only produce "context
+			// canceled" failures.
+			p.Skipped = append(p.Skipped, Skip{f, "interrupted"})
+		case !o.available:
+			p.Skipped = append(p.Skipped, Skip{f, "action not available"})
+		case o.err == nil:
+			out = append(out, planned{f.SuggestedAction.Type, o.step})
+		case ctx.Err() != nil && errors.Is(o.err, context.Canceled):
 			// The cancellation hit this very finding mid-inspection, so the
 			// error says nothing about the finding itself.
 			p.Skipped = append(p.Skipped, Skip{f, "interrupted"})
-		case errors.Is(err, ErrSkipped):
-			p.Skipped = append(p.Skipped, Skip{f, skipReason(err)})
+		case errors.Is(o.err, ErrSkipped):
+			p.Skipped = append(p.Skipped, Skip{f, skipReason(o.err)})
 		default:
-			p.Failed = append(p.Failed, Skip{f, err.Error()})
+			p.Failed = append(p.Failed, Skip{f, o.err.Error()})
 		}
 	}
 	return out

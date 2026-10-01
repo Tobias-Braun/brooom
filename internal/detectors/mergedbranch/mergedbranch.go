@@ -39,6 +39,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
@@ -83,12 +84,15 @@ type scan struct {
 	repo   *gitx.Repo
 	base   gitx.Base
 	// bases lists every candidate a merge counts against, base first.
-	bases    []gitx.Base
-	baseTip  string
-	path     string
-	squash   bool
-	prs      gitx.PRInfo
-	prCheck  string
+	bases   []gitx.Base
+	baseTip string
+	path    string
+	squash  bool
+	// prs returns the open pull requests of the repository. It is asked
+	// lazily, by the first merged branch, so a repository without merged
+	// branches never calls gh, and the call overlaps the classification of
+	// the other branches instead of preceding all of it.
+	prs      func() prState
 	branches []gitx.Branch
 	emit     func(findings.Finding)
 	// errs collects per-branch git failures. They are returned joined at the
@@ -115,6 +119,13 @@ func (s *scan) wrap(ctx context.Context, what string, err error) error {
 		return nil //nolint:nilerr // the engine reports the interruption itself
 	}
 	return fmt.Errorf("merged-branch: %s: %w", what, err)
+}
+
+// prState is the open pull request information of one repository and how
+// it was obtained (the open_pr_check meta value).
+type prState struct {
+	info  gitx.PRInfo
+	check string
 }
 
 const (
@@ -199,19 +210,24 @@ func (d *Detector) load(ctx context.Context, env *detect.Env, target scope.Targe
 	s := &scan{
 		env: env, target: target, cfg: cfg, repo: repo, base: bases[0], bases: bases, path: path,
 		squash:   cfg.Detectors.MergedBranch.Mode == config.MergeAncestorSquash,
-		prCheck:  prCheckDisabled,
 		branches: branches,
 		emit:     emit,
 	}
 	s.baseTip = s.tipOf(ctx)
-	if cfg.Git.UseGH {
-		s.prs = repo.OpenPRBranches(ctx, repo.Dir, gitx.PROptions{GH: d.GH})
-		s.prCheck = prCheckUnknown
-		if s.prs.Known {
-			s.prCheck = prCheckOK
-		}
-	}
+	s.prs = sync.OnceValue(func() prState { return d.openPRs(ctx, cfg, repo) })
 	return s, nil
+}
+
+// openPRs asks gh for the open pull requests when the configuration allows it.
+func (d *Detector) openPRs(ctx context.Context, cfg *config.Config, repo *gitx.Repo) prState {
+	if !cfg.Git.UseGH {
+		return prState{check: prCheckDisabled}
+	}
+	info := repo.OpenPRBranches(ctx, repo.Dir, gitx.PROptions{GH: d.GH})
+	if info.Known {
+		return prState{info: info, check: prCheckOK}
+	}
+	return prState{info: info, check: prCheckUnknown}
 }
 
 // tipOf finds the tip sha of the base ref among the already listed refs, so
@@ -319,7 +335,7 @@ func (s *scan) newFinding(ref, tip string, date time.Time, base gitx.Base) findi
 func (s *scan) buildFinding(ctx context.Context, b gitx.Branch, base gitx.Base, method string) findings.Finding {
 	f := s.newFinding(b.Name, b.Tip, b.Date, base)
 	f.Meta["merge_method"] = method
-	f.Meta["open_pr_check"] = s.prCheck
+	f.Meta["open_pr_check"] = s.prs().check
 	if b.Upstream != "" {
 		f.Meta["upstream"] = b.Upstream
 	}
@@ -340,7 +356,7 @@ func (s *scan) evidence(b gitx.Branch, base gitx.Base, method string) []findings
 			Code: "current_branch_worktree", Message: "Checked out in " + b.WorktreePath + ".", Value: b.WorktreePath,
 		})
 	}
-	if s.prCheck == prCheckUnknown {
+	if s.prs().check == prCheckUnknown {
 		ev = append(ev, findings.Evidence{
 			Code:    "open_pr_unknown",
 			Message: "Open pull requests could not be checked (gh unavailable).",
@@ -380,7 +396,7 @@ func (s *scan) riskFlags(ctx context.Context, b gitx.Branch) []findings.RiskFlag
 	if gitx.IsProtected(s.cfg.Git.ProtectedBranches, b.Name) {
 		flags = append(flags, findings.RiskProtectedBranch)
 	}
-	if s.cfg.Git.UseGH && s.prs.HasOpenPR(b.Name) {
+	if s.prs().info.HasOpenPR(b.Name) {
 		flags = append(flags, findings.RiskHasOpenPR)
 	}
 	if b.UpstreamGone {

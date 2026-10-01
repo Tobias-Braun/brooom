@@ -141,12 +141,16 @@ type Repo struct {
 	// known is the git version a Cache resolved once for all its handles;
 	// nil means the handle asks git itself.
 	known *Version
-	// verdicts is the on-disk squash verdict cache of a scan's Cache; nil for
-	// uncached handles, which must always recompute.
-	verdicts *verdictStore
+	// verdicts keeps squash verdicts: the on-disk store of a scan's Cache,
+	// or the in-memory Verdicts of one process run; nil for plain uncached
+	// handles, which must always recompute.
+	verdicts verdictCache
 	// gh is the scan-wide breaker shared by all handles of one Cache; nil
 	// for uncached handles, which always call gh.
 	gh *ghBreaker
+	// facts are the run-wide answers an apply run shares between the
+	// uncached handles of its items (see RunFacts); nil otherwise.
+	facts *repoFacts
 
 	// diffLimit overrides maxDiffBytes when positive (tests only).
 	diffLimit int64
@@ -157,6 +161,7 @@ type Repo struct {
 	worktrees      memo[struct{}, []Worktree]
 	bases          memo[string, Base]
 	candidates     memo[string, []Base]
+	baseRefs       memo[string, baseRefs]
 	remoteHolder   memo[string, string]
 	unpushed       memo[string, int]
 	patches        patchCache
@@ -371,8 +376,9 @@ type Cache struct {
 	ver   Version
 	verOK bool
 
-	// verdicts is the optional on-disk squash verdict cache (nil: off).
-	verdicts *verdictStore
+	// verdicts is the optional squash verdict cache (nil: off), on disk
+	// (SetVerdictDir) or in memory (ShareVerdicts).
+	verdicts verdictCache
 }
 
 // NewCache returns an empty cache using runner for all repositories.
@@ -502,10 +508,4 @@ func (r *Repo) resolveCommit(ctx context.Context, ref string) (string, error) {
 		}
 		return strings.TrimSpace(out), nil
 	})
-}
-
-// refExists reports whether the fully qualified ref resolves to a commit.
-func (r *Repo) refExists(ctx context.Context, ref string) bool {
-	_, err := r.resolveCommit(ctx, ref)
-	return err == nil
 }
