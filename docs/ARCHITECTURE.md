@@ -366,7 +366,10 @@ into any existing candidate counts, ancestry against every candidate before any
 patch-id guess. A match in a local candidate that ranks behind a remote primary
 is marked `Base.Unpushed` and reported as "local main (not pushed)"; it is not
 remote-verified, so `-D` still needs `ContainedInRemotes` exactly like a
-heuristic merge.
+heuristic merge. Both are answered by one `for-each-ref` over origin/HEAD and
+every configured candidate (exact names only, annotated tags peeled like
+`rev-parse <ref>^{commit}`), not one rev-parse per candidate, and the squash
+pass of `MergedIntoAny` does not repeat the ancestry check of the first pass.
 
 Names the action refuses (`gitx.RefusedBranchName`) are checked by merged-branch
 and stale-branch too: such findings are not actionable and carry a quoted
@@ -832,9 +835,20 @@ whole cache directory is safe to delete.
 One `Executor.Plan` pass shares a `gitx.Cache` between its findings (carried in
 the context, `action/plansnap.go`), so the branch listing, base branch,
 worktrees and open pull requests are read once per repository instead of per
-finding. Apply and the re-plan that precedes it never get a snapshot: they keep
-the live per-finding checks (a snapshot is deliberately not shared between
-Plan and Apply).
+finding. The findings are planned by a few workers (`planWorkers`) and
+consumed in finding order, so every action's `Plan` must be safe for
+concurrent use. Apply and the re-plan that precedes it never get a snapshot:
+they keep the live per-finding checks (a snapshot is deliberately not shared
+between Plan and Apply). They share only `gitx.RunFacts`, created once per
+apply run after confirmation: the git version, which base refs exist, the open
+pull requests (one `gh` call per repository and run) and squash verdicts. The
+verdicts live in a `gitx.Verdicts` store in memory that the plan pass of the
+same executor filled; a verdict is a pure function of base and tip sha and
+only this process writes the store, so the on-disk cache still never reaches
+actions. In the apply pass delete-branch hands the decision of the re-plan to
+`Apply` (`Step.live`) instead of evaluating twice in a row; the deletion stays
+a compare-and-swap on the evaluated tip. The merged-branch detector asks `gh`
+lazily, once the first merged branch needs the answer.
 
 ### Open files (`internal/procs`)
 

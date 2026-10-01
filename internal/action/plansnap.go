@@ -23,15 +23,41 @@ type planSnapshot struct {
 type planSnapshotKey struct{}
 
 // withPlanSnapshot returns a context carrying a fresh snapshot for env's git
-// runner. Without a runner there is nothing to share and ctx is returned.
-func withPlanSnapshot(ctx context.Context, env *Env) context.Context {
+// runner. Squash verdicts go to v, which the apply run reuses (see
+// gitx.Verdicts). Without a runner there is nothing to share and ctx is
+// returned.
+func withPlanSnapshot(ctx context.Context, env *Env, v *gitx.Verdicts) context.Context {
 	if env == nil || env.Git == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, planSnapshotKey{}, &planSnapshot{cache: gitx.NewCache(env.Git)})
+	cache := gitx.NewCache(env.Git)
+	cache.ShareVerdicts(v)
+	return context.WithValue(ctx, planSnapshotKey{}, &planSnapshot{cache: cache})
 }
 
 func planSnapshotFrom(ctx context.Context) *planSnapshot {
 	s, _ := ctx.Value(planSnapshotKey{}).(*planSnapshot)
 	return s
+}
+
+// runFactsKey carries the gitx.RunFacts of one apply run (see withRunFacts).
+type runFactsKey struct{}
+
+// withRunFacts returns a context carrying fresh run facts for env's git
+// runner. The executor creates them once after confirmation, so the re-plan
+// and Apply of every item keep their live checks but share the answers that
+// cannot change within the run (gitx.RunFacts lists them). It also marks the
+// context as the apply pass, in which delete-branch hands the decision of the
+// re-plan to Apply instead of evaluating twice in a row. v holds the squash
+// verdicts the plan pass of the same executor computed.
+func withRunFacts(ctx context.Context, env *Env, v *gitx.Verdicts) context.Context {
+	if env == nil || env.Git == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, runFactsKey{}, gitx.NewRunFacts(env.Git, v))
+}
+
+func runFactsFrom(ctx context.Context) *gitx.RunFacts {
+	f, _ := ctx.Value(runFactsKey{}).(*gitx.RunFacts)
+	return f
 }

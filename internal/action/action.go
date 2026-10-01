@@ -81,6 +81,9 @@ type Step struct {
 	// to say "delete permanently" instead of the generic action name; it is
 	// display state and never reaches the manifest or JSON output.
 	Strategy config.TrashStrategy
+	// live is action-specific state the apply-pass re-plan hands to Apply
+	// (delete-branch: its decision); nil in every other plan.
+	live any
 }
 
 // Action executes one action type.

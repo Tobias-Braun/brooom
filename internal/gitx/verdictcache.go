@@ -23,9 +23,10 @@ const verdictVersion = "1"
 // It only ever holds definite answers; truncated and failed checks are unknown
 // and are recomputed every time.
 //
-// It is read by scan handles only (Cache.SetVerdictDir). Actions use uncached
-// handles without a store, so a damaged or forged file can at worst change what
-// a scan reports, never what a deletion is verified against.
+// It is read by scan handles only (Cache.SetVerdictDir). Actions use the
+// in-memory Verdicts of their own process or no store at all, so a damaged or
+// forged file can at worst change what a scan reports, never what a deletion
+// is verified against.
 type verdictStore struct {
 	dir string
 }

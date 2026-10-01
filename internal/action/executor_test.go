@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,7 +30,13 @@ type fakeAction struct {
 
 func (a *fakeAction) Type() findings.ActionType { return a.typ }
 
+// fakePlanMu serializes the plan hooks: the executor plans findings
+// concurrently, and the hooks of the tests count calls in plain maps.
+var fakePlanMu sync.Mutex
+
 func (a *fakeAction) Plan(_ context.Context, _ *Env, f findings.Finding) (Step, error) {
+	fakePlanMu.Lock()
+	defer fakePlanMu.Unlock()
 	if a.plan != nil {
 		return a.plan(f)
 	}

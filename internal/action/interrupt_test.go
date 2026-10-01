@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Tobias-Braun/brooom/internal/findings"
@@ -52,15 +53,23 @@ func assertInterruptedSkips(t *testing.T, skips []Skip, want int) {
 type ctxAction struct {
 	*fakeAction
 	onPlan func(n int)
-	plans  int
+	// mu guards plans; the executor plans findings concurrently.
+	mu    sync.Mutex
+	plans int
 }
 
 func (a *ctxAction) Plan(ctx context.Context, env *Env, f findings.Finding) (Step, error) {
+	a.mu.Lock()
 	a.plans++
+	n := a.plans
 	if a.onPlan != nil {
-		a.onPlan(a.plans)
+		a.onPlan(n)
 	}
-	if err := ctx.Err(); err != nil {
+	// Read under the lock, so a call that came before the cancelling one
+	// never sees the cancellation.
+	err := ctx.Err()
+	a.mu.Unlock()
+	if err != nil {
 		return Step{}, fmt.Errorf("cannot inspect %s: %w", f.Path, err)
 	}
 	return a.fakeAction.Plan(ctx, env, f)
@@ -83,11 +92,9 @@ func TestInterruptDuringPlanStopsBeforeConfirmation(t *testing.T) {
 		}
 	}}
 	fx.useAction(a)
-	fs := []findings.Finding{
-		find("d", findings.ActionTrash, fx.path("a"), "", 1),
-		find("d", findings.ActionTrash, fx.path("b"), "", 1),
-		find("d", findings.ActionTrash, fx.path("c"), "", 1),
-		find("d", findings.ActionTrash, fx.path("d"), "", 1),
+	var fs []findings.Finding
+	for _, name := range strings.Split("abcdefghij", "") {
+		fs = append(fs, find("d", findings.ActionTrash, fx.path(name), "", 1))
 	}
 	res, err := NewExecutor(fx.opts).Run(ctx, fs)
 	if !errors.Is(err, ErrInterrupted) {
@@ -96,13 +103,15 @@ func TestInterruptDuringPlanStopsBeforeConfirmation(t *testing.T) {
 	if res == nil || len(res.Failures) != 0 || res.Failed != 0 {
 		t.Fatalf("interruption produced failures: %+v", res)
 	}
-	if a.plans != 2 {
+	// Findings are planned by planWorkers workers: the ones already handed
+	// to a worker when Ctrl-C arrived may still be asked, no further one.
+	if a.plans > 2+planWorkers-1 {
 		t.Errorf("planning went on after the interrupt: %d Plan calls", a.plans)
 	}
 	if len(fx.log) != 0 || len(fx.manifests()) != 0 {
 		t.Errorf("something was applied: %v", fx.log)
 	}
-	assertInterruptedSkips(t, res.Skips, 3)
+	assertInterruptedSkips(t, res.Skips, len(fs)-1)
 	if strings.Contains(fx.out.String(), "cannot inspect") {
 		t.Errorf("bogus plan failures printed:\n%s", fx.out.String())
 	}

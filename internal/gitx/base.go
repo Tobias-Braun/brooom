@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -57,20 +58,29 @@ const originRemote = "origin"
 // runs `remote set-head` or `fetch`: no network, no writes. Only the remote
 // "origin" is consulted.
 func (r *Repo) DefaultBase(ctx context.Context, configured []string) (Base, error) {
-	return cached(r, &r.bases, strings.Join(configured, "\x00"), func() (Base, error) {
-		if b, ok := r.originHeadBase(ctx); ok {
-			return b, nil
+	return r.sharedBases(&r.bases, strings.Join(configured, "\x00"), func() (Base, error) {
+		refs, err := r.listBaseRefs(ctx, configured)
+		if err != nil {
+			return Base{}, err
 		}
-		for _, name := range configured {
-			if r.refExists(ctx, "refs/remotes/"+originRemote+"/"+name) {
-				return Base{Ref: originRemote + "/" + name, FullRef: "refs/remotes/" + originRemote + "/" + name, Name: name, Remote: originRemote, Source: BaseSourceConfigRemote}, nil
-			}
-			if r.refExists(ctx, "refs/heads/"+name) {
-				return Base{Ref: name, FullRef: "refs/heads/" + name, Name: name, Source: BaseSourceConfigLocal}, nil
-			}
-		}
-		return Base{}, ErrNoBase
+		return refs.primary(configured)
 	})
+}
+
+// primary is DefaultBase answered from the listing.
+func (b baseRefs) primary(configured []string) (Base, error) {
+	if base, ok := b.originHeadBase(); ok {
+		return base, nil
+	}
+	for _, name := range configured {
+		if remote := remoteBase(name); b.has(remote.FullRef) {
+			return remote, nil
+		}
+		if local := localBase(name); b.has(local.FullRef) {
+			return local, nil
+		}
+	}
+	return Base{}, ErrNoBase
 }
 
 // BaseCandidates returns every existing base ref merge detection may compare
@@ -82,30 +92,45 @@ func (r *Repo) DefaultBase(ctx context.Context, configured []string) (Base, erro
 // mistake them for remote-verified. Duplicates are dropped by full ref. The
 // returned slice is shared and must not be modified.
 func (r *Repo) BaseCandidates(ctx context.Context, configured []string) ([]Base, error) {
-	return cached(r, &r.candidates, strings.Join(configured, "\x00"), func() ([]Base, error) {
-		primary, err := r.DefaultBase(ctx, configured)
+	return r.sharedCandidates(strings.Join(configured, "\x00"), func() ([]Base, error) {
+		refs, err := r.listBaseRefs(ctx, configured)
+		if err != nil {
+			return nil, err
+		}
+		// The same listing answers DefaultBase, so both always agree.
+		primary, err := refs.primary(configured)
 		if err != nil {
 			return nil, err
 		}
 		out := []Base{primary}
 		seen := map[string]bool{primary.FullRef: true}
 		add := func(b Base) {
-			if seen[b.FullRef] || !r.refExists(ctx, b.FullRef) {
+			if seen[b.FullRef] || !refs.has(b.FullRef) {
 				return
 			}
 			seen[b.FullRef] = true
 			b.Unpushed = b.Remote == "" && primary.Remote != ""
 			out = append(out, b)
 		}
-		if b, ok := r.originHeadBase(ctx); ok {
+		if b, ok := refs.originHeadBase(); ok {
 			add(b)
 		}
 		for _, name := range configured {
-			add(Base{Ref: originRemote + "/" + name, FullRef: "refs/remotes/" + originRemote + "/" + name, Name: name, Remote: originRemote, Source: BaseSourceConfigRemote})
-			add(Base{Ref: name, FullRef: "refs/heads/" + name, Name: name, Source: BaseSourceConfigLocal})
+			add(remoteBase(name))
+			add(localBase(name))
 		}
 		return out, nil
 	})
+}
+
+// remoteBase is the configured name as a branch of origin.
+func remoteBase(name string) Base {
+	return Base{Ref: originRemote + "/" + name, FullRef: "refs/remotes/" + originRemote + "/" + name, Name: name, Remote: originRemote, Source: BaseSourceConfigRemote}
+}
+
+// localBase is the configured name as a local branch.
+func localBase(name string) Base {
+	return Base{Ref: name, FullRef: "refs/heads/" + name, Name: name, Source: BaseSourceConfigLocal}
 }
 
 // MergedIntoAny reports whether branch is merged into any of the bases, in
@@ -120,9 +145,15 @@ func (r *Repo) MergedIntoAny(ctx context.Context, bases []Base, branch string, i
 	if includeSquash {
 		modes = append(modes, true)
 	}
+	// notAncestor[i] records that the first pass found the branch not to be
+	// an ancestor of bases[i], so the squash pass need not ask again.
+	notAncestor := make([]bool, len(bases))
 	for _, squash := range modes {
-		for _, b := range bases {
-			res, err := r.MergedInto(ctx, b.FullRef, branch, squash)
+		for i, b := range bases {
+			res, err := r.mergedIntoPass(ctx, b.FullRef, branch, squash, notAncestor[i])
+			if !squash && err == nil {
+				notAncestor[i] = !res.Merged
+			}
 			if err != nil {
 				if firstErr == nil {
 					firstErr = err
@@ -137,20 +168,127 @@ func (r *Repo) MergedIntoAny(ctx context.Context, bases []Base, branch string, i
 	return Base{}, MergeResult{}, firstErr
 }
 
+// mergedIntoPass is one check of MergedIntoAny: MergedInto, or for a branch
+// the ancestor pass already found not to be an ancestor of base, only the
+// squash/rebase detection, memoized under the same key as MergedInto with
+// squash (the answers agree once ancestry is ruled out).
+func (r *Repo) mergedIntoPass(ctx context.Context, base, branch string, squash, notAncestor bool) (MergeResult, error) {
+	if !squash || !notAncestor {
+		return r.MergedInto(ctx, base, branch, squash)
+	}
+	return cached(r, &r.merged, mergeKey{base, branch, true}, func() (MergeResult, error) {
+		res, err := r.SquashMerged(ctx, base, branch)
+		if isMissingObject(err) {
+			return MergeResult{}, nil
+		}
+		return res, err
+	})
+}
+
+// originHead is the symbolic ref base detection follows first.
+const originHead = "refs/remotes/" + originRemote + "/HEAD"
+
+// baseRefs is what base detection knows about its candidate refs after one
+// listing: the commit of every candidate that exists and the target of
+// refs/remotes/origin/HEAD.
+type baseRefs struct {
+	// tips maps each existing candidate (full ref) to its commit.
+	tips map[string]string
+	// originHead is the ref origin/HEAD points to, "" when it is unset or
+	// its target does not exist.
+	originHead string
+}
+
+// has reports whether the fully qualified ref exists as a commit.
+func (b baseRefs) has(ref string) bool {
+	_, ok := b.tips[ref]
+	return ok
+}
+
 // originHeadBase follows refs/remotes/origin/HEAD when it points at an
 // existing remote-tracking branch.
-func (r *Repo) originHeadBase(ctx context.Context) (Base, bool) {
-	target, err := r.run(ctx, "symbolic-ref", "--quiet", "refs/remotes/"+originRemote+"/HEAD")
-	if err != nil {
-		return Base{}, false
-	}
-	target = strings.TrimSpace(target)
+func (b baseRefs) originHeadBase() (Base, bool) {
 	prefix := "refs/remotes/" + originRemote + "/"
-	if !strings.HasPrefix(target, prefix) || !r.refExists(ctx, target) {
+	if !strings.HasPrefix(b.originHead, prefix) {
 		return Base{}, false
 	}
-	name := strings.TrimPrefix(target, prefix)
-	return Base{Ref: originRemote + "/" + name, FullRef: target, Name: name, Remote: originRemote, Source: BaseSourceOriginHead}, true
+	name := strings.TrimPrefix(b.originHead, prefix)
+	return Base{Ref: originRemote + "/" + name, FullRef: b.originHead, Name: name, Remote: originRemote, Source: BaseSourceOriginHead}, true
+}
+
+// baseRefFormat lists name, type and object of a ref, the peeled type and
+// object of an annotated tag, and the target of a symbolic ref.
+const baseRefFormat = "--format=%(refname)%00%(objecttype)%00%(objectname)%00%(*objecttype)%00%(*objectname)%00%(symref)"
+
+// listBaseRefs asks one `for-each-ref` for origin/HEAD and every configured
+// candidate (origin/<name> and <name>), instead of one rev-parse per
+// candidate. for-each-ref patterns also match refs below a name
+// (refs/heads/main/x), so only exact names are kept. A ref counts when it
+// resolves to a commit, like `rev-parse --verify <ref>^{commit}`; a dangling
+// origin/HEAD is not listed by git at all and so counts as unset.
+func (r *Repo) listBaseRefs(ctx context.Context, configured []string) (baseRefs, error) {
+	return cached(r, &r.baseRefs, strings.Join(configured, "\x00"), func() (baseRefs, error) {
+		want := baseRefNames(configured)
+		out, err := r.run(ctx, append([]string{"for-each-ref", baseRefFormat}, want...)...)
+		if err != nil {
+			return baseRefs{}, err
+		}
+		return r.parseBaseRefs(ctx, out, want), nil
+	})
+}
+
+// baseRefNames lists origin/HEAD and the remote and local ref of every
+// configured name, without duplicates, in that order.
+func baseRefNames(configured []string) []string {
+	out := []string{originHead}
+	seen := map[string]bool{originHead: true}
+	for _, name := range configured {
+		for _, ref := range []string{remoteBase(name).FullRef, localBase(name).FullRef} {
+			if !seen[ref] {
+				seen[ref] = true
+				out = append(out, ref)
+			}
+		}
+	}
+	return out
+}
+
+// parseBaseRefs reads the baseRefFormat records of the wanted refs.
+func (r *Repo) parseBaseRefs(ctx context.Context, out string, want []string) baseRefs {
+	refs := baseRefs{tips: map[string]string{}}
+	for _, line := range Lines(out) {
+		f := strings.Split(line, "\x00")
+		if len(f) != 6 || !slices.Contains(want, f[0]) {
+			continue
+		}
+		sha, ok := r.peeledCommit(ctx, f[0], f[1], f[2], f[3], f[4])
+		switch {
+		case !ok:
+			// Not a commit, so the ref does not count as existing.
+		case f[0] != originHead:
+			refs.tips[f[0]] = sha
+		case f[5] != "":
+			refs.originHead = f[5]
+			refs.tips[f[5]] = sha
+		}
+	}
+	return refs
+}
+
+// peeledCommit returns the commit a listed ref resolves to: the object itself
+// when it is a commit, the peeled object of an annotated tag pointing at a
+// commit, and for anything deeper (a tag of a tag) whatever rev-parse says.
+func (r *Repo) peeledCommit(ctx context.Context, ref, typ, obj, peeledType, peeled string) (string, bool) {
+	switch {
+	case typ == "commit":
+		return obj, true
+	case typ == "tag" && peeledType == "commit":
+		return peeled, true
+	case typ == "tag":
+		sha, err := r.resolveCommit(ctx, ref)
+		return sha, err == nil
+	}
+	return "", false
 }
 
 // IsBaseBranch reports whether the local branch name is a base branch: the

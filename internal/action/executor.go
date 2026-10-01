@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
+	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/progress"
 	"github.com/Tobias-Braun/brooom/internal/session"
@@ -199,6 +200,9 @@ func (r *Result) Restorable() bool {
 type Executor struct {
 	opts Options
 	env  *Env
+	// verdicts are the squash verdicts this executor computed; the plan pass
+	// fills them and the apply run reuses them (in memory only).
+	verdicts *gitx.Verdicts
 }
 
 // NewExecutor returns an Executor with defaults filled in.
@@ -229,7 +233,7 @@ func NewExecutor(o Options) *Executor {
 		env = *o.Env
 	}
 	env.Force = env.Force || o.Force
-	return &Executor{opts: o, env: &env}
+	return &Executor{opts: o, env: &env, verdicts: gitx.NewVerdicts()}
 }
 
 // Run plans and, with Apply, confirms and executes. Without Apply it prints
@@ -373,7 +377,7 @@ func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planS
 	// The live tracked-files check of the re-plan and of Apply is answered
 	// once per repository for the whole run (taken now, after confirmation)
 	// instead of once per item; a failure leaves every item unknown.
-	runErr := rs.loop(e.batchTrackedForItems(ctx, items), items)
+	runErr := rs.loop(withRunFacts(e.batchTrackedForItems(ctx, items), e.env, e.verdicts), items)
 	// An interruption still finishes the manifest; only a failed save skips it.
 	if runErr == nil || errors.Is(runErr, ErrInterrupted) {
 		m.Finish(e.opts.Now())

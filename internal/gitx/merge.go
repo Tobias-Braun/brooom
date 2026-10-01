@@ -173,17 +173,18 @@ func (r *Repo) SquashMerged(ctx context.Context, base, branch string) (MergeResu
 	if err != nil {
 		return MergeResult{}, err
 	}
-	if r.verdicts == nil {
+	store := r.verdicts
+	if store == nil {
 		res, _, err := r.squashMerged(ctx, branch, baseSHA, tip)
 		return res, err
 	}
 	key := verdictKey(baseSHA, tip, r.limit())
-	if res, ok := r.verdicts.get(key); ok {
+	if res, ok := store.get(key); ok {
 		return res, nil
 	}
 	res, definite, err := r.squashMerged(ctx, branch, baseSHA, tip)
 	if err == nil && definite {
-		r.verdicts.put(key, res)
+		store.put(key, res)
 	}
 	return res, err
 }

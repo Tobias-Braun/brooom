@@ -71,7 +71,7 @@ func TestPlanSharesBranchStateAcrossFindings(t *testing.T) {
 func TestApplyKeepsLiveChecksPerFinding(t *testing.T) {
 	fx := newBranchFixture(t)
 	fs := fx.mergedFindings(2)
-	ctx := withPlanSnapshot(context.Background(), fx.env)
+	ctx := withPlanSnapshot(context.Background(), fx.env, nil)
 	step, err := fx.act.Plan(ctx, fx.env, fs[0])
 	if err != nil {
 		t.Fatal(err)
