@@ -1,18 +1,21 @@
 <div align="center">
   <img src=".github/assets/logo.svg" alt="Brooom logo" width="96">
   <h1>Brooom</h1>
-  <p><strong>Sweep your workspace clean, fast, so your agent fleet can run again.</strong></p>
+  <p><strong>Sweep your workspace clean, fast - so your agent fleet can run again.</strong></p>
 
-  [![CI](https://github.com/Tobias-Braun/brooom/actions/workflows/ci.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/ci.yml)
-  [![Release](https://github.com/Tobias-Braun/brooom/actions/workflows/release.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/release.yml)
-  [![Release check](https://github.com/Tobias-Braun/brooom/actions/workflows/release-check.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/release-check.yml)
-  [![Site](https://github.com/Tobias-Braun/brooom/actions/workflows/site.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/site.yml)
-  [![Repo sync](https://github.com/Tobias-Braun/brooom/actions/workflows/repo-sync.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/repo-sync.yml)
-  [![License: MIT](https://img.shields.io/badge/license-MIT-a78bfa)](LICENSE)
-  [![Go 1.24](https://img.shields.io/badge/go-1.24-60a5fa)](go.mod)
+[![CI](https://github.com/Tobias-Braun/brooom/actions/workflows/ci.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/ci.yml)
+[![Release](https://github.com/Tobias-Braun/brooom/actions/workflows/release.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/release.yml)
+[![Release check](https://github.com/Tobias-Braun/brooom/actions/workflows/release-check.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/release-check.yml)
+[![Site](https://github.com/Tobias-Braun/brooom/actions/workflows/site.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/site.yml)
+[![Repo sync](https://github.com/Tobias-Braun/brooom/actions/workflows/repo-sync.yml/badge.svg)](https://github.com/Tobias-Braun/brooom/actions/workflows/repo-sync.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-a78bfa)](LICENSE)
+[![Go 1.24](https://img.shields.io/badge/go-1.24-60a5fa)](go.mod)
+
 </div>
 
 ## About
+
+> Brooom - sounds like a fast car or a sweeper - and thats exactly what it is!
 
 Brooom finds and cleans the disk clutter that agent tools, parallel branches
 and forgotten projects leave behind. It is a fast, safe, cross-platform CLI,
@@ -33,7 +36,7 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
 
 - Every command that changes something **shows its plan and asks** once
   before it acts (`--dry-run` only shows the plan, `--yes` skips the question
-  in scripts). Without a terminal it refuses instead of guessing.
+  in scripts). Without an interactive terminal it refuses instead of guessing.
 - `sweep` never removes unmerged or uncommitted work.
 - Files go to your **OS trash** (or a quarantine folder); branches are
   deleted with `git branch -d`; worktrees are moved to the trash and then deregistered from git.
@@ -177,10 +180,10 @@ are in no preset; `brooom scan -d stale-branch` lists them. `.brooom.json` can
 still tighten what a preset selects, and `--detector` narrows it. The
 definitions live in `internal/presets`; `brooom sweep --help` prints them.
 
-| Preset | Detectors | Min. confidence | Notes |
-| --- | --- | --- | --- |
-| `after-agents` | worktrees, merged-branch, ai-artifacts | medium | clean up after an agent run: merged (also squash and rebase merged) clean worktrees and branches, AI tool artifacts in the repository |
-| `tidy` | log-and-runtime-files | medium | debug and rotated logs, OS junk, test caches, coverage output |
+| Preset                 | Detectors                                        | Min. confidence              | Notes                                                                                                                                             |
+| ---------------------- | ------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `after-agents`         | worktrees, merged-branch, ai-artifacts           | medium                       | clean up after an agent run: merged (also squash and rebase merged) clean worktrees and branches, AI tool artifacts in the repository             |
+| `tidy`                 | log-and-runtime-files                            | medium                       | debug and rotated logs, OS junk, test caches, coverage output                                                                                     |
 | `everything` (default) | after-agents + tidy + build-artifacts, git-bloat | medium, build artifacts high | build artifacts of inactive projects only, gc/reflog expire/prune (a configured expiry is only ever shortened to `90.days.ago`, never lengthened) |
 
 The preset names of earlier releases (`safe`, `standard`, `aggressive`) still
