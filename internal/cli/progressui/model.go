@@ -31,7 +31,7 @@ const (
 // the colour decision (terminal capability, NO_COLOR, --no-color) is made for
 // stderr and not for the global default output.
 type styles struct {
-	phase, dim, count, ok, fail, bytes lipgloss.Style
+	phase, dim, count, fail, bytes lipgloss.Style
 }
 
 func newStyles(r *lipgloss.Renderer) styles {
@@ -40,7 +40,6 @@ func newStyles(r *lipgloss.Renderer) styles {
 		phase: s().Bold(true).Foreground(lipgloss.Color("6")),
 		dim:   s().Foreground(lipgloss.Color("8")),
 		count: s().Foreground(lipgloss.Color("3")),
-		ok:    s().Bold(true).Foreground(lipgloss.Color("2")),
 		fail:  s().Bold(true).Foreground(lipgloss.Color("1")),
 		bytes: s().Bold(true).Foreground(lipgloss.Color("2")),
 	}
@@ -106,7 +105,7 @@ func (m Model) current() State {
 	return m.state
 }
 
-// View renders the state: nothing while hidden, one summary line when done,
+// View renders the state: nothing while hidden, one summary line when failed,
 // otherwise the live block. A final view ends with a newline because
 // bubbletea erases the line the cursor is on when the program stops.
 func (m Model) View() string {
@@ -114,7 +113,7 @@ func (m Model) View() string {
 	switch s.Mode {
 	case ModeHidden:
 		return ""
-	case ModeDone, ModeFailed:
+	case ModeFailed:
 		return m.summary(s) + "\n"
 	}
 	return m.live(s)
@@ -205,17 +204,13 @@ func (m Model) list(items []counted, limit int, label func(string) string) strin
 	return strings.Join(parts, m.styles.dim.Render(" · "))
 }
 
-// summary is the collapsed line left on screen when the run ends.
+// summary is the collapsed line left on screen when a run fails.
 func (m Model) summary(s State) string {
 	names := make([]string, len(s.Visited))
 	for i, p := range s.Visited {
 		names[i] = string(p)
 	}
-	head := m.styles.ok.Render("✓ done")
-	if s.Mode == ModeFailed {
-		head = m.styles.fail.Render("✗ stopped")
-	}
-	parts := []string{head}
+	parts := []string{m.styles.fail.Render("✗ stopped")}
 	if len(names) > 0 {
 		parts = append(parts, strings.Join(names, ", "))
 	}

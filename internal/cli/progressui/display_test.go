@@ -85,7 +85,7 @@ func TestDisplayFullRun(t *testing.T) {
 	d.Stop(true)
 
 	got := out.String()
-	for _, want := range []string{"Scanning", "Applying", "✓ done", "scan, apply", "1 findings in 1 detectors", "reclaimed 2.0 kB"} {
+	for _, want := range []string{"Scanning", "Applying", "reclaimed 2.0 kB"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output lacks %q:\n%q", want, got)
 		}
@@ -96,8 +96,8 @@ func TestDisplayFullRun(t *testing.T) {
 	if strings.Contains(afterPause, "Applying") {
 		t.Errorf("the apply phase was drawn before it started: %q", afterPause)
 	}
-	if !strings.Contains(got, "1 findings in 1 detectors\r\n") {
-		t.Errorf("the summary line must end with a newline: %q", got[max(0, len(got)-120):])
+	if strings.Contains(got, "done") {
+		t.Errorf("a successful run left a summary line: %q", got[max(0, len(got)-120):])
 	}
 	// The cursor is hidden while drawing and must be visible again at the end.
 	if hide, show := strings.LastIndex(got, "\x1b[?25l"), strings.LastIndex(got, "\x1b[?25h"); hide < 0 || show < hide {
@@ -121,25 +121,32 @@ func TestDisplayDrawsNothingWhilePaused(t *testing.T) {
 		t.Errorf("drew %d bytes while paused: %q", len(got)-n, got[n:])
 	}
 	d.Phase(progress.PhaseApply, 1)
-	d.Stop(true)
+	d.Stop(false)
 	if !strings.Contains(out.String(), "1 findings in 1 detectors") {
 		t.Errorf("an event received while paused was lost: %q", out.String())
 	}
 }
 
-func TestDisplayStopWhilePausedPrintsSummaryAfterResults(t *testing.T) {
-	before := runtime.NumGoroutine()
-	d, out := newTestDisplay()
-	d.Phase(progress.PhaseScan, 1)
-	d.Finding("a", "/x")
-	d.Pause()
-	written := len(out.String())
-	d.Stop(true)
-	tail := out.String()[written:]
-	if tail != "✓ done · scan · 1 findings in 1 detectors\n" {
-		t.Errorf("summary after pause = %q", tail)
+func TestDisplayStopWhilePaused(t *testing.T) {
+	for _, tc := range []struct {
+		ok   bool
+		tail string
+	}{
+		{true, ""},
+		{false, "✗ stopped · scan · 1 findings in 1 detectors\n"},
+	} {
+		before := runtime.NumGoroutine()
+		d, out := newTestDisplay()
+		d.Phase(progress.PhaseScan, 1)
+		d.Finding("a", "/x")
+		d.Pause()
+		written := len(out.String())
+		d.Stop(tc.ok)
+		if tail := out.String()[written:]; tail != tc.tail {
+			t.Errorf("Stop(%v) after pause printed %q, want %q", tc.ok, tail, tc.tail)
+		}
+		settledGoroutines(t, before)
 	}
-	settledGoroutines(t, before)
 }
 
 func TestDisplayStopFailedRun(t *testing.T) {
@@ -182,7 +189,7 @@ func TestDisplayStopIsIdempotentAndFinal(t *testing.T) {
 // It runs under -race in CI.
 func TestDisplayRepeatedPauseResume(t *testing.T) {
 	before := runtime.NumGoroutine()
-	d, out := newTestDisplay()
+	d, _ := newTestDisplay()
 	d.Phase(progress.PhaseScan, 400)
 	var wg sync.WaitGroup
 	for w := range 4 {
@@ -207,9 +214,6 @@ func TestDisplayRepeatedPauseResume(t *testing.T) {
 	// findings and bytes accumulate over the whole run.
 	if s.Findings != 400 || s.Bytes != 400 {
 		t.Errorf("events lost across restarts: findings %d, bytes %d, want 400 each", s.Findings, s.Bytes)
-	}
-	if !strings.Contains(out.String(), "400 findings in 1 detectors\r\n") {
-		t.Errorf("no summary line: %q", out.String())
 	}
 	settledGoroutines(t, before)
 }

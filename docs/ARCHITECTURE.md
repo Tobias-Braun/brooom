@@ -935,8 +935,9 @@ strictly serialized: `Pause` stops the program and returns only once the
 terminal is restored, and anything written to stdout (the scan report, the plan,
 prompts, the apply summary) happens paused. The next `Phase` starts a fresh
 program from the same state. `Stop` (deferred in `executeContext`, before any
-error text is printed, so also after errors and Ctrl-C) collapses the display to
-one summary line, `done` or `stopped`. All text shown from paths and labels goes
+error text is printed, so also after errors and Ctrl-C) erases the display after
+a successful run, whose own output is the summary, and collapses it to one
+`stopped` line after a failed one. All text shown from paths and labels goes
 through `output.Sanitize`. Known cost of bubbletea v1: its package `init` asks an
 interactive stdout terminal for its background colour once at process start
 (skipped when stdout is not a terminal, and for `TERM=screen*`, `tmux*`, `dumb`).

@@ -63,26 +63,38 @@ func runTTY(t *testing.T, tty bool, env map[string]string, args ...string) (code
 }
 
 // displayMarks are what only the live display writes to stderr.
-var displayMarks = []string{"\x1b[?25l", "✓ done", "Scanning", "Discovering"}
+var displayMarks = []string{"\x1b[?25l", "Scanning", "Discovering"}
 
-func TestScanShowsSummaryOnATerminal(t *testing.T) {
+// cursorHidden is written when the live display starts drawing.
+const cursorHidden = "\x1b[?25l"
+
+// noDoneLine fails when a successful run left a summary line on stderr: the
+// command's own output is its summary, and the display must also have
+// restored the cursor.
+func noDoneLine(t *testing.T, errOut string) {
+	t.Helper()
+	if strings.Contains(errOut, "done") {
+		t.Errorf("a successful run left a summary line: %q", errOut)
+	}
+	if hide, show := strings.LastIndex(errOut, cursorHidden), strings.LastIndex(errOut, "\x1b[?25h"); hide < 0 || show < hide {
+		t.Errorf("display not drawn or cursor not restored: %q", errOut)
+	}
+}
+
+func TestScanShowsProgressOnATerminal(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	code, out, errOut := runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	for _, want := range []string{"✓ done · discover, scan, plan", "findings in "} {
-		if !strings.Contains(errOut, want) {
-			t.Errorf("stderr lacks %q:\n%q", want, errOut)
-		}
+	if !strings.Contains(errOut, "Scanning") {
+		t.Errorf("stderr lacks the live display:\n%q", errOut)
 	}
+	noDoneLine(t, errOut)
 	// The results keep going to stdout, untouched by the display.
-	if !strings.Contains(out, "feat/merged") || strings.Contains(out, "\x1b") || strings.Contains(out, "✓ done") {
+	if !strings.Contains(out, "feat/merged") || strings.Contains(out, "\x1b") {
 		t.Errorf("stdout is not the plain report:\n%q", out)
-	}
-	if !strings.HasSuffix(errOut, "\n") {
-		t.Errorf("stderr must end with a complete line: %q", errOut)
 	}
 }
 
@@ -119,7 +131,7 @@ func TestNoColorKeepsTheDisplayButDropsColour(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	code, _, errOut := runTTY(t, true, map[string]string{"NO_COLOR": "1"}, "sweep", "after-agents", "-d", "merged-branch", "--dry-run")
-	if code != ExitOK || !strings.Contains(errOut, "✓ done") {
+	if code != ExitOK || !strings.Contains(errOut, "Scanning") {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 	if regexp.MustCompile(`\x1b\[[0-9;]*m`).MatchString(errOut) {
@@ -184,9 +196,10 @@ func TestApplyShowsProgressAndStillDeletes(t *testing.T) {
 	if f.hasBranch("feat/merged") {
 		t.Errorf("the branch was not deleted: %v", f.branches())
 	}
-	if !strings.Contains(errOut, "✓ done · discover, scan, plan, apply") {
-		t.Errorf("stderr lacks the summary of all four phases: %q", errOut)
+	if !strings.Contains(errOut, "Applying") {
+		t.Errorf("stderr lacks the apply phase: %q", errOut)
 	}
+	noDoneLine(t, errOut)
 	if !strings.Contains(out, "2 merged branches removed") || strings.Contains(out, "\x1b") {
 		t.Errorf("the executor summary must stay on plain stdout: %q", out)
 	}
@@ -198,7 +211,7 @@ func TestApplyWithConfigMachineFormatStillShowsProgress(t *testing.T) {
 	f := newCleanupFixture(t, map[string]any{"output": map[string]any{"format": "json"}})
 	f.mergedAndSquashed()
 	code, _, errOut := runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--yes")
-	if code != ExitOK || !strings.Contains(errOut, "✓ done") {
+	if code != ExitOK || !strings.Contains(errOut, "Applying") {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 }
@@ -222,7 +235,7 @@ func TestConfirmationPromptsAreNotShadowedByTheDisplay(t *testing.T) {
 	if !strings.Contains(o.String(), "[") || f.hasBranch("feat/merged") {
 		t.Errorf("the prompt was not answered; branches %v, stdout %q", f.branches(), o.String())
 	}
-	if strings.Contains(o.String(), "✓ done") {
+	if strings.Contains(o.String(), cursorHidden) {
 		t.Errorf("display output leaked into stdout: %q", o.String())
 	}
 }
@@ -237,9 +250,7 @@ func TestUndoShowsProgress(t *testing.T) {
 	if code := execute(a, []string{"undo", "--yes"}); code != ExitOK {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, o.String(), e.String())
 	}
-	if !strings.Contains(e.String(), "✓ done · undo") {
-		t.Errorf("stderr lacks the undo summary: %q", e.String())
-	}
+	noDoneLine(t, e.String())
 	if !strings.Contains(o.String(), "1 restored") {
 		t.Errorf("stdout lacks the undo summary: %q", o.String())
 	}
@@ -250,7 +261,7 @@ func TestUndoIgnoresAMachineFormatFromTheConfig(t *testing.T) {
 	f.session(sid1, time.Now(), f.write("a.txt", "a"))
 	writeConfig(t, f.home, map[string]any{"output": map[string]any{"format": "json"}})
 	code, _, errOut := runTTY(t, true, nil, "undo", "--yes")
-	if code != ExitOK || !strings.Contains(errOut, "✓ done · undo") {
+	if code != ExitOK || !strings.Contains(errOut, cursorHidden) {
 		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
