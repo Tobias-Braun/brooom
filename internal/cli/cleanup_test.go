@@ -204,7 +204,7 @@ func TestSweepAsksOnceInTheSameRun(t *testing.T) {
 			if n := strings.Count(out, "[y/N]"); n != 1 {
 				t.Errorf("%d questions, want 1:\n%s", n, out)
 			}
-			plan, question := strings.Index(out, "feat/merged"), strings.Index(out, "Proceed with 2 items")
+			plan, question := strings.Index(out, "merged-branch / delete-branch: 2 items"), strings.Index(out, "Proceed with 2 items")
 			if plan < 0 || question < plan {
 				t.Errorf("the plan must come before the question:\n%s", out)
 			}

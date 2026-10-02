@@ -88,8 +88,8 @@ func briefCounts(entries []session.Entry) string {
 // their full detail and skipped findings are counted, because both are what a
 // user has to act on; per-item lines, git commands and recovery hints are left
 // out (`brooom undo` restores, --dry-run lists the items). With quiet only the
-// failures are printed.
-func renderBriefSummary(w io.Writer, r *Result, quiet bool) {
+// failures are printed. color emphasizes the reclaimed size.
+func renderBriefSummary(w io.Writer, r *Result, quiet, color bool) {
 	if len(r.Failures) > 0 {
 		fmt.Fprintf(w, "failures (%d):\n", len(r.Failures))
 		for _, f := range r.Failures {
@@ -118,5 +118,5 @@ func renderBriefSummary(w io.Writer, r *Result, quiet bool) {
 	if counts == "" {
 		counts = "nothing cleaned"
 	}
-	fmt.Fprintf(w, "%s. %s reclaimed\n", counts, output.FormatSize(r.ReclaimedBytes))
+	fmt.Fprintf(w, "%s. %s\n", counts, output.Emphasize(color, output.FormatSize(r.ReclaimedBytes)+" reclaimed"))
 }

@@ -37,9 +37,9 @@ type cleanupSelection struct {
 	// keep drops findings it rejects before planning (a preset's confidence
 	// floors); nil keeps everything.
 	keep func(findings.Finding) bool
-	// compact makes an applying run print one summary line ("2 worktrees
-	// deleted, 5 merged branches removed. 4.2 GB reclaimed") instead of the
-	// multi-line summary.
+	// compact makes an applying run show one plan line per group and print
+	// one summary line ("2 worktrees deleted, 5 merged branches removed.
+	// 4.2 GB reclaimed") instead of the multi-line summary.
 	compact bool
 }
 

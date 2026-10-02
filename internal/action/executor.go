@@ -52,10 +52,12 @@ type Options struct {
 	// dry run and shrinks the apply summary to what a script needs.
 	Quiet bool
 	// Brief replaces the multi-line apply summary with one line of counts and
-	// the reclaimed size (see renderBriefSummary), and drops the per-item plan
-	// of a run that does not ask. It only affects applying runs; a dry run and
-	// a run that asks for confirmation always show the plan.
+	// the reclaimed size (see renderBriefSummary), shows one line per group in
+	// the plan of a run that asks and drops the plan of a run that does not.
+	// It only affects applying runs; a dry run always shows the full plan.
 	Brief bool
+	// Color emphasizes the reclaimed size of the brief summary.
+	Color bool
 	IO    IO
 	// Store receives the session manifest (required with Apply).
 	Store *session.Store
@@ -254,25 +256,18 @@ func (e *Executor) Run(ctx context.Context, fs []findings.Finding) (*Result, err
 }
 
 // present prints the plan and reports whether the run ends there: an empty
-// plan has nothing to execute and a dry run must not. A brief run skips the
-// plan itself and, when nothing is left to do, only speaks up if findings were
-// skipped or failed, because "nothing to clean" would hide them.
+// plan has nothing to execute and a dry run must not. A brief run shows one
+// line per group, and none when it does not ask.
 func (e *Executor) present(plan *Plan, res *Result) (done bool) {
 	out := e.opts.IO.Out
 	// The plan is what the confirmation question refers to, so a run that
 	// asks always shows it, quiet or brief.
 	asks := e.opts.Apply && !e.opts.Yes && !plan.Empty()
 	if asks || (!e.opts.Quiet && !e.brief()) {
-		renderPlan(out, plan)
+		renderPlan(out, plan, e.brief())
 	}
 	if plan.Empty() {
-		switch {
-		case e.opts.Quiet:
-		case e.brief() && res.Skipped+res.Failed > 0:
-			renderBriefSummary(out, res, false)
-		default:
-			fmt.Fprintln(out, "nothing to clean")
-		}
+		e.presentEmpty(res)
 		return true
 	}
 	if !e.opts.Apply {
@@ -282,6 +277,19 @@ func (e *Executor) present(plan *Plan, res *Result) (done bool) {
 		return true
 	}
 	return false
+}
+
+// presentEmpty reports a plan with nothing to do. A brief run only speaks up
+// if findings were skipped or failed, because "nothing to clean" would hide
+// them.
+func (e *Executor) presentEmpty(res *Result) {
+	switch {
+	case e.opts.Quiet:
+	case e.brief() && res.Skipped+res.Failed > 0:
+		renderBriefSummary(e.opts.IO.Out, res, false, e.opts.Color)
+	default:
+		fmt.Fprintln(e.opts.IO.Out, "nothing to clean")
+	}
 }
 
 // brief reports whether this run prints the brief summary: only an applying
@@ -377,7 +385,7 @@ func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planS
 	res.Skipped = len(res.Skips)
 	e.opts.Progress.Pause()
 	if e.brief() {
-		renderBriefSummary(e.opts.IO.Out, res, e.opts.Quiet)
+		renderBriefSummary(e.opts.IO.Out, res, e.opts.Quiet, e.opts.Color)
 	} else {
 		renderSummary(e.opts.IO.Out, res, res.Skips[planSkips:], e.opts.Quiet)
 	}

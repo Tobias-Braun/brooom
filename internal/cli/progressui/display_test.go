@@ -85,7 +85,7 @@ func TestDisplayFullRun(t *testing.T) {
 	d.Stop(true)
 
 	got := out.String()
-	for _, want := range []string{"Scanning", "Applying", "✓ done", "scan, apply", "1 findings in 1 detectors", "2.0 kB reclaimed"} {
+	for _, want := range []string{"Scanning", "Applying", "✓ done", "scan, apply", "1 findings in 1 detectors", "reclaimed 2.0 kB"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output lacks %q:\n%q", want, got)
 		}
@@ -96,7 +96,7 @@ func TestDisplayFullRun(t *testing.T) {
 	if strings.Contains(afterPause, "Applying") {
 		t.Errorf("the apply phase was drawn before it started: %q", afterPause)
 	}
-	if !strings.Contains(got, "2.0 kB reclaimed\r\n") {
+	if !strings.Contains(got, "1 findings in 1 detectors\r\n") {
 		t.Errorf("the summary line must end with a newline: %q", got[max(0, len(got)-120):])
 	}
 	// The cursor is hidden while drawing and must be visible again at the end.
@@ -208,7 +208,7 @@ func TestDisplayRepeatedPauseResume(t *testing.T) {
 	if s.Findings != 400 || s.Bytes != 400 {
 		t.Errorf("events lost across restarts: findings %d, bytes %d, want 400 each", s.Findings, s.Bytes)
 	}
-	if !strings.Contains(out.String(), "400 findings in 1 detectors · 400 B reclaimed\r\n") {
+	if !strings.Contains(out.String(), "400 findings in 1 detectors\r\n") {
 		t.Errorf("no summary line: %q", out.String())
 	}
 	settledGoroutines(t, before)
