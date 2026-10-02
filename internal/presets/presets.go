@@ -5,10 +5,10 @@
 // after what the user wants to do (clean up after an agent run, tidy up,
 // sweep everything), not after how risky they are, because every preset keeps
 // the same safety rails: blocking risk flags, the confirmation before anything
-// is changed, the trash strategy, protected branches and the tighten-only
+// is changed, the OS trash, protected branches and the tighten-only
 // .brooom.json are all outside their reach (see Apply and the invariants in
-// the tests). No preset removes unmerged work: stale branches and large
-// untracked files are left to `brooom scan -d ...`.
+// the tests). No preset removes unmerged work: stale branches are left to
+// `brooom review`.
 package presets
 
 import (

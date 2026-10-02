@@ -2,13 +2,13 @@ package action
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
 	"github.com/Tobias-Braun/brooom/internal/walk"
@@ -35,13 +35,21 @@ func buildSizedTree(t *testing.T, fx *trashFixture) string {
 // plan, the entry and the summary must all carry the number the shared rule
 // (walk.DirSize: allocated bytes, directory blocks, hard links once) gives.
 func TestPlanAndReclaimedSizeAgree(t *testing.T) {
-	for _, strategy := range []config.TrashStrategy{config.StrategyQuarantine, config.StrategyTrash} {
-		t.Run(string(strategy), func(t *testing.T) {
-			if strategy == config.StrategyTrash && runtime.GOOS != "linux" {
-				t.Skip("the OS trash of this platform is not exercised in tests")
-			}
+	for _, osTrash := range []bool{false, true} {
+		t.Run(fmt.Sprintf("os trash %v", osTrash), func(t *testing.T) {
 			fx := newTrashFixture(t)
-			fx.strategy = strategy
+			if osTrash {
+				// The fixture points XDG_DATA_HOME into its temp dir, so only
+				// the freedesktop trash is safe to exercise.
+				if runtime.GOOS != "linux" {
+					t.Skip("the OS trash of this platform is not exercised in tests")
+				}
+				tr, err := trash.New()
+				if err != nil {
+					t.Fatal(err)
+				}
+				fx.env.Trasher = tr
+			}
 			dir := buildSizedTree(t, fx)
 			want, err := walk.DirSize(context.Background(), dir, walk.Options{Fresh: true})
 			if err != nil {

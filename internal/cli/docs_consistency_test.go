@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // TestGlobalFlagsSentenceMatchesBehaviour reproduces #239: the generated
@@ -67,15 +69,27 @@ func TestArchitectureNamesExistingTrashFiles(t *testing.T) {
 }
 
 // TestSpecListsFormatExceptions keeps SPEC.md honest about the commands that
-// reject --format.
+// reject --format: every such command of the tree must be named there.
 func TestSpecListsFormatExceptions(t *testing.T) {
 	spec, err := os.ReadFile(filepath.Join("..", "..", "docs", "SPEC.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"`undo`", "`purge`", "`clean`", "`config validate`"} {
-		if !strings.Contains(string(spec), want) {
-			t.Errorf("SPEC.md does not mention %s as a --format exception", want)
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			if sub.HasSubCommands() {
+				walk(sub)
+				continue
+			}
+			path := sub.CommandPath()
+			if isCompletionOrHelp(sub) || !ignoresScanFlag(path, "format") {
+				continue
+			}
+			if want := "`" + strings.TrimPrefix(path, "brooom ") + "`"; !strings.Contains(string(spec), want) {
+				t.Errorf("SPEC.md does not mention %s as a --format exception", want)
+			}
 		}
 	}
+	walk(NewRootCommand())
 }

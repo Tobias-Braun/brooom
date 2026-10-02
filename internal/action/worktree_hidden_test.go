@@ -3,7 +3,6 @@ package action
 import (
 	"testing"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/testutil"
 )
 
@@ -20,17 +19,6 @@ func TestRemoveWorktreeHiddenEdits(t *testing.T) {
 			testutil.WriteFile(t, path, "README.md", "# local override\n")
 			return fx, path
 		}
-
-		t.Run(name+"/delete strategy refuses", func(t *testing.T) {
-			fx, path := setup(t)
-			fx.env.Force = true
-			fx.strategy = config.StrategyDelete
-			_, err := fx.plan(removeWorktree{}, fx.removeFinding(path))
-			wantSkip(t, err, "refusing to permanently delete uncommitted work")
-			if !exists(path) {
-				t.Fatal("worktree was touched")
-			}
-		})
 
 		t.Run(name+"/trash strategy needs force", func(t *testing.T) {
 			fx, path := setup(t)

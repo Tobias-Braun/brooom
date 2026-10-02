@@ -23,10 +23,10 @@ func sessionsHome(t *testing.T) *session.Store {
 
 func saveSession(t *testing.T, s *session.Store, id string, started time.Time, finished bool) {
 	t.Helper()
-	m := &session.Manifest{ID: id, StartedAt: started, Command: "sweep --apply"}
+	m := &session.Manifest{ID: id, StartedAt: started, Command: "sweep --yes", Root: "/x"}
 	m.Add(session.Entry{Action: "trash", Path: "/x/node_modules", SizeBytes: 3 << 20, Status: session.StatusApplied,
 		Restorable: true, RecoveryHint: "restore from trash",
-		Trash: &trash.Record{Strategy: config.StrategyTrash, StoredPath: "/trash/files/node_modules"}})
+		Trash: &trash.Record{Strategy: trash.StrategyTrash, StoredPath: "/trash/files/node_modules"}})
 	m.Add(session.Entry{Action: "delete-branch", Path: "/x", Status: session.StatusFailed, Error: "boom"})
 	if finished {
 		m.Finish(started.Add(time.Second))
@@ -53,6 +53,11 @@ func TestSessionsTable(t *testing.T) {
 	now := time.Now()
 	saveSession(t, s, "20260101-000000-aaaa", now.Add(-3*time.Hour), true)
 	saveSession(t, s, "20260101-000001-bbbb", now.Add(-time.Hour), false)
+	// A manifest of an earlier release has no root.
+	legacy := &session.Manifest{ID: "20251231-000000-cccc", StartedAt: now.Add(-48 * time.Hour)}
+	if err := s.Save(legacy); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(s.Dir, "bad.json"), []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +70,7 @@ func TestSessionsTable(t *testing.T) {
 		if code != ExitOK {
 			t.Fatalf("code=%d err=%q", code, errOut)
 		}
-		for _, want := range []string{"ID", "RECLAIMED", "20260101-000000-aaaa", "3h ago", "3.1 MB", "(unfinished)"} {
+		for _, want := range []string{"ID  ", "ROOT", "ITEMS", "RECLAIMED", "20260101-000000-aaaa  /x  ", "3.1 MB", "20251231-000000-cccc  -  "} {
 			if !strings.Contains(out, want) {
 				t.Errorf("table lacks %q:\n%s", want, out)
 			}
@@ -101,26 +106,6 @@ func TestSessionsJSON(t *testing.T) {
 	}
 }
 
-func TestSessionsDetail(t *testing.T) {
-	s := sessionsHome(t)
-	saveSession(t, s, "20260101-000000-aaaa", time.Now(), true)
-	code, out, _ := run(t, "sessions", "20260101")
-	if code != ExitOK {
-		t.Fatalf("code=%d", code)
-	}
-	for _, want := range []string{"20260101-000000-aaaa", "Finished:", "sweep --apply", "[applied]", "/x/node_modules",
-		"3.1 MB", "boom", "restore from trash", "strategy=trash", "/trash/files/node_modules", "restorable: true"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("detail lacks %q:\n%s", want, out)
-		}
-	}
-	code, out, _ = run(t, "sessions", "20260101-000000-aaaa", "--format", "json")
-	var m session.Manifest
-	if code != ExitOK || json.Unmarshal([]byte(out), &m) != nil || len(m.Entries) != 2 {
-		t.Fatalf("json detail code=%d out=%s", code, out)
-	}
-}
-
 func TestSessionsErrors(t *testing.T) {
 	s := sessionsHome(t)
 	saveSession(t, s, "20260101-000000-aaaa", time.Now(), true)
@@ -132,10 +117,11 @@ func TestSessionsErrors(t *testing.T) {
 		contains string
 	}{
 		{"bad format", []string{"sessions", "--format", "xml"}, ExitUsage, "table, plain, json, ndjson"},
-		{"bad format detail", []string{"sessions", "abc", "--format", "summary"}, ExitUsage, "table, plain, json, ndjson"},
-		{"unknown id", []string{"sessions", "nope"}, ExitError, "nope"},
-		{"ambiguous", []string{"sessions", "20260101"}, ExitError, "20260101-000000-bbbb"},
-		{"traversal", []string{"sessions", "../x"}, ExitError, "invalid session id"},
+		{"bad format summary", []string{"sessions", "--format", "summary"}, ExitUsage, "table, plain, json, ndjson"},
+		{"an id is an undo argument", []string{"sessions", "20260101"}, ExitUsage, "unknown command"},
+		{"undo unknown id", []string{"undo", "nope"}, ExitError, "nope"},
+		{"undo ambiguous", []string{"undo", "20260101"}, ExitError, "20260101-000000-bbbb"},
+		{"undo traversal", []string{"undo", "../x"}, ExitError, "invalid session id"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -11,9 +11,8 @@ import (
 const completionLong = `Generate the autocompletion script for brooom for the given shell.
 
 The scripts complete commands, flags and flag values (detector names, output
-formats, presets, trash strategies), session ids for 'undo' and 'sessions' and
-the configured roots for 'roots remove', each with a short description where
-the shell supports it. Completion never scans, writes or contacts the network.
+formats, presets), session ids for 'undo' and folders for the path arguments,
+each with a short description where the shell supports it. Completion never scans, writes or contacts the network.
 
 Bash (needs the bash-completion package):
 

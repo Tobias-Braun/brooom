@@ -46,21 +46,11 @@ func TestValidateRejects(t *testing.T) {
 		{"pack count", func(c *Config) { c.Detectors.GitBloat.PackCountThreshold = -1 }, "pack_count_threshold"},
 		{"reflog bytes", func(c *Config) { c.Detectors.GitBloat.ReflogThresholdBytes = -1 }, "reflog_threshold_bytes"},
 		{"blob bytes", func(c *Config) { c.Detectors.GitBloat.LargeBlobBytes = -1 }, "large_blob_bytes"},
-		{"large untracked", func(c *Config) { c.Detectors.LargeUntracked.MinSizeBytes = -1 }, "detectors.large-untracked.min_size_bytes"},
 		{"ai age", func(c *Config) { c.Detectors.AIArtifacts.MinAgeDays = intp(-1) }, "detectors.ai-artifacts.min_age_days"},
 		{"logs age", func(c *Config) { c.Detectors.Logs.MinAgeDays = intp(-1) }, "detectors.log-and-runtime-files.min_age_days"},
 		{"inactive days", func(c *Config) { c.Detectors.BuildArtifacts.InactiveDays = -1 }, "inactive_days"},
 		{"output format", func(c *Config) { c.Output.Format = "xml" }, "output.format"},
 		{"output color", func(c *Config) { c.Output.Color = "blue" }, "output.color"},
-		{"trash strategy", func(c *Config) { c.Trash.Strategy = "shred" }, "trash.strategy"},
-		{"trash empty strategy", func(c *Config) { c.Trash.Strategy = "" }, "trash.strategy"},
-		{"per detector strategy", func(c *Config) { c.Trash.PerDetector = map[string]TrashStrategy{"worktrees": "shred"} }, "trash.per_detector.worktrees"},
-		{"per detector unknown", func(c *Config) { c.Trash.PerDetector = map[string]TrashStrategy{"nope": StrategyTrash} }, "trash.per_detector.nope"},
-		{"delete default needs opt-in", func(c *Config) { c.Trash.Strategy = StrategyDelete }, "allow_delete"},
-		{"delete per detector needs opt-in", func(c *Config) {
-			c.Trash.PerDetector = map[string]TrashStrategy{"worktrees": StrategyDelete}
-		}, "trash.per_detector.worktrees"},
-		{"retention negative", func(c *Config) { c.Trash.QuarantineRetentionDays = -1 }, "trash.quarantine_retention_days"},
 		{"merge mode", func(c *Config) { c.Detectors.MergedBranch.Mode = "rebase" }, "detectors.merged-branch.mode"},
 		{"protected empty", func(c *Config) { c.Git.ProtectedBranches = nil }, "git.protected_branches"},
 		{"protected bad glob", func(c *Config) { c.Git.ProtectedBranches = []string{"[x"} }, "git.protected_branches[0]"},
@@ -77,8 +67,6 @@ func TestValidateRejects(t *testing.T) {
 		{"skip dir backslash", func(c *Config) { c.Scan.SkipDirs = []string{`a\b`} }, "scan.skip_dirs[0]"},
 		{"skip dir dotdot", func(c *Config) { c.Scan.SkipDirs = []string{".."} }, "scan.skip_dirs[0]"},
 		{"skip dir dot", func(c *Config) { c.Scan.SkipDirs = []string{"."} }, "scan.skip_dirs[0]"},
-		{"agent provider", func(c *Config) { c.Agent.Provider = "gemini" }, "agent.provider"},
-		{"agent key env", func(c *Config) { c.Agent.APIKeyEnv = "1BAD-NAME" }, "agent.api_key_env"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -154,13 +142,6 @@ func TestValidateAccepts(t *testing.T) {
 		name   string
 		mutate func(*Config)
 	}{
-		{"retention zero means never purge", func(c *Config) { c.Trash.QuarantineRetentionDays = 0 }},
-		{"delete with opt-in", func(c *Config) { c.Trash.Strategy = StrategyDelete; c.Trash.AllowDelete = true }},
-		{"per detector delete with opt-in", func(c *Config) {
-			c.Trash.AllowDelete = true
-			c.Trash.PerDetector = map[string]TrashStrategy{"worktrees": StrategyDelete}
-		}},
-		{"agent openai", func(c *Config) { c.Agent = Agent{Provider: "openai-compatible", APIKeyEnv: "MY_KEY_1"} }},
 		{"expiry with dots", func(c *Config) { c.Detectors.GitBloat.PruneExpire = "now" }},
 	}
 	t.Setenv("HOME", t.TempDir())

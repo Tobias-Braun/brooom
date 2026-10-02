@@ -20,6 +20,7 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/output"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/session"
+	"github.com/Tobias-Braun/brooom/internal/trash"
 )
 
 // cleanupSelection is what a sweep runs: the preset's detectors and the
@@ -38,7 +39,7 @@ type cleanupSelection struct {
 	keep func(findings.Finding) bool
 	// compact makes an applying run print one summary line ("2 worktrees
 	// deleted, 5 merged branches removed. 4.2 GB reclaimed") instead of the
-	// multi-line summary; --verbose brings it back.
+	// multi-line summary.
 	compact bool
 }
 
@@ -52,7 +53,7 @@ var machineFormats = map[string]bool{"json": true, "ndjson": true, "plain": true
 // maps errors to exit codes; detection and cleanup live in detect and action.
 // Nothing is modified with --dry-run or a machine format.
 func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags) error {
-	cfg, _, err := a.loadConfig()
+	cfg, err := a.loadConfig()
 	if err != nil {
 		return err
 	}
@@ -74,10 +75,6 @@ func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags
 	if machine {
 		af.dryRun = true
 	}
-	strategy, err := parseTrashStrategy(af.trashStrategy)
-	if err != nil {
-		return err
-	}
 	names, err := a.resolveSelection(cfg, sel)
 	if err != nil {
 		return err
@@ -94,7 +91,7 @@ func (a *app) runCleanup(cmd *cobra.Command, sel cleanupSelection, af applyFlags
 	case machine:
 		return a.runScan(cmd, opts)
 	}
-	return a.planAndRun(cmd, opts, af, strategy, format, sel.compact)
+	return a.planAndRun(cmd, opts, af, format, sel.compact)
 }
 
 // nothingSelected handles a selection whose detectors are all disabled in the
@@ -119,7 +116,7 @@ func (a *app) nothingSelected(cfg *config.Config, format string) error {
 // resolveSelection turns the command's detectors and the --detector flag into
 // the names to scan. The flag is intersected with the selection (a preset
 // cannot be widened); an empty intersection is a usage error. Detectors
-// disabled in the config are dropped with a verbose note. Every detector is
+// disabled in the config are dropped. Every detector is
 // linked into the binary (internal/detectors/all), so a name that is not
 // registered is a typo and a usage error.
 func (a *app) resolveSelection(cfg *config.Config, sel cleanupSelection) ([]string, error) {
@@ -138,17 +135,14 @@ func (a *app) resolveSelection(cfg *config.Config, sel cleanupSelection) ([]stri
 	return a.enabledDetectors(cfg, names), nil
 }
 
-// enabledDetectors drops the detectors switched off in the global config and
-// says so on stderr in verbose mode. Per-root switches are handled by the
-// scan itself.
+// enabledDetectors drops the detectors switched off in the global config.
+// Per-repo switches are handled by the scan itself.
 func (a *app) enabledDetectors(cfg *config.Config, names []string) []string {
 	var out []string
 	for _, n := range names {
-		if !detectorEnabled(cfg, n) {
-			a.progressf("skipping detector %s: disabled in the config", n)
-			continue
+		if detectorEnabled(cfg, n) {
+			out = append(out, n)
 		}
-		out = append(out, n)
 	}
 	return out
 }
@@ -159,7 +153,7 @@ func (a *app) enabledDetectors(cfg *config.Config, names []string) []string {
 // text, but an explicit --format still selects how the report is shown before
 // them: it was accepted and silently ignored. Without --format an acting run
 // shows only the plan, not the report.
-func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, strategy config.TrashStrategy, format string, compact bool) error {
+func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, format string, compact bool) error {
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
@@ -174,7 +168,7 @@ func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, st
 		}
 	} else {
 		// The plan output has no room for scan problems, so they go to stderr.
-		a.logScanErrors(res.Report.Errors, true)
+		a.logScanErrors(res.Report.Errors)
 	}
 	if err != nil {
 		return err
@@ -182,11 +176,10 @@ func (a *app) planAndRun(cmd *cobra.Command, opts scanOptions, af applyFlags, st
 	if ferr := scanFailure(res.Report); ferr != nil {
 		return ferr
 	}
-	result, err := a.runExecutor(ctx, cmd, execInput{
-		cfg: res.Config, git: res.Env.Git, guard: res.Guard, findings: res.Report.Findings,
-		// --verbose keeps the per-item plan, so it is the opt-out of the brief summary.
-		brief: compact && af.apply() && !a.flags.verbose,
-	}, af, strategy)
+	result, err := a.runExecutor(ctx, execInput{
+		cfg: res.Config, git: res.Env.Git, guard: res.Guard, root: res.Root, findings: res.Report.Findings,
+		brief: compact && af.apply(),
+	}, af)
 	return mapExecutorError(result, err, af.apply())
 }
 
@@ -199,19 +192,20 @@ func (a *app) renderDryRunReport(res *scanResult, format string) error {
 		return usageError{err}
 	}
 	if !errorsInBand(format) {
-		a.logScanErrors(res.Report.Errors, true)
+		a.logScanErrors(res.Report.Errors)
 	}
 	return formatter.Write(a.io.Out, res.Report, a.outputOptions(res.Config))
 }
 
-// execInput is what the executor needs from whoever produced the findings: a
-// scan (sweep) or a validated findings file (`clean --from`). The
-// guard is always the one the findings were validated against, so actions
-// cannot act outside that scope.
+// execInput is what the executor needs from the scan that produced the
+// findings (sweep, review). The guard is always the one the findings were
+// found in, so actions cannot act outside that scope.
 type execInput struct {
-	cfg      *config.Config
-	git      gitx.Runner
-	guard    *scope.Guard
+	cfg   *config.Config
+	git   gitx.Runner
+	guard *scope.Guard
+	// root is the repository or folder of the scan, recorded in the manifest.
+	root     string
 	findings []findings.Finding
 	// brief selects the one-line summary instead of the per-item plan and
 	// summary (see action.Options.Brief).
@@ -221,13 +215,15 @@ type execInput struct {
 // runExecutor plans and, unless it is a dry run, confirms and executes the
 // findings through the shared executor: confirmation, session manifest and summary are identical
 // for every command.
-func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput, af applyFlags, strategy config.TrashStrategy) (*action.Result, error) {
+func (a *app) runExecutor(ctx context.Context, in execInput, af applyFlags) (*action.Result, error) {
 	dirs, err := config.ResolveDirs()
 	if err != nil {
 		return nil, err
 	}
-	id := session.NewID(time.Now())
-	resolver := newTrasherResolver(in.cfg, strategy, dirs, id, a.io.Err)
+	tr, err := newTrasher()
+	if err != nil {
+		return nil, err
+	}
 	exec := action.NewExecutor(action.Options{
 		Apply:      af.apply(),
 		Quiet:      a.flags.quiet,
@@ -238,12 +234,12 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 		IO:         action.IO{In: a.io.In, Out: a.io.Out, Err: a.io.Err},
 		StdinIsTTY: a.canPrompt, // as in undo, so a test can stand in for a terminal
 		Store:      &session.Store{Dir: dirs.Sessions},
-		Env:        buildActionEnv(in, af, resolver),
+		Env:        newActionEnv(in.cfg, in.git, in.guard, af, tr),
 		Progress:   a.reporter(),
 		Command:    a.commandLine(),
+		Root:       in.root,
 		UndoFlags:  a.scopeFlags(),
-		SessionID:  id,
-		RerunHint:  a.rerunHint(cmd),
+		RerunHint:  "re-run without --dry-run",
 	})
 	return exec.Run(ctx, in.findings)
 }
@@ -280,24 +276,19 @@ func (a *app) planSelector() func(*action.Plan) (bool, error) {
 	}
 }
 
-// buildActionEnv assembles the action environment: the same guard and
-// configuration the findings were produced or validated with.
-func buildActionEnv(in execInput, af applyFlags, r *trasherResolver) *action.Env {
-	return newActionEnv(in.cfg, in.git, in.guard, af, r)
-}
+// newTrasher is trash.New; tests replace it so that no test reaches the real
+// OS trash.
+var newTrasher = trash.New
 
-// newActionEnv is the single wiring of action.Env, shared by the cleanup
-// commands (from a scan or a findings file) and undo (from a manifest and a
-// resolved scope).
-func newActionEnv(cfg *config.Config, git gitx.Runner, guard *scope.Guard, af applyFlags, r *trasherResolver) *action.Env {
+// newActionEnv is the single wiring of action.Env, shared by sweep and review
+// (from a scan) and undo (from a manifest and a resolved scope).
+func newActionEnv(cfg *config.Config, git gitx.Runner, guard *scope.Guard, af applyFlags, tr trash.Trasher) *action.Env {
 	return &action.Env{
-		Config:       cfg,
-		Git:          git,
-		Guard:        guard,
-		Trasher:      r.forDetector,
-		BeforeDelete: r.beforeDelete,
-		TrasherFor:   r.forStrategy,
-		Force:        af.force,
+		Config:  cfg,
+		Git:     git,
+		Guard:   guard,
+		Trasher: tr,
+		Force:   af.force,
 	}
 }
 

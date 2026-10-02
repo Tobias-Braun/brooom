@@ -77,10 +77,14 @@ does not include. Findings below the preset's confidence floor are dropped.
 
 Sweep never removes unmerged or uncommitted work: worktrees with changes,
 branches that are not merged and other findings with blocking risk flags are
-listed as skipped. Stale branches and large untracked files are in no preset;
-use 'brooom scan -d stale-branch' or '-d large-untracked' to list them.
+listed as skipped; 'brooom review' decides on them one by one.
 
-Removed files go to the trash and everything is recorded for 'brooom undo'.`, config.DefaultPreset)
+--dry-run, or a machine format (json, ndjson, plain), prints the report in
+the chosen --format and changes nothing. The plain format is a bare path list
+for pipes and omits informational findings, such as linked worktrees outside
+the scanned scope; use another format to see them.
+
+Removed files go to the OS trash and everything is recorded for 'brooom undo'.`, config.DefaultPreset)
 	return b.String()
 }
 
@@ -118,7 +122,7 @@ func splitSweepArgs(args []string) (preset, path string, err error) {
 func (a *app) resolvePreset(arg string) (presets.Preset, error) {
 	name := arg
 	if name == "" {
-		cfg, _, err := a.loadConfig()
+		cfg, err := a.loadConfig()
 		if err != nil {
 			return presets.Preset{}, err
 		}
@@ -152,7 +156,7 @@ func (a *app) checkPresetDetectors(p presets.Preset) error {
 		if other := presets.WithDetector(n); other != "" {
 			return usageError{fmt.Errorf("--detector %s is not part of the %s preset; the %s preset includes it", n, p.Name, other)}
 		}
-		return usageError{fmt.Errorf("--detector %s is in no sweep preset; list its findings with `brooom scan -d %s`", n, n)}
+		return usageError{fmt.Errorf("--detector %s is in no sweep preset; `brooom review` decides on its findings", n)}
 	}
 	return nil
 }

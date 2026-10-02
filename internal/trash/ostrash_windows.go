@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
-
-	"github.com/Tobias-Braun/brooom/internal/config"
 )
 
 // winTrash moves items into the Windows Recycle Bin with SHFileOperationW.
@@ -40,12 +38,9 @@ type winTrash struct {
 }
 
 // newOSTrasher returns the Windows Recycle Bin implementation.
-func newOSTrasher(Options) (Trasher, error) {
+func newOSTrasher() (Trasher, error) {
 	return &winTrash{now: time.Now, settings: registrySettings{}, volumeGUID: volumeGUID}, nil
 }
-
-// Strategy implements Trasher.
-func (w *winTrash) Strategy() config.TrashStrategy { return config.StrategyTrash }
 
 // Remove implements Trasher: path validation and refusals, the bin
 // availability pre-flight, the shell call and finally the lookup of the new
@@ -87,7 +82,7 @@ func (w *winTrash) Remove(ctx context.Context, path string) (Record, error) {
 		return Record{}, err
 	}
 	rec := Record{
-		Strategy:     config.StrategyTrash,
+		Strategy:     StrategyTrash,
 		OriginalPath: path,
 		SizeBytes:    size,
 		IsDir:        fi.IsDir() && !link,
@@ -227,7 +222,7 @@ func (w *winTrash) Restore(ctx context.Context, r Record) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if r.Strategy != config.StrategyTrash {
+	if r.Strategy != StrategyTrash {
 		return fmt.Errorf("%q was not moved to the Recycle Bin: %w", r.OriginalPath, ErrNotRestorable)
 	}
 	if err := validateBinPath(r.OriginalPath); err != nil {

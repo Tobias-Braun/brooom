@@ -121,6 +121,9 @@ func jsonFields(t reflect.Type) map[string]reflect.StructField {
 	return out
 }
 
+// rawMessage is the type of the Legacy fields, which take any JSON value.
+var rawMessage = reflect.TypeFor[json.RawMessage]()
+
 // checkKeys walks the generic JSON value v against type t and returns the
 // first structural problem (unknown key, wrong JSON type) with its key path.
 // Keys are visited in sorted order so the reported problem is deterministic.
@@ -128,7 +131,7 @@ func checkKeys(v any, t reflect.Type, path string) error {
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
-	if v == nil {
+	if v == nil || t == rawMessage {
 		return nil // null is a no-op for structs/scalars and empties slices/maps
 	}
 	switch t.Kind() {

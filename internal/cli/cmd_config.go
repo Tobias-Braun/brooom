@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -18,18 +17,17 @@ import (
 
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/output"
-	"github.com/Tobias-Braun/brooom/internal/scope"
 )
 
 func newConfigCmd(a *app) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Create, show, edit and validate the configuration",
-		Example: `  brooom config init
+		Short: "Create, show and edit the configuration file",
+		Example: `  brooom config path
+  brooom config init
   brooom config show
-  brooom config edit
-  brooom config validate`,
+  brooom config edit`,
 		Args: cobra.NoArgs,
 		RunE: groupRunE,
 	}
@@ -65,18 +63,6 @@ editor exits the file is validated; problems are reported but your edit is
 never reverted.`,
 			Args: cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error { return a.runConfigEdit() },
-		},
-		&cobra.Command{
-			Use:   "validate",
-			Short: "Validate the config file",
-			Example: `  brooom config validate
-  brooom config validate --config ./brooom.json`,
-			Long: `Check the config file and report every problem. Inside a git repository the
-repository's .brooom.json is checked as well, exactly as a scan would apply
-it, so the result depends on the current directory. A root that does not exist
-is only a warning, because a root on an unmounted volume is legitimate.`,
-			Args: cobra.NoArgs,
-			RunE: func(cmd *cobra.Command, args []string) error { return a.runConfigValidate() },
 		},
 		&cobra.Command{
 			Use:     "path",
@@ -190,30 +176,6 @@ func (a *app) reportProblems(path string, err error) error {
 	return fmt.Errorf("%s is invalid (%d problem(s))", path, len(ve.Problems))
 }
 
-func (a *app) runConfigValidate() error {
-	path, err := a.configPath()
-	if err != nil {
-		return err
-	}
-	if err := a.requireExplicitConfig(path); err != nil {
-		return err
-	}
-	cfg := config.Default()
-	msg := "ok"
-	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
-		msg = fmt.Sprintf("ok (no config file at %s; defaults apply)", output.Sanitize(path))
-	} else if cfg, err = config.Load(path); err != nil {
-		return a.reportProblems(path, err)
-	}
-	a.noteDeprecatedConfig(cfg)
-	note, err := a.validateRepoConfig(cfg)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(a.io.Out, msg+note)
-	return err
-}
-
 // noteDeprecatedConfig prints one note per key of an earlier release that
 // the config file still sets (config.Config.Deprecated), once per run and not
 // with --quiet. Such keys load but have no effect, so the note is the only
@@ -226,43 +188,6 @@ func (a *app) noteDeprecatedConfig(cfg *config.Config) {
 	for _, d := range cfg.Deprecated {
 		fmt.Fprintf(a.io.Err, "note: config: %s\n", output.Sanitize(d))
 	}
-}
-
-// validateRepoConfig checks the .brooom.json of the repository the command
-// runs in with the same code a scan uses (config.ForTarget: parse, unknown
-// keys, tighten-only rules), so validate cannot say ok where scan skips the
-// repository. It returns a suffix for the ok line when a repository file was
-// checked; the result depends on the working directory, which the note says.
-// Outside a repository there is nothing to check.
-func (a *app) validateRepoConfig(cfg *config.Config) (string, error) {
-	root, file, ok := cwdRepoConfig()
-	if !ok {
-		return "", nil
-	}
-	if _, err := cfg.ForTarget(root); err != nil {
-		return "", listError{fmt.Sprintf("repository config %s is invalid: %s\nnote: this depends on the current directory; brooom checked the repository at %s",
-			output.Sanitize(file), output.Sanitize(err.Error()), output.Sanitize(root))}
-	}
-	return fmt.Sprintf("; repository config %s is valid too (depends on the current directory)", output.Sanitize(file)), nil
-}
-
-// cwdRepoConfig finds the repository of the working directory and its
-// .brooom.json. ok is false when there is no repository or no such file; a
-// failure to look is treated alike, since a scan would not find one either.
-func cwdRepoConfig() (root, file string, ok bool) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", "", false
-	}
-	root, err = scope.FindRepoRoot(cwd)
-	if err != nil {
-		return "", "", false
-	}
-	file = filepath.Join(root, config.RepoConfigFileName)
-	if _, err := os.Lstat(file); err != nil {
-		return "", "", false
-	}
-	return root, file, true
 }
 
 func (a *app) runConfigEdit() error {

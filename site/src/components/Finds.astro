@@ -11,8 +11,8 @@ const families = [
   },
   {
     title: 'Git leftovers',
-    body: 'Stale and already-merged branches (squash merges too), orphaned or prunable worktrees, loose objects, reflogs, packs, and large untracked or ignored files.',
-    detectors: ['stale-branch', 'merged-branch', 'worktrees', 'git-bloat', 'large-untracked'],
+    body: 'Already-merged branches (squash merges too), orphaned or prunable worktrees, loose objects, reflogs and packs. Stale branches and dirty worktrees wait for br review.',
+    detectors: ['merged-branch', 'worktrees', 'git-bloat', 'stale-branch'],
   },
   {
     title: 'Build artifacts',

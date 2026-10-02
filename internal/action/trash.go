@@ -10,20 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/procs"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
 	"github.com/Tobias-Braun/brooom/internal/walk"
-)
-
-// metaUserDataRisk is the finding Meta key the large-untracked detector uses
-// to say that the path may be the only copy of the user's work.
-const (
-	metaUserDataRisk  = "user_data_risk"
-	userDataUntracked = "untracked"
 )
 
 // openFilesFn is the open-file check. It is a variable only so tests can
@@ -35,7 +27,7 @@ var trashNow = time.Now
 
 // trashAction removes files, directories and symlinks found by the file
 // detectors. It is the one place where the scope guard, the open-file check
-// and the git safety rules meet the trash strategies.
+// and the git safety rules meet the OS trash.
 type trashAction struct{}
 
 func init() { Register(trashAction{}) }
@@ -44,12 +36,11 @@ func init() { Register(trashAction{}) }
 func (trashAction) Type() findings.ActionType { return findings.ActionTrash }
 
 // Plan re-validates the finding in a fixed order: scope, static refusals,
-// existence and contents, open files, risk flags, tracked files, and the
-// delete-strategy guard. The order matters for the reported reason and keeps
-// the cheap checks in front of the expensive ones. Refusals that protect
-// against the highest-damage mistakes (roots, .git, nested repositories, open
-// files, permanently deleting untracked files) ignore --force; it only lifts
-// blocking risk flags and the tracked-files check.
+// existence and contents, open files, risk flags and tracked files. The order
+// matters for the reported reason and keeps the cheap checks in front of the
+// expensive ones. Refusals that protect against the highest-damage mistakes
+// (roots, .git, nested repositories, open files) ignore --force; it only
+// lifts blocking risk flags and the tracked-files check.
 func (trashAction) Plan(ctx context.Context, env *Env, f findings.Finding) (Step, error) {
 	path, err := resolveTarget(env, f.Path)
 	if err != nil {
@@ -78,15 +69,13 @@ func (trashAction) Plan(ctx context.Context, env *Env, f findings.Finding) (Step
 	if tracked {
 		notes = append(notes, "tracked files")
 	}
-	strategy, err := planStrategy(ctx, env, f, path)
-	if err != nil {
+	if _, err := trasherOf(env); err != nil {
 		return Step{}, err
 	}
 	return Step{
 		Finding:     fresh,
-		Description: describe(strategy, path, notes),
-		Command:     displayCommand(strategy, path),
-		Strategy:    strategy,
+		Description: describe(path, notes),
+		Command:     displayCommand(path),
 	}, nil
 }
 
@@ -226,80 +215,18 @@ func unknownTracked(env *Env, why string) (bool, error) {
 	return false, skipf("%s, so tracked files cannot be ruled out (use --force to override)", why)
 }
 
-// planStrategy resolves the trasher the finding will be removed with and
-// enforces the delete-strategy guard: permanent deletion of untracked files
-// is refused even with --force, since they may be the only copy of the
-// user's work. The finding's Meta hint is honoured, but it is never the
-// proof of safety: a step from any caller may carry empty Meta, so permanent
-// deletion additionally requires live git state to show that the path holds
-// no untracked, non-ignored file. Outside a repository, or when git cannot
-// answer, that cannot be shown and the deletion is refused. It returns the
-// strategy for the step description.
-func planStrategy(ctx context.Context, env *Env, f findings.Finding, path string) (config.TrashStrategy, error) {
-	tr, err := trasherFor(env, f.Detector)
-	if err != nil {
-		return "", err
-	}
-	strategy := tr.Strategy()
-	if strategy != config.StrategyDelete {
-		return strategy, nil
-	}
-	if f.Meta[metaUserDataRisk] == userDataUntracked {
-		return "", skipf("refusing to permanently delete untracked files; use --trash-strategy trash or quarantine")
-	}
-	if err := proveNoUntracked(ctx, env, path); err != nil {
-		return "", err
-	}
-	return strategy, nil
-}
-
-// proveNoUntracked succeeds only when git reports no untracked, non-ignored
-// file below path. Ignored files are regenerable by definition and tracked
-// files are recoverable from history; anything else may be the only copy.
-func proveNoUntracked(ctx context.Context, env *Env, path string) error {
-	const refuse = "refusing to permanently delete %s; use --trash-strategy trash or quarantine"
-	root, err := scope.FindRepoRoot(repoLookupStart(path))
-	if err != nil || env.Git == nil {
-		return skipf(refuse, "a path outside a git repository (cannot show that it holds no untracked files)")
-	}
-	out, err := env.Git.Run(ctx, root, "ls-files", "-z", "--others", "--exclude-standard", "--", path)
-	if err != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("list untracked files: %w", ctx.Err())
-		}
-		return skipf(refuse, "a path git cannot inspect (cannot show that it holds no untracked files)")
-	}
-	if strings.Trim(out, "\x00 \n") != "" {
-		return skipf(refuse, "untracked files")
-	}
-	return nil
-}
-
-func trasherFor(env *Env, detector string) (trash.Trasher, error) {
+func trasherOf(env *Env) (trash.Trasher, error) {
 	if env.Trasher == nil {
 		return nil, errors.New("trash: no trasher configured")
 	}
-	tr, err := env.Trasher(detector)
-	if err != nil {
-		return nil, fmt.Errorf("trash: choose trash strategy for %s: %w", detector, err)
-	}
-	return tr, nil
+	return env.Trasher, nil
 }
 
 // describe renders the one-line step description, e.g. "move node_modules to
 // trash". It carries no size: the plan and the prompts print the finding's
 // size next to every description, so adding it here would show it twice.
-func describe(strategy config.TrashStrategy, path string, notes []string) string {
-	name := filepath.Base(path)
-	var d string
-	switch strategy {
-	case config.StrategyDelete:
-		d = fmt.Sprintf("permanently delete %s", name)
-	case config.StrategyQuarantine:
-		d = fmt.Sprintf("move %s to quarantine", name)
-	default:
-		d = fmt.Sprintf("move %s to trash", name)
-	}
+func describe(path string, notes []string) string {
+	d := fmt.Sprintf("move %s to trash", filepath.Base(path))
 	if len(notes) > 0 {
 		d += " [" + strings.Join(notes, "; ") + "]"
 	}
@@ -330,17 +257,14 @@ func (trashAction) Apply(ctx context.Context, env *Env, s Step) (session.Entry, 
 	}
 	// A step may come from any caller, so the checks that Plan makes
 	// against live state run again: nested repositories, open files and
-	// the delete-strategy guard.
+	// tracked files.
 	size, err := recheckStep(ctx, env, f, path)
 	if err != nil {
 		return failedTrash(en, err)
 	}
-	tr, err := trasherFor(env, f.Detector)
+	tr, err := trasherOf(env)
 	if err != nil {
 		return failedTrash(en, err)
-	}
-	if tr.Strategy() == config.StrategyDelete && env.BeforeDelete != nil {
-		env.BeforeDelete()
 	}
 	// The size of the walk that just re-validated the tree goes to the
 	// trasher, so it neither walks again nor reports a different number than
@@ -353,8 +277,7 @@ func (trashAction) Apply(ctx context.Context, env *Env, s Step) (session.Entry, 
 }
 
 // recheckStep repeats the live-state checks of Plan: nested repositories,
-// open files, tracked files (skipped without --force) and the delete-strategy
-// guard. Nothing here trusts the step's Meta or risk flags. A path that
+// open files and tracked files (skipped without --force). Nothing here trusts the step's Meta or risk flags. A path that
 // vanished is left to the caller's existence check, which runs before this
 // one. refreshFinding walks the whole tree once more, so a large directory
 // is scanned twice per run (Plan, then Apply); that is the price of not
@@ -371,8 +294,7 @@ func recheckStep(ctx context.Context, env *Env, f findings.Finding, path string)
 	if _, err := checkTracked(ctx, env, path); err != nil {
 		return 0, err
 	}
-	_, err = planStrategy(ctx, env, f, path)
-	return fresh.SizeBytes, err
+	return fresh.SizeBytes, nil
 }
 
 func failedTrash(en session.Entry, err error) (session.Entry, error) {
@@ -422,20 +344,12 @@ func appliedEntry(en session.Entry, rec trash.Record) session.Entry {
 }
 
 // recoveryHint tells the user how to get an item back without Brooom.
-func recoveryHint(rec trash.Record) string {
-	switch rec.Strategy {
-	case config.StrategyDelete:
-		return "not recoverable"
-	case config.StrategyQuarantine:
-		return "restore from " + rec.StoredPath
-	default:
-		return "open the Trash/Recycle Bin and use Put Back / Restore"
-	}
+func recoveryHint(trash.Record) string {
+	return "open the Trash/Recycle Bin and use Put Back / Restore"
 }
 
-// Undo restores a trashed item. It uses the strategy recorded in the entry,
-// not the configured one, so changing the config later never breaks
-// restoring old sessions; Env.TrasherFor is the seam for that. The recorded
+// Undo restores a trashed item from the OS trash. Entries that earlier
+// releases removed another way never get here (see notUndoable). The recorded
 // original path is re-validated against the guard first, because a manifest
 // is a file the user (or something else) can edit: a forged entry must not
 // make Brooom write outside the allowed roots. ErrRestoreConflict and
@@ -448,8 +362,9 @@ func (trashAction) Undo(ctx context.Context, env *Env, e session.Entry) error {
 	if e.Status != session.StatusApplied {
 		return fmt.Errorf("trash undo: entry for %s is %s, only applied entries can be undone", e.Path, e.Status)
 	}
-	if env.TrasherFor == nil {
-		return errors.New("trash undo: no trasher factory configured")
+	tr, err := trasherOf(env)
+	if err != nil {
+		return err
 	}
 	rec := *e.Trash
 	if !filepath.IsAbs(rec.OriginalPath) {
@@ -465,10 +380,6 @@ func (trashAction) Undo(ctx context.Context, env *Env, e session.Entry) error {
 	rec.OriginalPath = dest
 	if err := checkRecordPaths(rec); err != nil {
 		return err
-	}
-	tr, err := env.TrasherFor(rec.Strategy)
-	if err != nil {
-		return fmt.Errorf("trash undo: %w", err)
 	}
 	return tr.Restore(ctx, rec)
 }

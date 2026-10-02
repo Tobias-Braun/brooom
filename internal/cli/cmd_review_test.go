@@ -27,7 +27,7 @@ func reviewFixture(t *testing.T) (f *cleanupFixture, dirtyWT string) {
 
 func review(t *testing.T, stdin string, tty bool, args ...string) (int, string, string) {
 	t.Helper()
-	return runApp(t, stdin, tty, time.Time{}, append(append([]string{"review"}, args...), quarantine...)...)
+	return runApp(t, stdin, tty, time.Time{}, append([]string{"review"}, args...)...)
 }
 
 // TestReviewDecidesPerItem keeps the branch, deletes the dirty worktree and

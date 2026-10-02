@@ -251,8 +251,8 @@ func groupSteps(steps []planned) []Group {
 	for _, s := range steps {
 		f := s.step.Finding
 		n := len(groups)
-		if n == 0 || groups[n-1].Detector != f.Detector || groups[n-1].Action != s.action || groups[n-1].Strategy != s.step.Strategy {
-			groups = append(groups, Group{Detector: f.Detector, Action: s.action, Strategy: s.step.Strategy})
+		if n == 0 || groups[n-1].Detector != f.Detector || groups[n-1].Action != s.action {
+			groups = append(groups, Group{Detector: f.Detector, Action: s.action})
 			n++
 		}
 		groups[n-1].Items = append(groups[n-1].Items, Item{Step: s.step})

@@ -31,7 +31,6 @@ var briefKinds = []briefKind{
 	{findings.ActionTrash, config.DetectorBuildArtifacts, "build artifact", "build artifacts", "removed"},
 	{findings.ActionTrash, config.DetectorLogs, "log or runtime item", "log or runtime items", "removed"},
 	{findings.ActionTrash, config.DetectorAIArtifacts, "AI artifact", "AI artifacts", "removed"},
-	{findings.ActionTrash, config.DetectorLargeUntracked, "large untracked file", "large untracked files", "removed"},
 	{findings.ActionGitGC, "", "git maintenance step", "git maintenance steps", "completed"},
 	{findings.ActionGitPrune, "", "git maintenance step", "git maintenance steps", "completed"},
 	{findings.ActionGitReflogExpire, "", "git maintenance step", "git maintenance steps", "completed"},
@@ -88,7 +87,7 @@ func briefCounts(entries []session.Entry) string {
 // removed, then how much disk that reclaimed, as the last line. Failures keep
 // their full detail and skipped findings are counted, because both are what a
 // user has to act on; per-item lines, git commands and recovery hints are left
-// out (`brooom undo` restores, --verbose lists the items). With quiet only the
+// out (`brooom undo` restores, --dry-run lists the items). With quiet only the
 // failures are printed.
 func renderBriefSummary(w io.Writer, r *Result, quiet bool) {
 	if len(r.Failures) > 0 {
@@ -110,7 +109,7 @@ func renderBriefSummary(w io.Writer, r *Result, quiet bool) {
 		fmt.Fprintf(w, "%s kept as you chose\n", plural(kept, "item"))
 	}
 	if skipped := r.Skipped - kept; skipped > 0 {
-		fmt.Fprintf(w, "%s skipped (blocked or changed since the scan; run with --verbose for details)\n", plural(skipped, "item"))
+		fmt.Fprintf(w, "%s skipped (blocked or changed since the scan; run with --dry-run for details)\n", plural(skipped, "item"))
 	}
 	if r.Restorable() {
 		fmt.Fprintf(w, "undo: brooom undo %s\n", undoCommandTail(r))

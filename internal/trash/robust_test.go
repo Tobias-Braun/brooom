@@ -65,8 +65,8 @@ func TestCheckTreeDepth(t *testing.T) {
 			case tt.wantErr != "" && err == nil:
 				t.Fatal("deep tree accepted")
 			case tt.wantErr != "":
-				if !strings.Contains(err.Error(), tt.wantErr) || !strings.Contains(err.Error(), quarantineHint) {
-					t.Errorf("error %q lacks %q or the quarantine hint", err, tt.wantErr)
+				if !strings.Contains(err.Error(), tt.wantErr) || !strings.Contains(err.Error(), manualHint) {
+					t.Errorf("error %q lacks %q or the manual hint", err, tt.wantErr)
 				}
 			}
 		})

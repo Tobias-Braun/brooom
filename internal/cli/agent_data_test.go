@@ -61,7 +61,7 @@ func TestAfterAgentsSweepsTheRepositorysTranscripts(t *testing.T) {
 		}
 	}
 
-	code, out, errOut = brooom(t, "", append([]string{"sweep", "after-agents", "-d", "ai-artifacts", "--yes"}, quarantine...)...)
+	code, out, errOut = brooom(t, "", "sweep", "after-agents", "-d", "ai-artifacts", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}

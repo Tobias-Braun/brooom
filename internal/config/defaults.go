@@ -43,11 +43,6 @@ func Default() *Config {
 				ReflogExpire:          "90.days.ago",
 				PruneExpire:           "2.weeks.ago",
 			},
-			LargeUntracked: LargeUntracked{
-				Enabled:        true,
-				MinSizeBytes:   100 << 20,
-				IncludeIgnored: true,
-			},
 			AIArtifacts: AIArtifacts{
 				Enabled: true,
 			},
@@ -59,11 +54,6 @@ func Default() *Config {
 				InactiveDays: 30,
 			},
 		},
-		Trash: Trash{
-			Strategy:                StrategyTrash,
-			QuarantineRetentionDays: 14,
-			AllowDelete:             false,
-		},
 		Output: Output{
 			Format: "table",
 			Color:  "auto",
@@ -73,7 +63,6 @@ func Default() *Config {
 			Cache:       true,
 			MaxDepth:    6,
 		},
-		Sweep:       Sweep{Preset: DefaultPreset},
-		UpdateCheck: false,
+		Sweep: Sweep{Preset: DefaultPreset},
 	}
 }

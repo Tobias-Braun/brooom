@@ -75,10 +75,6 @@ func (a *app) runReview(cmd *cobra.Command, af applyFlags) error {
 		ctx = context.Background()
 	}
 	a.useProgress(defaultFormat)
-	strategy, err := parseTrashStrategy(af.trashStrategy)
-	if err != nil {
-		return err
-	}
 	res, err := a.scan(ctx, scanOptions{
 		detectors:     []string{config.DetectorWorktrees, config.DetectorStaleBranch},
 		force:         true,
@@ -88,7 +84,7 @@ func (a *app) runReview(cmd *cobra.Command, af applyFlags) error {
 		return err
 	}
 	a.reporter().Pause()
-	a.logScanErrors(res.Report.Errors, true)
+	a.logScanErrors(res.Report.Errors)
 	if err != nil {
 		return err
 	}
@@ -116,9 +112,9 @@ func (a *app) runReview(cmd *cobra.Command, af applyFlags) error {
 	// The decisions are made; the executor must not ask again, and force is
 	// what makes the overridable blocks the user just saw actionable.
 	af.yes, af.force = true, true
-	result, err := a.runExecutor(ctx, cmd, execInput{
-		cfg: res.Config, git: res.Env.Git, guard: res.Guard, findings: chosen,
-	}, af, strategy)
+	result, err := a.runExecutor(ctx, execInput{
+		cfg: res.Config, git: res.Env.Git, guard: res.Guard, root: res.Root, findings: chosen,
+	}, af)
 	return mapExecutorError(result, err, true)
 }
 

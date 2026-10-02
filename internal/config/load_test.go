@@ -64,6 +64,16 @@ func TestLoadAccepts(t *testing.T) {
 				t.Errorf("deprecated %q, legacy %s", c.Deprecated, c.LegacyRoots)
 			}
 		}},
+		{"removed keys with the defaults config init wrote load silently", `{"trash":{"strategy":"trash","quarantine_retention_days":14,"allow_delete":false},"agent":{},"update_check":false,"detectors":{"large-untracked":{"enabled":true}}}`, func(t *testing.T, c *Config) {
+			if len(c.Deprecated) != 0 || c.LegacyTrash != nil || c.LegacyAgent != nil || c.LegacyUpdateCheck != nil || c.Detectors.LegacyLargeUntracked != nil {
+				t.Errorf("deprecated %q, config %+v", c.Deprecated, c)
+			}
+		}},
+		{"removed keys that changed behaviour load with a note", `{"trash":{"strategy":"trash","per_detector":{"worktrees":"quarantine"}},"update_check":true}`, func(t *testing.T, c *Config) {
+			if len(c.Deprecated) != 2 || !strings.HasPrefix(c.Deprecated[0], "trash: ") || !strings.HasPrefix(c.Deprecated[1], "update_check: ") {
+				t.Errorf("deprecated %q", c.Deprecated)
+			}
+		}},
 		{"no note without legacy keys", `{"version":1}`, func(t *testing.T, c *Config) {
 			if len(c.Deprecated) != 0 {
 				t.Errorf("deprecated %q", c.Deprecated)
@@ -96,7 +106,7 @@ func TestLoadRejects(t *testing.T) {
 		{"unknown top-level key", `{"bogus": 1}`, `unknown key "bogus"`},
 		{"wrong type in array element", `{"git":{"protected_branches":["a",5]}}`, `config.json: git.protected_branches[1]: expected string, got number`},
 		{"wrong type object", `{"git": []}`, "git: expected object, got array"},
-		{"wrong type bool", `{"update_check": "yes"}`, "update_check: expected bool, got string"},
+		{"wrong type bool", `{"git": {"use_gh": "yes"}}`, "git.use_gh: expected bool, got string"},
 		{"fractional int", `{"thresholds":{"min_age_days":1.5}}`, "thresholds.min_age_days: expected integer, got 1.5"},
 		{"top level not an object", `[]`, "expected object, got array"},
 		{"syntax error line and column", "{\n  \"a\": }", "line 2, column"},
@@ -139,7 +149,7 @@ func TestLoadSizeCap(t *testing.T) {
 
 func TestLoadSlicesAndMapsReplaceDefaults(t *testing.T) {
 	cfg, err := Load(writeTemp(t, "config.json",
-		`{"git":{"protected_branches":["only"]},"trash":{"per_detector":{"worktrees":"quarantine"}}}`))
+		`{"git":{"protected_branches":["only"]}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,9 +158,6 @@ func TestLoadSlicesAndMapsReplaceDefaults(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg.Git.BaseBranches, Default().Git.BaseBranches) {
 		t.Error("untouched list must keep its default")
-	}
-	if len(cfg.Trash.PerDetector) != 1 {
-		t.Errorf("per_detector merged with defaults: %v", cfg.Trash.PerDetector)
 	}
 }
 
@@ -177,7 +184,7 @@ func TestEnsureDirs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{d.Home, d.Cache, d.Sessions, d.Quarantine} {
+	for _, p := range []string{d.Home, d.Cache, d.Sessions} {
 		fi, err := os.Stat(p)
 		if err != nil || !fi.IsDir() {
 			t.Fatalf("%s not created: %v", p, err)

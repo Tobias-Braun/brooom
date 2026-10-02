@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
@@ -43,7 +42,7 @@ func newTrashFixture(t *testing.T) *trashFixture {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rec := trash.Record{Strategy: config.StrategyTrash, OriginalPath: "/code/" + name, StoredPath: p, SizeBytes: walk.AllocatedSize(fi), Restorable: true}
+		rec := trash.Record{Strategy: trash.StrategyTrash, OriginalPath: "/code/" + name, StoredPath: p, SizeBytes: walk.AllocatedSize(fi), Restorable: true}
 		f.recs = append(f.recs, rec)
 		m.Add(session.Entry{Detector: "log-and-runtime-files", Action: findings.ActionTrash, Path: rec.OriginalPath, SizeBytes: rec.SizeBytes, Status: session.StatusApplied, Trash: &rec, Restorable: true})
 	}

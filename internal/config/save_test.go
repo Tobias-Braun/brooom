@@ -27,15 +27,9 @@ func roundTripConfigs(t *testing.T) map[string]*Config {
 			Protect: []CatalogProtect{{Scope: "project", Patterns: []string{".full/config.json"}, Reason: "config"}},
 		},
 	}
-	custom.Trash = Trash{Strategy: StrategyQuarantine, PerDetector: map[string]TrashStrategy{"worktrees": StrategyTrash}, QuarantineRetentionDays: 0}
 	custom.Output.Format = "json"
 	custom.Scan.SkipDirs = []string{"cache"}
-	custom.Agent = Agent{Provider: "anthropic", APIKeyEnv: "ANTHROPIC_API_KEY"}
-	custom.UpdateCheck = true
-	deleting := Default()
-	deleting.Trash.Strategy = StrategyDelete
-	deleting.Trash.AllowDelete = true
-	return map[string]*Config{"default": Default(), "custom": custom, "delete opt-in": deleting}
+	return map[string]*Config{"default": Default(), "custom": custom}
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -122,9 +116,9 @@ func TestSaveFullContainsEveryTopLevelKey(t *testing.T) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatal(err)
 	}
-	for k := range jsonFields(reflect.TypeOf(Config{})) {
-		if k == "roots" {
-			continue // a legacy key that is read, never written
+	for k, f := range jsonFields(reflect.TypeOf(Config{})) {
+		if strings.HasPrefix(f.Name, "Legacy") {
+			continue // a key of earlier releases that is read, never written
 		}
 		if _, ok := m[k]; !ok {
 			t.Errorf("full document lacks %q", k)
@@ -169,9 +163,9 @@ func TestSaveRefusesInvalidConfig(t *testing.T) {
 func TestSaveNewFileInvalidNotCreated(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "new", "config.json")
 	cfg := Default()
-	cfg.Trash.Strategy = StrategyDelete
+	cfg.Output.Format = "xml"
 	if err := Save(p, cfg); err == nil {
-		t.Fatal("delete without allow_delete must be refused")
+		t.Fatal("an invalid config must be refused")
 	}
 	if _, err := os.Stat(filepath.Dir(p)); err == nil {
 		t.Error("nothing may be created for an invalid config")

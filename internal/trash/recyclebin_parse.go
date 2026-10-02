@@ -17,9 +17,9 @@ import (
 // an item, how the $I metadata is read) are tested on every OS instead of on
 // Windows CI only. The API calls that feed them live in recyclebin_windows.go.
 
-// quarantineHint is appended to every refusal so the user always learns the
-// safe alternative. A Windows removal never degrades into permanent deletion.
-const quarantineHint = "use --trash-strategy quarantine instead"
+// manualHint is appended to every refusal: brooom only ever moves to the
+// Recycle Bin, so a Windows removal never degrades into permanent deletion.
+const manualHint = "brooom leaves it alone; remove it by hand if it should go"
 
 // maxShellPath is the longest path SHFileOperationW accepts (MAX_PATH - 1).
 // The shell does not understand the \\?\ prefix, and a long path passed as is
@@ -28,8 +28,7 @@ const quarantineHint = "use --trash-strategy quarantine instead"
 //
 // Finding: no Windows machine was available while developing this, so the
 // \\?\ form could not be verified and is not attempted. Long paths get a
-// clear error recommending quarantine, which handles them through the
-// regular Go file APIs.
+// clear error instead.
 const maxShellPath = 259
 
 // binDirName is the per-volume Recycle Bin directory.
@@ -108,7 +107,7 @@ func validateBinPath(path string) error {
 	}
 	vol, rest, kind := winSplit(path)
 	if kind == "verbatim" {
-		return fmt.Errorf("refusing path %q: the Recycle Bin API does not accept \\\\?\\ paths; %s", path, quarantineHint)
+		return fmt.Errorf("refusing path %q: the Recycle Bin API does not accept \\\\?\\ paths; %s", path, manualHint)
 	}
 	if kind == "" || (kind == "drive" && !isRooted(path)) {
 		return fmt.Errorf("refusing relative path %q", path)
@@ -122,7 +121,7 @@ func validateBinPath(path string) error {
 	// The limit counts UTF-16 code units, not UTF-8 bytes: a path of many
 	// non-ASCII characters is short for the shell but long in bytes.
 	if len(utf16.Encode([]rune(path))) > maxShellPath {
-		return fmt.Errorf("cannot move %s to the Recycle Bin: the path is longer than %d characters, which the Windows shell API does not support; %s", path, maxShellPath, quarantineHint)
+		return fmt.Errorf("cannot move %s to the Recycle Bin: the path is longer than %d characters, which the Windows shell API does not support; %s", path, maxShellPath, manualHint)
 	}
 	return nil
 }
@@ -185,13 +184,13 @@ type binSettings struct {
 // An item exactly as large as MaxCapacity still fits.
 func decideBinAvailability(path string, s binSettings, settingsErr error, itemSize int64) error {
 	if settingsErr != nil {
-		return fmt.Errorf("cannot move %s to the Recycle Bin: its settings for this volume are unknown (%w), so Windows might delete permanently; %s", path, settingsErr, quarantineHint)
+		return fmt.Errorf("cannot move %s to the Recycle Bin: its settings for this volume are unknown (%w), so Windows might delete permanently; %s", path, settingsErr, manualHint)
 	}
 	if s.NukeOnDelete {
-		return fmt.Errorf("cannot move %s to the Recycle Bin: files on this volume are deleted permanently (the Recycle Bin is disabled for it); %s", path, quarantineHint)
+		return fmt.Errorf("cannot move %s to the Recycle Bin: files on this volume are deleted permanently (the Recycle Bin is disabled for it); %s", path, manualHint)
 	}
 	if itemSize > int64(s.MaxCapacityMB)*1024*1024 {
-		return fmt.Errorf("cannot move %s to the Recycle Bin: its size (%d bytes) exceeds the Recycle Bin limit of %d MB for this volume, so Windows would delete it permanently; %s", path, itemSize, s.MaxCapacityMB, quarantineHint)
+		return fmt.Errorf("cannot move %s to the Recycle Bin: its size (%d bytes) exceeds the Recycle Bin limit of %d MB for this volume, so Windows would delete it permanently; %s", path, itemSize, s.MaxCapacityMB, manualHint)
 	}
 	return nil
 }
@@ -466,10 +465,10 @@ func checkTreeDepth(path, sid string, longestRel int) error {
 		return nil
 	}
 	if n := utf16Len(path) + longestRel; n > maxShellPath {
-		return fmt.Errorf("cannot move %s to the Recycle Bin: it contains a path of %d characters, longer than the %d the Windows shell API supports; %s", path, n, maxShellPath, quarantineHint)
+		return fmt.Errorf("cannot move %s to the Recycle Bin: it contains a path of %d characters, longer than the %d the Windows shell API supports; %s", path, n, maxShellPath, manualHint)
 	}
 	if n := recycledPrefixLen(path, sid) + longestRel; n > maxShellPath {
-		return fmt.Errorf("cannot move %s to the Recycle Bin: its deepest item would have a path of %d characters inside the Recycle Bin, longer than the %d the Windows shell API supports (Windows would stall on a confirmation dialog); %s", path, n, maxShellPath, quarantineHint)
+		return fmt.Errorf("cannot move %s to the Recycle Bin: its deepest item would have a path of %d characters inside the Recycle Bin, longer than the %d the Windows shell API supports (Windows would stall on a confirmation dialog); %s", path, n, maxShellPath, manualHint)
 	}
 	return nil
 }

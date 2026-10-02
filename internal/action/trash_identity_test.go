@@ -35,11 +35,11 @@ func TestTrashRefusesShortNameAliases(t *testing.T) {
 			fx.mkdir("repo/.git/objects")
 			return fx.path("repo/GIT~1/objects"), fx.path("repo/GIT~1"), fx.path("repo/.git")
 		}, ".git"},
-		{"alias of the quarantine", func(fx *trashFixture) (string, string, string) {
-			fx.mkdir("brooom-home/quarantine")
-			p := filepath.Join(fx.brooom, "QUARAN~1")
-			return p, p, filepath.Join(fx.brooom, "quarantine")
-		}, "session or quarantine"},
+		{"alias of the sessions", func(fx *trashFixture) (string, string, string) {
+			fx.mkdir("brooom-home/sessions")
+			p := filepath.Join(fx.brooom, "SESSIO~1")
+			return p, p, filepath.Join(fx.brooom, "sessions")
+		}, "session data"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

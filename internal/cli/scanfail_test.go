@@ -26,13 +26,11 @@ func TestScanFailureIsVisible(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"scan plain", []string{"scan", "-f", "plain"}},
-		{"root plain", []string{"-f", "plain"}},
-		{"sweep plain", []string{"sweep", "-f", "plain"}},
-		{"scan table", []string{"scan"}},
-		{"scan summary", []string{"scan", "-f", "summary"}},
-		{"scan json", []string{"scan", "-f", "json"}},
-		{"sweep dry run", []string{"sweep", "--dry-run"}},
+		{"plain", []string{"sweep", "-f", "plain"}},
+		{"json", []string{"sweep", "-f", "json"}},
+		{"table", []string{"sweep", "--dry-run", "-f", "table"}},
+		{"summary", []string{"sweep", "--dry-run", "-f", "summary"}},
+		{"dry run", []string{"sweep", "--dry-run"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -55,14 +53,14 @@ func TestScanFailureIsVisible(t *testing.T) {
 // gets the error on stderr, and one with it does not repeat it.
 func TestScanErrorChannels(t *testing.T) {
 	brokenRepoFixture(t)
-	_, out, errOut := brooom(t, "", "scan", "-f", "plain")
+	_, out, errOut := brooom(t, "", "sweep", "-f", "plain")
 	if out != "" {
 		t.Errorf("plain stdout must stay empty, got %q", out)
 	}
 	if !strings.Contains(errOut, "scan error:") {
 		t.Errorf("stderr lacks the scan error: %q", errOut)
 	}
-	_, out, errOut = brooom(t, "", "scan", "-f", "json")
+	_, out, errOut = brooom(t, "", "sweep", "-f", "json")
 	var r findings.Report
 	if err := json.Unmarshal([]byte(out), &r); err != nil || !strings.Contains(out, "min_age_days") {
 		t.Errorf("json carries the error in-band: %v %+v", err, r.Errors)
@@ -72,11 +70,12 @@ func TestScanErrorChannels(t *testing.T) {
 	}
 }
 
-// TestCleanScanKeepsExitZero pins that a scan that covered its targets exits 0.
+// TestCleanScanKeepsExitZero pins that a report that covered its targets
+// exits 0.
 func TestCleanScanKeepsExitZero(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, _, errOut := brooom(t, "", "scan", "-f", "plain")
+	code, _, errOut := brooom(t, "", "sweep", "-f", "plain")
 	if code != ExitOK {
 		t.Errorf("clean scan exit %d, stderr %q", code, errOut)
 	}

@@ -2,8 +2,13 @@
 
 Brooom is a fast, safe, cross-platform CLI tool that sweeps disk clutter
 caused by modern AI-assisted development workflows: agent run logs and
-runtime files, stale/merged git branches, leftover worktrees, bloated git
+runtime files, merged git branches, leftover worktrees, bloated git
 histories, and build artifacts across many projects on one machine.
+
+Its core is one command, `brooom sweep [preset] [path]`: presets choose what
+is swept, one config file customizes it, and `--format` picks the output.
+Everything else (`review`, `undo`, `sessions`, `empty-trash`, `config`) serves
+that sweep.
 
 The CLI is the first-class product. A dashboard and an agent layer are
 secondary features that come later and build on the CLI's core.
@@ -44,11 +49,10 @@ cleanup safe, fast and reviewable.
 3. **Detectors find, actions act.** Detectors never modify anything and
    produce structured findings. Actions consume findings, are individually
    configurable, and always have a dry-run mode.
-4. **Reversible by default.** Removed files go to a configurable trash
-   strategy; branches are deleted with `git branch -d`; `-D` is used only
+4. **Reversible by default.** Removed files go to the OS trash; branches are deleted with `git branch -d`; `-D` is used only
    when base ancestry or remote containment is re-verified at apply time
-   (a squash/rebase merge counts only with the commits on a remote), or with
-   `--force`; worktrees are
+   (a squash/rebase merge counts only with the commits on a remote), or when
+   `brooom review` was told to delete an unmerged branch; worktrees are
    moved to the trash and deregistered from git (a plain `git worktree remove`
    would permanently delete ignored files); git history pruning uses a
    conservative expiry. Every applied session writes a manifest so
@@ -66,52 +70,46 @@ cleanup safe, fast and reviewable.
   trash spec on Linux) behind one interface.
 - Windows Recycle Bin limits: the shell API behind it does not accept
   `\\?\` long-path prefixes, so paths longer than 259 UTF-16 characters are
-  refused with a hint to use `--trash-strategy quarantine`. The same refusal
-  applies when the bin is disabled or too small for an item, because Windows
-  would delete such items permanently; brooom never lets that happen silently.
+  refused. The same refusal applies when the bin is disabled or too small for
+  an item, because Windows would delete such items permanently; brooom never
+  lets that happen silently.
 - Release track with GoReleaser + GitHub Actions: tagged releases build
   binaries for all platform/arch combinations, produce checksums and a
   changelog, and publish GitHub releases. Package manager publishing
   (Homebrew tap, Scoop, winget, AUR, .deb/.rpm, `go install`, curl|sh install
   script) is prepared but not enabled yet.
-- A version command and an opt-in update-check command.
+- A version command. Brooom never contacts the network on its own; the only
+  network call is the optional `gh` lookup of open pull requests.
 
 ## Configuration
 
-- JSON config in `~/.brooom/config.json`, with sensible defaults so the tool
-  works with zero config inside a repo. Scan cache, session manifests and
-  quarantine live there too (`cache/`, `sessions/`, `quarantine/`).
-- Config covers: thresholds (age, size), detector toggles, custom patterns
-  and locations, trash strategy, output defaults, the default sweep preset,
-  agent settings.
+- One JSON config file, `~/.brooom/config.json`, with sensible defaults so
+  the tool works with zero config inside a repo. Scan cache and session
+  manifests live next to it (`cache/`, `sessions/`).
+- Config covers: thresholds (age, size), detector toggles and settings,
+  custom patterns and locations, output defaults and the default sweep
+  preset. `brooom config path|init|show|edit` manage the file; every run
+  validates it.
 - Two layers of configurability, both first-class:
   - Intent presets: `brooom sweep [after-agents|tidy|everything]`
     (default `everything`).
-  - Fine-grained control: every detector and action has its own flags and
-    config keys (branch age, merge detection mode, worktree handling, gc
-    expiry, which artifact dirs, which tool locations).
+  - Fine-grained control: every detector has its own config keys (branch
+    age, merge detection mode, worktree handling, gc expiry, which artifact
+    dirs, which tool locations); `--detector` narrows a preset.
 - Optional per-repo `.brooom.json` that can tighten but never loosen global
   safety rules. Minimal in v1.
 
-## Trash strategies (configurable globally and per action)
+## Removal
 
-- `trash`: OS trash (default).
-- `quarantine`: move into `~/.brooom/quarantine/<session-id>/` with a
-  manifest; after a configurable retention (`trash.quarantine_retention_days`,
-  default 14, 0 = never) `brooom purge` deletes the session directories
-  permanently. Every other command prints one line on stderr when sessions are
-  past the retention (`brooom: N quarantined sessions (X MB) are past the
-  D-day retention, run 'brooom purge' to free the space`); it is suppressed
-  for `json`/`ndjson`/`plain` output and `--quiet`, and never printed by
-  `purge`, `undo`, `version`, completion and help.
-- `delete`: immediate permanent deletion (requires explicit config or flag,
-  and a warning on first use).
+- Files and worktrees go to the OS trash, and every session can be undone.
+- `brooom empty-trash` deletes what brooom put in the OS trash permanently;
+  nothing else in the trash is touched.
 
 Branches are deleted with `git branch -d`; `-D` is used only when base ancestry
-or remote containment is re-verified at apply time, or with `--force`; a merge
-found only by squash/rebase detection counts when the commits are also on a
-remote, otherwise it needs `--force`. It is never used for protected, base or checked-out
-branches.
+or remote containment is re-verified at apply time, or when `brooom review`
+was told to delete an unmerged branch; a merge found only by squash/rebase
+detection counts when the commits are also on a remote. It is never used for
+protected, base or checked-out branches.
 
 Branch deletion is recoverable for a limited time only. Git deletes a branch's
 own reflog together with the branch, so the reflog is no safety net. Brooom
@@ -123,7 +121,9 @@ commits remain only as unreachable objects and may be pruned by the next
 
 ## Output formats
 
-Every listing/dry-run command that reports findings supports `--format`:
+`brooom sweep` reports findings in every format; with `--dry-run`, or with a
+machine format (`json`, `ndjson`, `plain`), it prints the report and changes
+nothing:
 
 - `table` (default, human-readable, grouped by detector, sizes humanized,
   totals per group and overall reclaimable space)
@@ -134,17 +134,14 @@ Every listing/dry-run command that reports findings supports `--format`:
 - `summary` (just counts and reclaimable bytes per detector)
 
 Commands that list something other than findings support the formats that
-make sense for their rows: `sessions` takes `table` (default),
-`plain`, `json` and `ndjson`; `config show` takes `json` and `table`;
-`version` and `update-check` take `table`, `plain` and `json`. `tree` and
-`summary` describe findings only. `--format` and `--detector` are rejected
-(usage error, exit 2) on commands that would ignore them.
-The exceptions to "every dry-run command supports `--format`" are the commands
-whose output is a plan or a confirmation and not a list of findings: `undo`,
-`clean` and `purge` (including `git purge`) print their plan as text, and
-`config init`, `config edit`, `config path` and `config validate` report a
-result line instead. `completion` and `help` accept every global
-flag, because the shell hands them the flags of the words it completes.
+make sense for their rows: `sessions` takes `table` (default), `plain`,
+`json` and `ndjson`; `config show` takes `json` and `table`; `version` takes
+`table`, `plain` and `json`. `tree` and `summary` describe findings only.
+`--format` and `--detector` are rejected (usage error, exit 2) on commands
+that would ignore them: `undo`, `review` and `empty-trash` print a plan or
+questions as text, and `config init`, `config edit` and `config path` report a
+result line. `completion` and `help` accept every global flag, because the
+shell hands them the flags of the words it completes.
 
 Respect `NO_COLOR`, detect TTY vs pipe, and support `--quiet`.
 
@@ -160,7 +157,8 @@ between detectors, output formats, actions and the future dashboard/agent.
 Git:
 
 - **stale-branch**: last commit age, remote tracking gone or never pushed,
-  no open PR (via `gh` if present, optional).
+  no open PR (via `gh` if present, optional). Unmerged work, so no preset
+  runs it; `brooom review` does.
 - **merged-branch**: tip is ancestor of main/master/origin/HEAD, or
   squash-merge detected via patch-id / `git cherry` against the base branch.
   Merge detection mode configurable (ancestor-only, ancestor+squash).
@@ -172,13 +170,11 @@ Git:
   detection) count as merged. There is no age threshold for removal: a
   cleanup right after a large agent run removes the fresh clean merged
   worktrees at once (`recently_modified` is informational only). Worktrees in
-  use are protected, dirty worktrees need `--force`, and removed worktrees go
-  to the trash or quarantine and stay undoable.
+  use are protected, dirty worktrees are left to `brooom review`, and removed
+  worktrees go to the trash and stay undoable.
 - **git-bloat**: loose object count, reflog size, pack count, large blobs;
   suggests `git gc`, `git prune`, reflog expiry, with configurable expiry
-  dates, exposed as separate "purge" options with clear explanations.
-- **large-untracked / ignored-bloat**: large untracked or ignored files
-  inside repos.
+  dates (run by the `everything` preset).
 
 Files:
 
@@ -201,43 +197,38 @@ Files:
   `__pycache__`, .next, .nuxt, .turbo, .gradle, etc., weighted by project
   inactivity (last commit / last source mtime).
 
-Thresholds and pattern lists are configurable globally, per root, per
-detector. The global `thresholds.min_age_days` filters ai-artifacts,
+Thresholds and pattern lists are configurable globally and per detector, and
+a repository's `.brooom.json` may tighten them. The global `thresholds.min_age_days` filters ai-artifacts,
 log-and-runtime-files, stale-branch, worktrees and merged-branch (the last
 three only once it is raised above the built-in default, see
 [config.md](config.md)); `thresholds.min_size_bytes` filters ai-artifacts,
-log-and-runtime-files, build-artifacts and large-untracked. git-bloat has
+log-and-runtime-files and build-artifacts. git-bloat has
 neither, and build-artifacts weighs project inactivity instead of age.
 
 ## Actions (v1)
 
-trash (per trash strategy), delete-branch (`-d`, `--force` for `-D`),
-remove-worktree (+ prune), git-gc/prune/reflog-expire (each opt-in with
-expiry), restore/undo (from session manifest), purge (empty quarantine past
-retention). All actions: plan first, one confirmation, `--dry-run` to stop
+trash (OS trash), delete-branch (`-d`, `-D` only as described above),
+remove-worktree (+ prune), git-gc/prune/reflog-expire (with expiry),
+restore/undo (from session manifest). All actions: plan first, one confirmation, `--dry-run` to stop
 after the plan, `--yes` to skip the question, summary of reclaimed space at
 the end, manifest written per session.
 
 ## CLI surface
 
 ```
-brooom                          # scan current repo, table output, suggests a sweep
-brooom [PATH]                   # the same for the repo or folder PATH
-brooom scan [PATH] [--detector X] [--format F]
-brooom sweep [PRESET] [PATH] [--dry-run] [-y]   # plan, ask once, clean
+brooom sweep [PRESET] [PATH] [--dry-run] [-y] [--format F] [--detector X]
 brooom review [PATH] [--dry-run]                # decide on dirty and unmerged work
-brooom git purge [PATH] [--gc] [--reflog-expire D] [--prune D] [--dry-run] [-y]
-brooom clean --from findings.json [--path P] [--dry-run] [-y]
 brooom undo [session-id] [--path P] [--dry-run] [-y] # default: latest session
-brooom sessions / brooom purge [--dry-run] [-y]
-brooom empty-trash [--dry-run] [-y]       # delete brooom's items from the OS trash
-brooom config init|show|edit|validate
-brooom version / brooom update-check
+brooom sessions                                 # id, repository, items, reclaimed
+brooom empty-trash [--dry-run] [-y]             # delete brooom's items from the OS trash
+brooom config path|init|show|edit
+brooom version
 ```
 
 `brooom undo` lists, last applied first, what it would restore and what it
-cannot (delete strategy, maintenance actions, failed or skipped entries, a
-missing stored copy, an unknown action, an entry outside the current scope),
+cannot (maintenance actions, failed or skipped entries, a missing stored
+copy, an unknown action, an entry outside the current scope, an entry an
+earlier release removed with its quarantine or delete strategy),
 each with the reason and the manual recovery hint. Nothing is ever
 overwritten: an existing original path or branch is reported as a conflict.
 It then asks `Restore N items? [y/N]` (unless `--yes` or `--dry-run`; without a terminal and
@@ -245,9 +236,7 @@ without `--yes` it exits 2), saves the manifest after every entry and exits 1
 if a restorable entry conflicted or failed. Entries are only restored inside
 the current scope (the repository you are in, or `--path`), because
 manifests are editable files. Running it again skips restored entries.
-`brooom purge` never touches the OS trash or session manifests; manifests of
-purged sessions are marked as not restorable. `brooom empty-trash` is its
-counterpart for the OS trash: it lists the items the session manifests say
+`brooom empty-trash` lists the items the session manifests say
 brooom moved there and that are still there, asks once and deletes them
 permanently. Nothing else in the trash is touched: an item is only deleted
 when its stored copy lies inside an OS trash directory and still has the
@@ -290,11 +279,10 @@ link. Minimal JS payload — hydrate only the islands that need it
    tests for path-escape and symlink cases across OSes.
 2. Findings schema (Go types + JSON example) and output formats.
 3. Git detectors (stale, merged, worktrees) and branch/worktree actions.
-4. Trash abstraction for all three OSes with the three strategies, session
-   manifests, undo.
+4. Trash abstraction for all three OSes, session manifests, undo.
 5. ai-artifacts and log-and-runtime-files detectors with the embedded
    tool-location list.
-6. build-artifacts and git-bloat/purge.
+6. build-artifacts and git-bloat.
 7. `sweep` presets, completions, GoReleaser pipeline, package manager
    publishing (prepared, not enabled).
 8. Landing page.

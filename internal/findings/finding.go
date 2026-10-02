@@ -148,8 +148,7 @@ type ActionType string
 const (
 	// ActionNone means the finding is reported but no action is suggested.
 	ActionNone ActionType = "none"
-	// ActionTrash removes a file or directory via the configured trash
-	// strategy (OS trash, quarantine or delete).
+	// ActionTrash moves a file or directory to the OS trash.
 	ActionTrash ActionType = "trash"
 	// ActionDeleteBranch deletes a local branch (git branch -d, -D with --force).
 	ActionDeleteBranch ActionType = "delete-branch"

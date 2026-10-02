@@ -1,7 +1,7 @@
 /**
  * Every key below exists in internal/config/config.go and the values are
  * valid: sweep.preset, thresholds.min_age_days, detectors.<name>.enabled and
- * trash.strategy / trash.quarantine_retention_days. If Default() changes,
+ * output.format. If Default() changes,
  * the code wins and this excerpt must follow.
  *
  * A single constant feeds both the visible code block and the copy button,
@@ -14,8 +14,5 @@ export const configJson = `{
   "detectors": {
     "git-bloat": { "enabled": false }
   },
-  "trash": {
-    "strategy": "quarantine",
-    "quarantine_retention_days": 14
-  }
+  "output": { "format": "summary" }
 }`;

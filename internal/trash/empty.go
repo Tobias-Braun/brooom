@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
@@ -66,7 +65,7 @@ func isFreedesktopFiles(parts []string, i int) bool {
 // the whole program). Directories are compared by type only: a cross-device
 // move can change how their files are allocated.
 func VerifyStored(r Record) error {
-	if r.Strategy != config.StrategyTrash || r.StoredPath == "" {
+	if r.Strategy != StrategyTrash || r.StoredPath == "" {
 		return fmt.Errorf("%w: not an OS trash record", ErrNotInOSTrash)
 	}
 	if !InOSTrash(r.StoredPath) {

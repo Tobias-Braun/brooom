@@ -118,7 +118,7 @@ func TestDetectorSets(t *testing.T) {
 	requireRuns(t, everything, config.DetectorBuildArtifacts, config.DetectorGitBloat)
 	// Unmerged work is never part of a preset.
 	for _, p := range []Preset{afterAgents, tidy, everything} {
-		requireNotRuns(t, p, config.DetectorStaleBranch, config.DetectorLargeUntracked)
+		requireNotRuns(t, p, config.DetectorStaleBranch)
 		for _, d := range p.Detectors {
 			if !slices.Contains(config.DetectorNames(), d) {
 				t.Errorf("%s names unknown detector %q", p.Name, d)
@@ -262,8 +262,6 @@ func TestNeverLoosensSafetySettings(t *testing.T) {
 		cfg := config.Default()
 		cfg.Thresholds.RecentDays = 9
 		cfg.Git.ProtectedBranches = []string{"main", "keep/*"}
-		cfg.Trash.Strategy = config.StrategyQuarantine
-		cfg.Trash.AllowDelete = false
 		cfg.Detectors.Worktrees.IncludeStale = true
 		got := Apply(cfg, mustGet(t, name))
 		switch {
@@ -271,8 +269,6 @@ func TestNeverLoosensSafetySettings(t *testing.T) {
 			t.Errorf("%s changed RecentDays", name)
 		case !slices.Equal(got.Git.ProtectedBranches, cfg.Git.ProtectedBranches):
 			t.Errorf("%s changed the protected branches", name)
-		case got.Trash.Strategy != config.StrategyQuarantine || got.Trash.AllowDelete:
-			t.Errorf("%s changed the trash settings", name)
 		case got.Detectors.Worktrees.IncludeStale:
 			t.Errorf("%s reports unmerged worktrees whose upstream is gone", name)
 		}
@@ -349,7 +345,6 @@ func TestWithDetector(t *testing.T) {
 		config.DetectorBuildArtifacts: Everything,
 		config.DetectorGitBloat:       Everything,
 		config.DetectorStaleBranch:    "",
-		config.DetectorLargeUntracked: "",
 		"nope":                        "",
 	} {
 		if got := WithDetector(det); got != want {

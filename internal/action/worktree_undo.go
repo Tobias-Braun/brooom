@@ -217,7 +217,7 @@ func staleRegistration(ctx context.Context, repo *gitx.Repo, path string) (bool,
 }
 
 // recordTrasher checks that the trash record belongs to path and returns the
-// trasher of the strategy that created it.
+// trasher to restore it with.
 func recordTrasher(env *Env, rec trash.Record, path string) (trash.Trasher, error) {
 	if !gitx.SamePath(rec.OriginalPath, path) {
 		return nil, fmt.Errorf("worktree undo: trash record path %s does not match worktree %s", rec.OriginalPath, path)
@@ -225,14 +225,7 @@ func recordTrasher(env *Env, rec trash.Record, path string) (trash.Trasher, erro
 	if err := checkRecordPaths(rec); err != nil {
 		return nil, fmt.Errorf("worktree undo: %w", err)
 	}
-	if env.TrasherFor == nil {
-		return nil, errors.New("worktree undo: no trasher factory configured")
-	}
-	tr, err := env.TrasherFor(rec.Strategy)
-	if err != nil {
-		return nil, fmt.Errorf("worktree undo: %w", err)
-	}
-	return tr, nil
+	return trasherOf(env)
 }
 
 // undoTrashed restores a worktree that was moved to the trash:

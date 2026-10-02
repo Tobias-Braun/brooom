@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/walk"
 )
 
@@ -46,7 +45,7 @@ func trashItem(t *testing.T) (Record, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Record{Strategy: config.StrategyTrash, StoredPath: p, OriginalPath: "/code/app.log", SizeBytes: walk.AllocatedSize(fi)}, trashDir
+	return Record{Strategy: StrategyTrash, StoredPath: p, OriginalPath: "/code/app.log", SizeBytes: walk.AllocatedSize(fi)}, trashDir
 }
 
 func TestRemoveStoredDeletesOnlyVerifiedItems(t *testing.T) {
@@ -70,7 +69,7 @@ func TestVerifyStoredRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	quarantine := r
-	quarantine.Strategy = config.StrategyQuarantine
+	quarantine.Strategy = "quarantine"
 	changedType := r
 	changedType.IsDir = true
 	changedSize := r
@@ -116,7 +115,7 @@ func TestRemoveStoredDropsTrashInfo(t *testing.T) {
 	if err := os.WriteFile(meta, []byte("[Trash Info]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r := Record{Strategy: config.StrategyTrash, StoredPath: item, InfoPath: meta, IsDir: true}
+	r := Record{Strategy: StrategyTrash, StoredPath: item, InfoPath: meta, IsDir: true}
 	if err := RemoveStored(r); err != nil {
 		t.Fatal(err)
 	}

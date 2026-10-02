@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,8 +30,7 @@ const (
 // Merge semantics: values are decoded into a pre-populated Default(), so
 // fields absent from the file keep their defaults. Slices and maps present in
 // the file REPLACE the default value entirely (they are not merged); for
-// example git.protected_branches in the file is the complete list, and
-// trash.per_detector is not combined with defaults. A JSON null for a slice
+// example git.protected_branches in the file is the complete list. A JSON null for a slice
 // or map yields an empty one.
 //
 // The loaded configuration is validated; the error lists every problem.
@@ -81,28 +81,60 @@ func normalizeNulls(c *Config) {
 }
 
 // noteDeprecated records the keys of earlier releases the file still sets.
-// They are accepted so an old file keeps loading, but have no effect.
+// They are accepted so an old file keeps loading, but have no effect, and are
+// cleared so they are never written back.
 //
-// `config init` wrote an empty "roots" list and user_locations false into
-// every file, so those are dropped silently: they never had an effect.
+// `config init` wrote every key with its default into every file, so a key
+// is only reported when its value changed behaviour back then; the others
+// are dropped silently.
 func noteDeprecated(c *Config) {
-	for _, ul := range []struct {
-		key string
-		v   **bool
+	userLocations := "is ignored; agent data of the scanned repositories is always included and global caches are no longer cleaned"
+	for _, k := range []struct {
+		key     string
+		raw     *json.RawMessage
+		changed func(json.RawMessage) bool
+		note    string
 	}{
-		{"detectors.ai-artifacts.user_locations", &c.Detectors.AIArtifacts.LegacyUserLocations},
-		{"detectors.log-and-runtime-files.user_locations", &c.Detectors.Logs.LegacyUserLocations},
+		{"roots", &c.LegacyRoots, nonEmptyList, "the root registry was removed and the key is ignored; pass a path instead, e.g. `brooom sweep ~/code`"},
+		{"trash", &c.LegacyTrash, notOSTrash, "is ignored; removed files always go to the OS trash (`brooom empty-trash` deletes them permanently)"},
+		{"agent", &c.LegacyAgent, never, ""},
+		{"update_check", &c.LegacyUpdateCheck, isTrue, "is ignored; the update check was removed"},
+		{"detectors.large-untracked", &c.Detectors.LegacyLargeUntracked, never, ""},
+		{"detectors.ai-artifacts.user_locations", &c.Detectors.AIArtifacts.LegacyUserLocations, isTrue, userLocations},
+		{"detectors.log-and-runtime-files.user_locations", &c.Detectors.Logs.LegacyUserLocations, isTrue, userLocations},
 	} {
-		if *ul.v != nil && **ul.v {
-			c.Deprecated = append(c.Deprecated, ul.key+": is ignored; agent data of the scanned repositories is always included and global caches are no longer cleaned")
+		if len(*k.raw) > 0 && k.changed(*k.raw) {
+			c.Deprecated = append(c.Deprecated, k.key+": "+k.note)
 		}
-		*ul.v = nil
+		*k.raw = nil
 	}
-	roots := bytes.TrimSpace(c.LegacyRoots)
-	c.LegacyRoots = nil
-	if len(roots) > 0 && !bytes.Equal(roots, []byte("null")) && !bytes.Equal(bytes.Join(bytes.Fields(roots), nil), []byte("[]")) {
-		c.Deprecated = append(c.Deprecated, "roots: the root registry was removed and the key is ignored; pass a path instead, e.g. `brooom sweep ~/code`")
+}
+
+func never(json.RawMessage) bool { return false }
+
+func isTrue(raw json.RawMessage) bool { return bytes.Equal(bytes.TrimSpace(raw), []byte("true")) }
+
+func nonEmptyList(raw json.RawMessage) bool {
+	var l []json.RawMessage
+	return json.Unmarshal(raw, &l) == nil && len(l) > 0
+}
+
+// notOSTrash reports whether a "trash" block selected another strategy than
+// the OS trash, globally or for a detector.
+func notOSTrash(raw json.RawMessage) bool {
+	var t struct {
+		Strategy    string            `json:"strategy"`
+		PerDetector map[string]string `json:"per_detector"`
 	}
+	if json.Unmarshal(raw, &t) != nil {
+		return false
+	}
+	for _, s := range t.PerDetector {
+		if s != "trash" {
+			return true
+		}
+	}
+	return t.Strategy != "" && t.Strategy != "trash"
 }
 
 // readCapped reads a whole regular file of at most limit bytes. The error is

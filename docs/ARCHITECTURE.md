@@ -19,8 +19,8 @@ packages and the same findings schema.
    `scope.Guard`; anything outside is refused.
 3. **Detectors find, actions act.** Detectors never modify anything (no file
    writes, no git commands that take locks). Actions consume findings.
-4. **Reversible by default.** Files go to the OS trash (or quarantine);
-   branches are deleted with `git branch -d`; `-D` is used only when base ancestry, or remote containment (alone or together with a squash/rebase merge), is re-verified at apply time, or with `--force` (a squash/rebase merge of commits on no remote needs `--force`); worktrees are
+4. **Reversible by default.** Files go to the OS trash;
+   branches are deleted with `git branch -d`; `-D` is used only when base ancestry, or remote containment (alone or together with a squash/rebase merge), is re-verified at apply time, or with force, which only `brooom review` sets for an item the user chose to delete (a squash/rebase merge of commits on no remote needs it); worktrees are
    moved to the trash and deregistered from git (never a bare `git worktree
    remove`, which would delete ignored files permanently); git maintenance uses conservative
    expiries. Every applied session writes a manifest for `brooom undo`.
@@ -47,7 +47,7 @@ packages and the same findings schema.
                                              → apply → session manifest
                                                         │
                                                         ▼
-                                  trash (OS trash / quarantine / delete), git
+                                           trash (OS trash), git
 ```
 
 ## Packages
@@ -67,14 +67,13 @@ packages and the same findings schema.
 | `internal/catalog` | Embedded JSON data: AI tool locations, dev tool log/cache locations, build artifact dirs + project markers. Extensible via config. |
 | `internal/presets` | Sweep presets as pure data (detector set, minimum confidence, config overlay) plus `Apply` (deep copy, never mutates the loaded config). Presets never touch safety settings. |
 | `internal/action` | `Action` interface, registry, `Executor` (plan → dry run / confirm → apply → manifest → summary). One file per action type. |
-| `internal/trash` | `Trasher` interface; OS trash per OS (`ostrash_windows.go`, `ostrash_darwin.go` with `mactrash.go`, `ostrash_unix.go` freedesktop, `ostrash_other.go`/`ostrash_native_other.go` for the rest), quarantine, delete. |
+| `internal/trash` | `Trasher` interface; OS trash per OS (`ostrash_windows.go`, `ostrash_darwin.go` with `mactrash.go`, `ostrash_unix.go` freedesktop, `ostrash_other.go`/`ostrash_native_other.go` for the rest), `empty.go` for `brooom empty-trash`. |
 | `internal/session` | Session manifests in `~/.brooom/sessions`, listing, undo bookkeeping. |
 | `internal/output` | Formatters, one file per format, registered by name. Color/TTY handling helpers. |
 | `internal/progress` | The terminal-free `Reporter` interface the engine, executor and undo report progress through, plus the no-op `Nop` and the `progresstest.Recorder` for tests. |
 | `internal/cli/progressui` | The live stderr display: a bubbletea model (spinner, progress bar, lipgloss styles) and the `Display` reporter that owns its lifecycle. The only package that imports the Charm libraries. |
 | `internal/procs` | "Is this file open by a process?" per OS (best effort, never blocks a scan). |
-| `internal/updatecheck` | The opt-in update check: latest-release lookup, semver compare, install-method detection, 24h cache. The only package allowed to import `net/http` (enforced by a test). |
-| `internal/testutil` | Deterministic throwaway git repos and file trees for tests. |
+| `internal/testutil` | Deterministic throwaway git repos and file trees for tests, and `DirTrasher`, the stand-in for the OS trash in tests. |
 
 ## Contracts
 
@@ -156,15 +155,12 @@ has open with `file_open_by_process`, which is blocking and never overridable,
 so those findings suggest `none` even with `--force`. `tracked_files` is
 force-overridable and then suggests `trash` with a `forced: ...` reason.
 
-`detect.Env.Selected` carries the detectors chosen for the run (empty means
-all). `large-untracked` claims paths of the catalog-driven detectors only when
-they are enabled and selected, so `scan -d large-untracked` still reports an
-ignored `node_modules`. Crash-dump catalog entries carry a `verify` content
+Crash-dump catalog entries carry a `verify` content
 check (ELF core / MDMP header); a candidate that fails it is dropped.
 
 Detector names (config keys, `--detector` values): `stale-branch`,
-`merged-branch`, `worktrees`, `git-bloat`, `large-untracked`,
-`ai-artifacts`, `log-and-runtime-files`, `build-artifacts`.
+`merged-branch`, `worktrees`, `git-bloat`, `ai-artifacts`,
+`log-and-runtime-files`, `build-artifacts`.
 
 ### git-bloat (`internal/detectors/gitbloat`)
 
@@ -211,7 +207,7 @@ confirmation, manifests and the summary; individual actions never prompt.
 #### The `trash` action
 
 `internal/action/trash.go` removes files, directories and symlinks through the
-configured `trash.Trasher`. `Plan` re-validates in this order and skips with a
+OS `trash.Trasher` (`Env.Trasher`). `Plan` re-validates in this order and skips with a
 reason at the first failure:
 
 1. `Guard.ResolveParent` (the final element is kept, so symlinks are removed
@@ -219,7 +215,7 @@ reason at the first failure:
 2. Static refusals on the resolved path: filesystem/volume roots, allowed
    roots, repository roots, VCS metadata (`.git`, `.hg`, `.jj`, `.svn`, by
    `walk.IsVCSName`) or anything inside it, the Brooom home
-   (and anything containing it) and its `sessions` and `quarantine` dirs, and
+   (and anything containing it) and its `sessions` dir, and
    the user's home directory (and anything containing it).
 3. Existence and contents: one `walk.Walk` pass with `Fresh: true` sums the
    size exactly like `walk.DirSize` and looks for VCS metadata (`.git` as file
@@ -246,12 +242,7 @@ reason at the first failure:
    of a multiple of the finding count. A git failure marks every target
    unknown. A single target keeps the plain per-path call. The `logs` and
    `ai-artifacts` detectors use the same helper for their `tracked_files` risk.
-7. Delete-strategy guard: with the `delete` strategy a finding whose
-   `Meta["user_data_risk"]` is `untracked` is refused, and so is any path for
-   which git cannot show right now (`ls-files --others --exclude-standard`)
-   that it holds no untracked, non-ignored file. Meta is only a conservative
-   extra signal, since a findings file can drop it.
-8. Catalog protection (`protect.go`): the catalog protect rules (`.env`,
+7. Catalog protection (`protect.go`): the catalog protect rules (`.env`,
    `.mcp.json`, `CLAUDE.local.md`, `.claude/settings.local.json`, ..., and the
    user-level tool configuration) are enforced on the path itself and on what
    a directory contains, whatever detector or kind the finding names. Below a
@@ -266,7 +257,7 @@ Windows specifics: `Guard.ResolveParent` canonicalises the final element with
 `GetLongPathName` (8.3 aliases such as `GIT~1` become `.git`), and step 2 ends
 with `RefuseByIdentity`, which compares file identity (`identityOf`) of the
 path and its ancestors with `.git`, the Brooom home, the user's home and the
-sessions/quarantine dirs; `brooom clean --from` vetting runs it too. Step 3
+sessions dir. Step 3
 treats reparse-point directories that are not name surrogates (OneDrive,
 ProjFS) as directories (`walk` decides by the reparse tag); a junction or other
 directory the walker cannot inspect is refused, so trashing a junction is never
@@ -292,32 +283,19 @@ be read counts as an alias and refuses the removal; only a missing entry is
 `GetFileInformationByHandle` (`fileid_windows.go`) rather than the lazy
 `os.SameFile`, which answers false on any error.
 
-The `delete` strategy is refused outside a git repository and whenever git
-cannot answer the untracked-files check (step 7 and `Apply`); it never falls
-back to allowing the removal.
-
-Resolving the trasher in `Plan` has no side effects. The one-time delete
-warning (and its `.delete-warned` marker in the Brooom home) is emitted by
-`Env.BeforeDelete`. The executor calls it when an applied plan contains a
-trash or worktree-removal group whose trasher uses the delete strategy, before
-the confirmation prompt (`Executor.warnBeforeDelete`), so the user reads it
-before deciding; the trash action calls it again right before a removal as a
-backstop (it warns at most once per run). Dry runs never consume it.
-
-Not overridable by `--force`: steps 1, 2, 3, 4 (open files, also via the
-`file_open_by_process` flag), 7 and 8. `--force` only lifts blocking risk flags
-and the tracked-files check. `Apply` re-resolves and re-checks the static
-refusals, then re-runs the nested `.git`, open-file, tracked-files and
-delete-strategy checks against live state (a step may come from any caller, so
-neither its `Meta` nor its risk flags are trusted; the delete strategy needs
-git to show that the path holds no untracked, non-ignored file, and is refused
-outside a repository). The nested `.git` check walks the tree a second time.
-`Apply` removes the re-resolved path and returns a manifest entry with the
-trash record; a path that vanished is a skip, not a failure. `Undo` restores
-with the strategy recorded in the entry (`Env.TrasherFor`), never the
-configured one, after checking that the original path lies inside the allowed
-roots and is neither inside `.git` nor inside the Brooom home (config, cache,
-sessions, quarantine). That check is by name, then by file identity of every
+Not overridable by force: steps 1, 2, 3, 4 (open files, also via the
+`file_open_by_process` flag) and 7. Force only lifts blocking risk flags and
+the tracked-files check. `Apply` re-resolves and re-checks the static
+refusals, then re-runs the nested `.git`, open-file and tracked-files checks
+against live state (a step may come from any caller, so neither its `Meta`
+nor its risk flags are trusted). The nested `.git` check walks the tree a
+second time. `Apply` removes the re-resolved path and returns a manifest entry
+with the trash record; a path that vanished is a skip, not a failure. `Undo`
+restores from the OS trash after checking that the original path lies inside
+the allowed roots and is neither inside `.git` nor inside the Brooom home
+(config, cache, sessions). Entries an earlier release removed with its
+quarantine or delete strategy are reported as not restorable by `PlanUndo`,
+with the location of a quarantined copy. That check is by name, then by file identity of every
 existing ancestor, so aliases like 8.3 short names and symlinks are caught;
 bind mounts or hard links of `.git` under another parent are not (the scope
 guard is the defence there). `ErrRestoreConflict` and `ErrNotRestorable` are
@@ -387,7 +365,7 @@ repository"; a repository git refuses because another user owns it is an
 `*gitx.UnsafeRepoError` (`errors.Is(err, gitx.ErrUnsafeRepo)`) carrying git's
 message and the `safe.directory` hint, and other failures keep their stderr.
 `detect.Run` reports it once per repository as "skipped: dubious ownership ...",
-`git purge` and the worktree and branch actions report it as a visible skip.
+and the worktree and branch actions report it as a visible skip.
 
 #### The worktree actions
 
@@ -483,8 +461,8 @@ tree and stays a metadata location only. The main worktree is also registered
 with `Guard.WithRepoMeta`; `Guard.ResolveRepoMeta` accepts such a location as
 that exact directory, never anything below it. `ResolveRepoMeta` is used only
 to locate the repository: the branch and worktree detectors (`merged-branch`,
-`stale-branch`, `worktrees`), `delete-branch`, the worktree actions and
-`clean --from` vetting of a git finding's repository. Git maintenance
+`stale-branch`, `worktrees`), `delete-branch` and the worktree actions. Git
+maintenance
 (`git-bloat`, `git-gc` and friends) uses `Resolve`, one operation per common
 git dir. A linked worktree the guard does not allow (one outside the
 repository, which is git's default for `git worktree add ../x`) is never
@@ -492,9 +470,9 @@ examined or offered; `worktrees` reports each existing one as an
 informational finding (action `none`, low confidence, evidence code
 `outside_scope`, message carrying `scope.OutsideWorktreeHint`: pass the folder
 that holds the repository and its worktrees as the path), so it is visible
-without `--verbose` in every
-format that lists non-actionable findings (`plain` stays a path pipe of
-actionable findings only). `Guard.OutsideNote` gives the hint only for a
+in every format that lists non-actionable findings (`plain` stays a path pipe
+of actionable findings only). Its low confidence keeps it out of every sweep
+preset, so only the blocked reasons of a sweep carry the hint. `Guard.OutsideNote` gives the hint only for a
 non-empty path that fails with `ErrOutsideScope`. The `current_branch`
 block reason of `merged-branch` and `stale-branch` names the
 worktree and carries the same hint when it is out of scope. Missing (prunable)
@@ -513,51 +491,6 @@ negative (`head_not_pushed`, `unpushed_commits`, hint `git worktree repair`).
 The entry records `repo`, `worktree`, `branch` and `head` in `Undo` (for manual
 recovery, `git branch rescue <sha>`), but it is not undoable.
 
-#### `brooom clean --from` (`internal/cli/cmd_clean.go`, `clean_scope.go`, `clean_vet.go`)
-
-A findings file is untrusted input. `findings.ReadReport` only checks the
-envelope (size cap 256 MiB, one JSON value, `schema_version` 1..current;
-unknown fields are tolerated). Everything else comes from the invocation: the
-scope is rebuilt like a scan (`buildTargets`: the repository around the working
-directory, or the repository or folder `--path` names), never from the
-report's `scopes` or a finding's `scope` (a note in `--verbose` only).
-
-Three guards are built: `project` (repo or folder), `user` (the
-`detect.TargetSource` locations of the scope's repositories) and their union, which the
-actions receive. A finding claiming `scope.type` `user` must resolve in `user`,
-all others in `project`, so a finding cannot pick the wider guard. Trash
-findings resolve with `ResolveParent`, all others with `Resolve`; a trash
-finding whose path is a symlink now, without the `symlink` risk flag, is refused
-(directory swapped for a link after the scan). Git findings (by kind or action)
-also need their repository (`Path`, or `Meta["repo"]` for worktree findings) to
-be a repository of the scope, and a `Ref` that neither starts with `-` nor
-contains control characters. Refused findings are listed and counted and make
-the command exit 1 after the accepted ones were processed; findings selected
-away with `--id` are never evaluated. Findings without an action (also with
-`--force`) are skipped with a re-scan hint, an unknown action type is refused,
-a known but unimplemented one is skipped. Risk flags, sizes and ages from the
-file are not trusted: the executor's `Plan` re-validates everything.
-
-The user's selection and configuration apply as in a scan. `-d/--detector` is
-validated against the registry (unknown name: exit 2) and findings of other
-detectors are left alone silently. `vet` derives the effective configuration
-(`ForTarget`, including the tighten-only `.brooom.json`) from the resolved
-path, never from the file's scope, and refuses a finding of a detector that is
-disabled there or whose path lies below an `exclude`d directory (`clean_config.go`).
-The disabled-detector part is a courtesy check only: it is keyed on the
-`Detector` field of the file, so a renamed detector bypasses it (pinned by
-`TestCleanDisabledDetectorCheckIsCourtesy`). Deriving the detector from the
-finding kind would not help, since several detectors share a kind. The exclude
-check, the scope guard, the catalog protection and the action re-validation do
-not read that field.
-The catalog protect rules are enforced by the trash action (step 8 above).
-Accepted git maintenance findings lose their `Args`: the expiry of `git-gc`,
-`git-prune` and `git-reflog-expire` comes from the repository's configuration
-(`targetGitBloat`), so a forged `{"expire": "now"}` has no effect. `delete-branch`
-derives merged, squash-merged and remote containment from the repository at
-plan and apply time and never reads `Detector` or `Args["verified"]`. Execution
-is `runExecutor`, shared with sweep.
-
 ### Sweep presets (`internal/presets`, `internal/cli/cmd_sweep.go`)
 
 Sweep is the one cleaning command. `brooom sweep [preset]` resolves the preset
@@ -573,8 +506,8 @@ confidence floors and an overlay. Presets are named by intent:
   high confidence (`Preset.Floors`): medium means the project is still being
   worked on, and trashing its `node_modules` is not what "everything" means.
 
-No preset runs stale-branch or large-untracked: sweep never removes unmerged
-work, and it has no `--force`. Skip reasons that used to say "re-run with
+No preset runs stale-branch: sweep never removes unmerged work, and it has
+no `--force`. Skip reasons that used to say "re-run with
 --force" point to `brooom review` instead.
 
 ### Emptying the OS trash (`internal/cli/cmd_emptytrash.go`, `internal/trash/empty.go`)
@@ -589,8 +522,8 @@ recorded allocated size; directories are compared by type, because a
 cross-device move changes their allocation. Refused items are listed as kept
 with the reason. After one confirmation `trash.RemoveStored` deletes the copy
 and its `.trashinfo`/`$I` metadata, and `session.Store.MarkTrashEmptied` marks
-the entries not restorable with a recovery hint, as `MarkPurged` does for
-quarantine. The user's own trash content is never listed or touched.
+the entries not restorable with a recovery hint. The user's own trash content
+is never listed or touched.
 
 ### Review (`internal/cli/cmd_review.go`)
 
@@ -611,8 +544,7 @@ included, from the trash) and branches (from the recorded tip). Without a
 terminal, or with `--dry-run`, review only lists.
 
 The executor shows the plan, asks `Proceed with N items (SIZE)? [y/N]` once
-(`action.confirmer.confirm`, naming permanent deletions in the question) and
-acts on an explicit yes. When `action.Options.Select` is set (the CLI sets it
+(`action.confirmer.confirm`) and acts on an explicit yes. When `action.Options.Select` is set (the CLI sets it
 only when stdin and stdout are terminals, `app.planSelector`), the question
 offers `e`: `internal/cli/checklist` (bubbletea, alternate screen) lists every
 item ticked, and only the items still ticked on enter run; q, esc, ctrl+c,
@@ -623,9 +555,10 @@ and Enter never arrives; other readers are wrapped so the end of input aborts. T
 nothing to do never needs an answer. `compact` becomes `action.Options.Brief`:
 the plan is still shown when the run asks, but the summary is the one line of
 `renderBriefSummary` (`internal/action/brief.go`): failures, a skipped count,
-the undo line and, last, the counts per kind with the reclaimed size.
-`--verbose` turns Brief off. A machine `--format` only reports, like
-`--dry-run`, and is a usage error with `--yes`. The overlay is applied right
+the undo line and, last, the counts per kind with the reclaimed size;
+`--dry-run` shows the full plan. A machine `--format` only reports, like
+`--dry-run` (through `runScan`, the shared report path that also streams
+`ndjson`), and is a usage error with `--yes`. The overlay is applied right
 after `config.Load` in `newScanRequest` and before `ForTarget`, so root
 overrides and the tighten-only `.brooom.json` still act on top of it. Findings
 the keep filter rejects are dropped in `execute`, before reporting and
@@ -636,7 +569,7 @@ in the restricted comparison of `now`, `never`, `N.days.ago` and `N.weeks.ago`;
 longer, equal and unparseable values are kept, so the default `2.weeks.ago`
 prune expiry is never raised. Overlays only switch things off
 (`include_stale` worktrees) and never touch age thresholds,
-`RecentDays`, protected branches, the trash strategy or `AllowDelete`.
+`RecentDays` or protected branches.
 `--detector` is intersected with the preset; naming one outside it is a usage
 error that names the preset that runs it. `config.PresetNames` and
 `config.LegacyPresetNames` mirror the presets package (pinned by a test)
@@ -648,8 +581,8 @@ because `presets` imports `config`.
 `git-prune` (`git prune --expire=<date>`) and `git-reflog-expire`
 (`git -c gc.refs/stash.reflogExpire=never -c gc.refs/stash.reflogExpireUnreachable=never
 -c gc.reflogExpire=<date> reflog expire --all`, see `gitx.ReflogExpireArgs`). They destroy data that is
-otherwise recoverable, so each is opt-in (`brooom git purge --gc|--prune|
---reflog-expire`), never restorable (`Restorable=false`, `Undo` returns an
+otherwise recoverable, so only the `everything` preset runs them, never
+restorable (`Restorable=false`, `Undo` returns an
 error wrapping `trash.ErrNotRestorable` with the explanation) and every
 entry carries a `RecoveryHint` saying what was lost. Never `--force`,
 `--aggressive` or `--cruft`; gc's own reflog expiry follows the user's git
@@ -690,13 +623,6 @@ gc, so later steps see the expired reflog. The executor runs steps one after
 another, so two maintenance steps never run concurrently on one repository; a
 parallel executor would have to keep that per-repository serialization.
 
-`brooom git purge` without flags only reports the git-bloat findings.
-`--gc` acts on repositories with a loose-object or pack finding only;
-`--reflog-expire`/`--prune` synthesize a finding for every repository in scope
-(one per common git dir, linked worktrees folded into the main one) and let
-the dry run decide. Machine formats are refused together with the flags, and
-invalid dates are usage errors before anything is planned.
-
 ### Trash (`internal/trash`)
 
 `Remove(path) (Record, error)` / `Restore(Record)`. Never follows symlinks.
@@ -710,7 +636,7 @@ disabled, so `Remove` refuses before calling it (never after) when
 GUID (network shares, some removable media) or the per-volume settings under
 `HKCU\...\Explorer\BitBucket\Volume\<GUID>` cannot be read. A missing
 `MaxCapacity` counts as unreadable; opening the Recycle Bin properties once
-creates the key. All refusals recommend `--trash-strategy quarantine`. The
+creates the key. Every refusal says that brooom leaves the item alone. The
 shell API does not accept `\\?\` paths, so paths longer than 259 characters
 are refused the same way. Pure logic (`$I` parsing, `pFrom` buffer, path
 refusals, bin decision) is in `recyclebin_parse.go` and tested on every OS.
@@ -729,7 +655,7 @@ pending after one `Lstat` and nothing is retried. Restore validates
 path (`userBinDir`), which also covers volumes mounted into a folder. Parsed
 `$I` files are cached per trasher, so a batch reads each once.
 
-Cross-device moves (quarantine on another volume) check before copying:
+Cross-device moves (into a trash on another volume) check before copying:
 `checkCopyable` refuses trees with entries `copyTree` cannot reproduce
 (mount-point junctions on Windows, fifos and devices on unix) and, on Windows,
 `procs.OpenFiles` refuses an item with open files. Directory symlinks are
@@ -739,14 +665,18 @@ file as in use. Restoring junctions is not supported.
 
 The OS trash is selected per platform by `newOSTrasher` in
 `ostrash_unix.go` (freedesktop), `ostrash_darwin.go` and
-`ostrash_windows.go`; quarantine and delete live in `quarantine.go` and
-`delete.go`, so the platform implementations never touch each other's files.
+`ostrash_windows.go`, so the platform implementations never touch each
+other's files. Records carry the strategy `trash`; manifests of earlier
+releases may also hold `quarantine` or `delete`, which undo reports as not
+restorable. Tests never reach the real trash: they use `testutil.DirTrasher`,
+which the CLI tests install through the `newTrasher` seam.
 
 ### Sessions (`internal/session`)
 
 One manifest per applied run, `~/.brooom/sessions/<id>.json` (mode 0600, dir
 0700), ids like `20260929-224501-3f9a`. `Manifest` holds `version`, `id`,
-`started_at`, `finished_at` (zero if the run crashed), `command`, `entries[]`
+`started_at`, `finished_at` (zero if the run crashed), `command`, `root` (the
+repository or folder the run worked on; empty in older manifests), `entries[]`
 and `reclaimed_bytes` (sum of `size_bytes` of `applied` entries only; call
 `RecomputeReclaimed` after changing statuses). Each `Entry` records status
 (`applied`, `failed`, `skipped`, `restored`), action, path, size, the trash
@@ -761,16 +691,14 @@ I/O of an apply is linear instead of rewriting the whole manifest per entry;
 replay the journal on top of the snapshot (idempotent by entry index, a torn
 last line is ignored). A manifest whose `id` differs from its file name
 (`X.backup.json` holding id `X`) is refused, `List` reports it as a problem.
-The quarantine manifest works the same way: `manifest.json` is written once and
-`manifest.journal` gets one item line per `Remove`; the parsed manifest is
-cached per trasher and `Restore` folds the journal into a rewritten manifest.
 `Load` takes a full id or unique prefix (`ErrNotFound`, `ErrAmbiguous`; ids
 with separators or `..` are refused). `List` returns manifests newest first
 plus `[]Problem` for unreadable, corrupt or unsupported-version files, so one
-damaged file never hides the history. `brooom sessions [id] [--format json]`
-is the read-only view.
+damaged file never hides the history. `brooom sessions [--format json]` is
+the read-only view: one row per session with id, root, applied items and
+reclaimed bytes.
 
-#### Undo, purge and the retention notice
+#### Undo
 
 `action.PlanUndo` / `action.RunUndo` (`internal/action/undo.go`,
 `undo_run.go`) hold the undo logic and `internal/cli/cmd_undo.go` only wires
@@ -786,19 +714,11 @@ printed after an apply (`Result.UndoFlags`, from `app.scopeFlags`) repeats
 directory. `session.Manifest.Workspaces` is only read: a session of an
 earlier release that used `--workspaces` gets a note that `--path` is needed. Guard checks use
 the entry's original paths (never trusted); the CLI builds the guard like
-`scan` does (usage error outside a repository) and adds the user locations of
+a sweep does (usage error outside a repository) and adds the user locations of
 `detect.TargetSource` detectors only when an entry falls outside it. Conflicts
 of actions that are not file conflicts (existing branch, occupied worktree
 path) return an error matching `trash.ErrRestoreConflict`. The manifest is
 saved after every restored entry.
-
-`trash.ListQuarantine` / `trash.Purge` (`internal/trash/purge.go`) list
-session directories (names must match the session id format, symlinks are
-skipped and reported, manifest.json gives time and size with the directory
-mtime and a recursive size as fallback) and delete them;
-`session.Store.MarkPurged` makes the affected manifest entries
-non-restorable. `retentionNotice` (`internal/cli/notice.go`) is a root
-post-run hook that prints the one-line stderr notice.
 
 #### macOS Trash and undo
 
@@ -810,7 +730,8 @@ other volumes use their `.Trashes`; the resulting Trash path becomes
 is trashed as the link. If the native call fails for an item, the item is
 moved into `~/.Trash` under a Finder-style unique name (`file 2.txt`); those
 items have no Put Back metadata, and if `~/.Trash` is not writable the error
-suggests `--trash-strategy quarantine` (never a silent permanent delete).
+says to grant Full Disk Access or remove the item by hand (never a silent
+permanent delete).
 
 Since macOS 10.15 `~/.Trash` is protected by TCC: without Full Disk Access
 the terminal gets `Operation not permitted` when it inspects or moves items
@@ -857,8 +778,8 @@ days, unreadable or oversized ones, those of vanished roots (`CheckRoots`) and
 old temp files. The gitbloat blob caches (`gitbloat-blobs-<hash>.json`,
 capped at 1 MiB, and their `.tmp` files) in the same directory are listed by age,
 size and interrupted write; a cache hit refreshes the mtime. Their name is a hash
-of the repository path, so there is no root check. It runs by age once per process on the first cache write and in
-full via `brooom purge`.
+of the repository path, so there is no root check. It runs by age once per
+process on the first cache write.
 
 ### Branch classification and delete-branch planning
 
@@ -877,7 +798,7 @@ stored, never truncated or failed checks; unreadable or inconsistent files are
 misses; only scan handles (`Cache.SetVerdictDir`) read the store, so actions,
 which use uncached handles, always verify against the live repository. Verdict
 files are tiny but every new base commit orphans them, so the prune pass
-(automatic once per process, and `brooom purge`) ages them out like the size
+(automatic once per process) ages them out like the size
 caches (same max age, plus stale `tmp-*` files of interrupted writes); the
 whole cache directory is safe to delete.
 
@@ -911,11 +832,8 @@ counts; `(deleted)` targets and `/` are ignored), `lsof` on macOS (a process
 whose working directory is exactly the directory counts), Restart Manager on
 Windows. The Restart Manager only knows regular files: a shell or IDE whose
 working directory is inside a directory holds just a directory handle and is
-not detected there. Under the delete strategy `remove-worktree` therefore
-probes with a rename to a sibling and back before `git worktree remove`
-(`action.checkWorktreeRenamable`, Apply only) and refuses on a sharing
-violation, non-overridably; trash and quarantine move the directory with one
-rename and need no probe. `gitx.CwdWithin` additionally answers on every OS
+not detected there; `remove-worktree` moves the directory to the trash with
+one rename, which fails cleanly on such a handle. `gitx.CwdWithin` additionally answers on every OS
 whether this process's own working directory is inside a path.
 
 `procs.Snapshot` (`detect.Env.Open`, set once per scan by the pipeline) lets
@@ -932,7 +850,7 @@ One sizing rule serves every number Brooom shows: allocated bytes
 directories themselves, hard links counted once, symlinks as their own length
 and never followed. `walk.DirSize` implements it for trees (cache version 5),
 `walk.AllocatedSize` / `walk.LeafSize` for single items. The detectors
-(`large-untracked`, `log-and-runtime-files`, `ai-artifacts`) size files with
+(`log-and-runtime-files`, `ai-artifacts`) size files with
 `LeafSize`, so a sparse file counts what it occupies and `min_size_bytes` is
 compared against that. `trash.treeSize` is `DirSize` too, and `Apply` passes the
 size of its re-validating walk to the trasher through `trash.WithSizeHint`
@@ -961,9 +879,7 @@ values parse identically in both. `findings.QuoteFor(goos, s)` renders either
 dialect on any OS for tests. The trash step's display command follows the host
 shell (`internal/action/display.go`): POSIX on unix, PowerShell on Windows (the
 Recycle Bin has no cmdlet, so that variant is a labelled, illustrative
-comment). A quarantine move shows the real destination pattern
-`<quarantine>/<session-id>/<n>/`, since the session id only exists once the run
-starts.
+comment).
 
 `delete-branch` names the reference that justified `-d` ("fully merged into
 upstream origin/x" or "HEAD"). Its recovery hint warns about unreachable objects
@@ -1002,12 +918,11 @@ does. Phases: discover (scope resolution), scan (one step per target x detector
 pair, one finding event per unique finding), plan, apply, undo.
 
 The CLI decides once per invocation (`app.useProgress`, first call wins) with
-the pure `showProgress`: `--progress=never` and the machine formats (json,
-ndjson, plain) never draw; `always` draws otherwise, even without a terminal;
-`auto` needs stderr to be a terminal and neither `--quiet`, `--verbose` (its log
-lines would shred the live region), `CI` (any value) nor `TERM=dumb`. The format
-is the one the command actually prints (an applying run, `git purge` with flags,
-`clean` and `undo` print text whatever `output.format` says). Until decided the
+the pure `showProgress`: the machine formats (json, ndjson, plain) never
+draw; otherwise it needs stderr to be a terminal and neither `--quiet`, `CI`
+(any value) nor `TERM=dumb`. The format is the one the command actually prints
+(an applying run, `review` and `undo` print text whatever `output.format`
+says). Until decided the
 reporter is the no-op, so a path that forgets to decide fails closed.
 
 `progressui.Display` keeps the run state under a mutex (reporter methods never
@@ -1027,8 +942,8 @@ interactive stdout terminal for its background colour once at process start
 ### Completions and the CLI reference (`internal/cli`)
 
 `completion.go` registers the dynamic shell completions (`--detector` with
-comma lists, `--format`, the sweep preset argument, `--trash-strategy`,
-session ids, and directories for the path argument and `--path`) by walking
+comma lists, `--format`, the sweep preset argument, session ids, and
+directories for the path argument and `--path`) by walking
 the tree in `newRootCmd`; they only read registries,
 config and manifests and degrade to an empty list. `completion_cmd.go` keeps
 cobra's `completion` command visible with per-shell install instructions.
@@ -1047,7 +962,6 @@ Layout of `~/.brooom`:
 config.json
 cache/        scan cache (safe to delete)
 sessions/     <session-id>.json manifests
-quarantine/   <session-id>/... quarantined files
 ```
 
 A repository may contain `.brooom.json` that can only tighten rules (disable
@@ -1068,15 +982,8 @@ The full key reference, merge semantics, validation rules and the
 - Tests: table-driven, `t.TempDir()`, `testutil.NewRepo` for git. Tests must
   pass on Linux, macOS and Windows (CI runs all three). Never touch the real
   home directory: set `BROOOM_HOME` / `HOME` / `XDG_DATA_HOME` to temp dirs.
-- CLI post-run steps: cobra runs only one `PersistentPostRun` per command
-  chain (the nearest one), so the root owns the single hook and it only
-  iterates `a.postRunHooks`. Features (update notice, and later #26) must
-  append to `a.postRunHooks` and never assign a command's `PersistentPostRun`,
-  or they would silently replace each other. Hooks run in registration order
-  after a successful command only.
-- Background work (update check): it is best effort, bounded by a short grace
-  period at exit, records each attempt in its cache so a slow or failing
-  network costs at most one request per backoff, and never fails a command.
+- No test may reach the real OS trash: actions get `testutil.DirTrasher`,
+  and the CLI tests swap `newTrasher` for it in `TestMain`.
 - Errors: wrap with context (`fmt.Errorf("...: %w", err)`), name the path.
 - Comments explain *why*; doc comments on every exported identifier.
 - Functions stay below cyclomatic complexity 15 (`gocyclo`).
@@ -1095,8 +1002,9 @@ Scan errors come in two classes (#191), told apart by `findings.ScanError.Fatal`
 (`"fatal": true` in the json report, omitted otherwise):
 
 - Fatal: a detector returned a plain error, or panicked, so its findings for
-  that target are missing and the report may be incomplete. `scan` (and the
-  root command) exits `4` and says `N detector failure(s)` on stderr.
+  that target are missing and the report may be incomplete. A sweep that only
+  reports (a machine format) exits `4` and says `N detector failure(s)` on
+  stderr.
 - Notes: something was skipped or only partly checked and the result is still
   trustworthy: a repository refused for dubious ownership, a repository or
   root skipped before scanning (bad per-repo config, path outside the scope),
@@ -1106,20 +1014,15 @@ Scan errors come in two classes (#191), told apart by `findings.ScanError.Fatal`
 A detector picks the class by what it returns from `Detect`: `detect.Note(err)`
 for a note, any other error for a failure. The engine sets `Fatal` from that
 and nowhere else. Exit `3` still wins when nothing was scanned at all. The
-acting flows (`sweep` and `clean`) keep
-their own exit rules and do not return `4`: a run that has already trashed
+acting flows (`sweep` with a plan, `review`) keep their own exit rules and do
+not return `4`: a run that has already trashed
 items must not report a failure for a detector problem that its plan never saw;
 the errors are still printed (stderr or in-band). Every error is listed in the
 report (table, tree, summary, json) or on stderr (plain, ndjson).
 
-After a scan with actionable findings, `scanHint` prints one line: the sweep
-that acts on them (`brooom sweep` with the scope flags, the preset only when
-the configured one covers none of the findings, and the `--detector` names the
-preset runs), plus how many findings no preset covers. Sweep shows its plan
-and asks, so the hint needs no preview step. An explicit `-f
-tree|table|summary` renders the scan report before the plan of an acting run;
-without `-f` an acting run shows only the plan; a machine format only reports
-and is a usage error with `--yes`.
+An explicit `-f tree|table|summary` renders the scan report before the plan
+of an acting run; without `-f` an acting run shows only the plan; a machine
+format only reports and is a usage error with `--yes`.
 
 Decision (#182 item 5): the issue proposed rejecting every explicit `--format`
 on an acting run. Brooom instead honours an explicit human format

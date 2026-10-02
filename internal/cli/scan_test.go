@@ -837,15 +837,15 @@ func TestNoColor(t *testing.T) {
 	}
 }
 
-func TestQuietAndVerbose(t *testing.T) {
+func TestScanNotesStayOffStderr(t *testing.T) {
 	needGit(t)
 	isolate(t)
 	repo := testutil.NewRepo(t)
 	t.Chdir(repo.Dir)
 	d, _ := recordingFake(t, detect.CategoryFiles)
 	failing := registerFake(t, detect.CategoryFiles, func(context.Context, *detect.Env, scope.Target, func(findings.Finding)) error {
-		// A note keeps the exit code at 0 so the test isolates verbosity.
-		return detect.Note(errors.New("verbose-visible failure"))
+		// A note keeps the exit code at 0 so the test isolates the channels.
+		return detect.Note(errors.New("visible failure"))
 	})
 	both := d.name + "," + failing.name
 
@@ -853,25 +853,12 @@ func TestQuietAndVerbose(t *testing.T) {
 	if code != ExitOK || errOut != "" {
 		t.Errorf("default run must be silent on stderr: code %d, stderr %q", code, errOut)
 	}
-	if !strings.Contains(out, "verbose-visible failure") {
+	if !strings.Contains(out, "visible failure") {
 		t.Errorf("stdout must carry the scan error rendering:\n%s", out)
 	}
 
-	code, out, errOut = runScanCmd(t, "scan", "-v", "-d", both)
-	if code != ExitOK {
-		t.Fatalf("code %d", code)
-	}
-	for _, want := range []string{"config:", "1 target(s)", "2 detector(s)", d.name + ": 1 finding(s)", failing.name + ": 0 finding(s)", "verbose-visible failure"} {
-		if !strings.Contains(errOut, want) {
-			t.Errorf("verbose stderr lacks %q:\n%s", want, errOut)
-		}
-	}
-	if strings.Contains(out, "config:") || strings.Contains(out, "target(s)") {
-		t.Errorf("progress must never reach stdout:\n%s", out)
-	}
-
-	code, _, errOut = runScanCmd(t, "scan", "-q", "-v", "-d", both)
+	code, _, errOut = runScanCmd(t, "scan", "-q", "-d", both)
 	if code != ExitOK || errOut != "" {
-		t.Errorf("--quiet must suppress all stderr progress even with --verbose: code %d, %q", code, errOut)
+		t.Errorf("--quiet must keep stderr silent: code %d, %q", code, errOut)
 	}
 }

@@ -150,7 +150,7 @@ func TestValidateBinPath(t *testing.T) {
 		{"dotdot", `C:\dir\..\x`, "clean"},
 		{"dot", `C:\dir\.\x`, "clean"},
 		{"verbatim", `\\?\C:\dir\file`, `\\?\`},
-		{"long", long, "quarantine"},
+		{"long", long, manualHint},
 		{"exactly max", `C:\` + strings.Repeat("a", maxShellPath-3), ""},
 	}
 	for _, tt := range tests {
@@ -195,7 +195,7 @@ func TestDecideBinAvailability(t *testing.T) {
 				t.Fatalf("err = %v, wantError %v", err, tt.wantError)
 			}
 			if err != nil {
-				for _, want := range []string{`C:\x\f.bin`, "--trash-strategy quarantine"} {
+				for _, want := range []string{`C:\x\f.bin`, manualHint} {
 					if !strings.Contains(err.Error(), want) {
 						t.Errorf("error %q lacks %q", err, want)
 					}

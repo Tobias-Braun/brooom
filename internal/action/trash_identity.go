@@ -79,16 +79,15 @@ func inspectError(paths ...string) error {
 // RefuseByIdentity is the spelling-independent half of the static trash
 // refusals. The lexical checks of refuseTarget compare path strings, which an
 // alias defeats: on Windows "C:\repo\GIT~1" is the repository's ".git" and
-// "QUARAN~1" is Brooom's quarantine. This function compares file identity
+// "SESSIO~1" is Brooom's sessions directory. This function compares file identity
 // instead and refuses path when it, or any directory above it, is
 //
 //   - an entry that is the same object as the ".git" next to it,
 //   - the same object as, or (for the path itself) a parent of, the Brooom
 //     home or the user's home, or
-//   - the same object as Brooom's sessions or quarantine directory.
+//   - the same object as Brooom's sessions directory.
 //
-// It runs in Plan, Apply and for `brooom clean --from` vetting, on the path
-// after the guard resolved it. The returned error wraps ErrSkipped.
+// It runs in Plan and Apply, on the path after the guard resolved it. The returned error wraps ErrSkipped.
 func RefuseByIdentity(path string) error {
 	chain := ancestorsOf(path)
 	for _, a := range chain {
@@ -109,7 +108,7 @@ func RefuseByIdentity(path string) error {
 	for _, s := range brooomStateDirs() {
 		for _, a := range chain {
 			if isSameEntry(a, s) {
-				return skipf("refusing to remove Brooom's own session or quarantine data")
+				return skipf("refusing to remove Brooom's own session data")
 			}
 		}
 	}

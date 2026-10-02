@@ -63,9 +63,8 @@ directory itself changed within `thresholds.recent_days`. Further evidence:
 `gitignored` and `not_gitignored` (a hint that `git status` shows the
 directory). A `gitignored` directory also carries the informational risk flag
 of the same name. `not_gitignored` is evidence only and never a risk flag:
-the artifact directories are regenerable by definition and the default
-strategies (`trash`, `quarantine`) are reversible. Only the permanent
-`delete` strategy refuses directories that hold untracked, non-ignored files.
+the artifact directories are regenerable by definition and moving them to
+the OS trash is reversible.
 
 ## Tracked files and Force
 
@@ -85,15 +84,6 @@ subdirectory), `walk.DirSummary.Incomplete` is set and the size is only a lower
 bound. The finding is kept, with evidence `unreadable` and the suggested action
 `none` (reason "cannot read part of the directory"), because the `trash` action
 refuses such directories at apply time anyway.
-
-## Claim matcher
-
-`buildartifacts.Claims(dir)` returns a pure predicate `func(rel string, isDir
-bool) bool` that applies exactly the rules of the detector (catalog and config
-overrides through `ClaimsWith`, markers looked up in the parent of `rel` under
-`dir`). It reads directory listings only: no sizes, no git, no writes. The
-detector uses the same matcher, so the two cannot diverge. The
-`large-untracked` detector uses it to skip directories this detector owns.
 
 ## Configuration
 

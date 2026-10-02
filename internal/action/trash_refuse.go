@@ -53,7 +53,7 @@ func isVolumeRoot(path string) bool { return filepath.Dir(path) == path }
 
 // protectedPaths returns the directories that must never be removed together
 // with everything that contains them, keyed by a description for the skip
-// reason: the Brooom home (config, cache, sessions, quarantine) and the
+// reason: the Brooom home (config, cache, sessions) and the
 // user's home directory. Removing an ancestor of either destroys it too.
 // Lookup failures leave the entry out: they mean the environment has no such
 // location, so there is nothing to protect.
@@ -77,14 +77,14 @@ func protectedPaths() map[string]string {
 }
 
 // brooomStateDirs returns the parts of the Brooom home that are off limits
-// even when they are only a target's ancestor: the manifests and the
-// quarantine hold the only undo information.
+// even when they are only a target's ancestor: the manifests hold the only
+// undo information.
 func brooomStateDirs() []string {
 	d, err := config.ResolveDirs()
 	if err != nil {
 		return nil
 	}
-	dirs := []string{d.Sessions, d.Quarantine}
+	dirs := []string{d.Sessions}
 	for _, p := range dirs {
 		if r, err := filepath.EvalSymlinks(p); err == nil && r != p {
 			dirs = append(dirs, r)
@@ -93,8 +93,8 @@ func brooomStateDirs() []string {
 	return dirs
 }
 
-// brooomHomeDirs returns the whole Brooom home (config, cache, sessions,
-// quarantine) in its configured and resolved spelling. Unlike
+// brooomHomeDirs returns the whole Brooom home (config, cache, sessions) in
+// its configured and resolved spelling. Unlike
 // brooomStateDirs it also covers config and cache: a restored file there
 // could replace the configuration Brooom trusts.
 func brooomHomeDirs() []string {
@@ -151,7 +151,7 @@ func refuseBrooomAndHome(path string) error {
 	}
 	for _, p := range brooomStateDirs() {
 		if covers(p, path) {
-			return skipf("refusing to remove Brooom's own session or quarantine data")
+			return skipf("refusing to remove Brooom's own session data")
 		}
 	}
 	return nil
@@ -199,8 +199,8 @@ func restoreForbiddenDirs() []string {
 }
 
 // refuseRestoreTarget applies the static refusals that matter for writing:
-// a restore destination must never be git metadata or Brooom's own session or
-// quarantine data, since a forged manifest could otherwise plant hooks or
+// a restore destination must never be git metadata or Brooom's own session
+// data, since a forged manifest could otherwise plant hooks or
 // rewrite the undo information itself. It guards every undo that writes
 // (trash and remove-worktree). The check is lexical first and then
 // identity based (identityOf on every existing ancestor), because a name
@@ -225,7 +225,7 @@ func refuseRestoreTarget(dest string) error {
 
 // refuseInsideBrooom is the refusal for a destination in Brooom's own data.
 func refuseInsideBrooom(dest string) error {
-	return fmt.Errorf("undo: refusing to restore to %s: inside Brooom's own data (home, sessions or quarantine)", dest)
+	return fmt.Errorf("undo: refusing to restore to %s: inside Brooom's own data (home or sessions)", dest)
 }
 
 // refuseRestoreByIdentity walks the existing ancestors of dest and compares

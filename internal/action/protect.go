@@ -15,9 +15,9 @@ import (
 // .mcp.json, CLAUDE.local.md or .claude/settings.local.json, and the user
 // level configuration of AI tools) to a path that is about to be removed.
 //
-// The detectors already drop protected candidates, but a findings file is
-// untrusted input (`brooom clean --from`), so the trash action, the one place
-// that removes files, enforces the same rules again. It never trusts the
+// The detectors already drop protected candidates, but a step may come from
+// any caller, so the trash action, the one place that removes files,
+// enforces the same rules again. It never trusts the
 // finding's detector or kind: only the path counts.
 type protection struct {
 	// root is the project root the anchored project patterns hang off: the

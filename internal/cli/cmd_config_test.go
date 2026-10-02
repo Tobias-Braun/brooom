@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/Tobias-Braun/brooom/internal/config"
+	"github.com/Tobias-Braun/brooom/internal/testutil"
+	"github.com/Tobias-Braun/brooom/internal/trash"
 )
 
 // Editor helper: the test binary re-invokes itself as a fake editor so no
@@ -26,6 +28,15 @@ const (
 func TestMain(m *testing.M) {
 	if os.Getenv(helperEnv) == "1" {
 		os.Exit(fakeEditor())
+	}
+	// Every removal goes to a directory of the test's Brooom home instead of
+	// the real OS trash.
+	newTrasher = func() (trash.Trasher, error) {
+		dirs, err := config.ResolveDirs()
+		if err != nil {
+			return nil, err
+		}
+		return testutil.DirTrasher{Dir: filepath.Join(dirs.Home, "test-trash")}, nil
 	}
 	os.Exit(m.Run())
 }
@@ -86,7 +97,7 @@ func TestConfigInit(t *testing.T) {
 	if err := json.Unmarshal([]byte(readFile(t, cfg)), &doc); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"version", "thresholds", "git", "detectors", "trash", "output", "scan"} {
+	for _, k := range []string{"version", "thresholds", "git", "detectors", "output", "scan", "sweep"} {
 		if _, ok := doc[k]; !ok {
 			t.Errorf("written file lacks %q", k)
 		}
@@ -159,50 +170,10 @@ func TestConfigShow(t *testing.T) {
 
 func TestConfigShowInvalid(t *testing.T) {
 	cfg, _, _ := configEnv(t)
-	writeFile(t, cfg, `{"version":1,"scan":{"max_depth":-1},"trash":{"strategy":"shred"}}`)
+	writeFile(t, cfg, `{"version":1,"scan":{"max_depth":-1},"output":{"format":"xml"}}`)
 	code, _, errOut := run(t, "config", "show")
-	if code != ExitError || !strings.Contains(errOut, "scan.max_depth") || !strings.Contains(errOut, "trash.strategy") {
+	if code != ExitError || !strings.Contains(errOut, "scan.max_depth") || !strings.Contains(errOut, "output.format") {
 		t.Fatalf("code=%d err=%q", code, errOut)
-	}
-}
-
-func TestConfigValidate(t *testing.T) {
-	cfg, _, _ := configEnv(t)
-
-	code, out, _ := run(t, "config", "validate")
-	if code != ExitOK || !strings.Contains(out, "ok") || !strings.Contains(out, "defaults apply") {
-		t.Fatalf("missing file: code=%d out=%q", code, out)
-	}
-
-	writeFile(t, cfg, `{"version":1}`)
-	code, out, _ = run(t, "config", "validate")
-	if code != ExitOK || strings.TrimSpace(out) != "ok" {
-		t.Fatalf("valid: code=%d out=%q", code, out)
-	}
-
-	writeFile(t, cfg, `{"version":1,"scan":{"max_depth":-1},"trash":{"strategy":"shred"},"output":{"format":"xml"}}`)
-	code, _, errOut := run(t, "config", "validate")
-	if code != ExitError {
-		t.Fatalf("code = %d", code)
-	}
-	lines := 0
-	for _, want := range []string{"scan.max_depth", "trash.strategy", "output.format"} {
-		if !strings.Contains(errOut, want) {
-			t.Errorf("stderr lacks %q:\n%s", want, errOut)
-		}
-	}
-	for _, l := range strings.Split(errOut, "\n") {
-		if strings.Contains(l, cfg+": ") {
-			lines++
-		}
-	}
-	if lines != 3 {
-		t.Errorf("want 3 problem lines, got %d:\n%s", lines, errOut)
-	}
-
-	writeFile(t, cfg, `{`)
-	if code, _, _ := run(t, "config", "validate"); code != ExitError {
-		t.Errorf("syntax error: code=%d", code)
 	}
 }
 
@@ -232,10 +203,10 @@ func TestConfigEditCreatesDefaultsFirst(t *testing.T) {
 
 func TestConfigEditInvalidKeepsFile(t *testing.T) {
 	cfg, _, _ := configEnv(t)
-	bad := `{"version":1,"scan":{"max_depth":-5},"trash":{"strategy":"shred"}}`
+	bad := `{"version":1,"scan":{"max_depth":-5},"output":{"format":"xml"}}`
 	useFakeEditor(t, &bad, 0)
 	code, _, errOut := run(t, "config", "edit")
-	if code != ExitError || !strings.Contains(errOut, "scan.max_depth") || !strings.Contains(errOut, "trash.strategy") {
+	if code != ExitError || !strings.Contains(errOut, "scan.max_depth") || !strings.Contains(errOut, "output.format") {
 		t.Fatalf("code=%d err=%q", code, errOut)
 	}
 	if readFile(t, cfg) != bad {

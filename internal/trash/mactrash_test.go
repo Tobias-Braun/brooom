@@ -12,8 +12,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/Tobias-Braun/brooom/internal/config"
 )
 
 // fakeNative stands in for the NSFileManager call: it moves items into
@@ -133,7 +131,7 @@ func TestRemoveManyBatchWithMissingPathAndSpecialNames(t *testing.T) {
 // was trashed into <home>/.Trash.
 func checkTrashedFile(t *testing.T, r Record, orig, home string) {
 	t.Helper()
-	if r.Strategy != config.StrategyTrash || r.OriginalPath != orig || r.SizeBytes != fiveByteFileSize(t) || r.IsDir ||
+	if r.Strategy != StrategyTrash || r.OriginalPath != orig || r.SizeBytes != fiveByteFileSize(t) || r.IsDir ||
 		!r.Restorable || r.RemovedAt.IsZero() || r.RemovedAt.Location() != time.UTC {
 		t.Errorf("unexpected record %+v", r)
 	}
@@ -259,7 +257,7 @@ func TestNativeResultMustBeAbsolute(t *testing.T) {
 	}
 }
 
-func TestFallbackFailureNeverDeletesAndSuggestsQuarantine(t *testing.T) {
+func TestFallbackFailureNeverDeletesAndNamesTheFix(t *testing.T) {
 	m, f, _ := newFakeTrash(t)
 	f.err = errors.New("native trash unavailable")
 	m.move = func(context.Context, string, string) error {
@@ -272,7 +270,7 @@ func TestFallbackFailureNeverDeletesAndSuggestsQuarantine(t *testing.T) {
 		t.Fatal("want error")
 	}
 	// The errors quote paths with %q, which doubles Windows backslashes.
-	for _, want := range []string{fmt.Sprintf("%q", p), "--trash-strategy quarantine", "native trash unavailable"} {
+	for _, want := range []string{fmt.Sprintf("%q", p), "Full Disk Access", "native trash unavailable"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q lacks %q", err, want)
 		}

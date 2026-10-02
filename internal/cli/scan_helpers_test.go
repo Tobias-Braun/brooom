@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/findings"
@@ -169,15 +171,49 @@ func writeConfig(t *testing.T, home string, v any) string {
 	return path
 }
 
-// runCtx executes the CLI in-process and returns code, stdout and stderr.
+// runCtx runs the report pipeline of sweep (what a machine format prints)
+// in-process with the scan flags in args and returns code, stdout and stderr.
+// It takes no preset: the tests drive the pipeline with fake detectors that
+// no preset runs. A leading "scan" word is dropped.
 func runCtx(t *testing.T, ctx context.Context, args ...string) (int, string, string) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	code := executeContext(ctx, &app{io: IO{In: strings.NewReader(""), Out: &out, Err: &errOut}}, args)
-	return code, out.String(), errOut.String()
+	a := &app{io: IO{In: strings.NewReader(""), Out: &out, Err: &errOut}}
+	cmd := &cobra.Command{
+		Use: "scan [path]", SilenceUsage: true, SilenceErrors: true,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
+				return usageError{err}
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a.setPath(args)
+			return a.runScan(cmd, scanOptions{})
+		},
+	}
+	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError{err} })
+	fs := cmd.Flags()
+	fs.StringSliceVarP(&a.flags.detectors, "detector", "d", nil, "")
+	fs.StringVarP(&a.flags.format, "format", "f", "", "")
+	fs.BoolVarP(&a.flags.quiet, "quiet", "q", false, "")
+	fs.BoolVar(&a.flags.noColor, "no-color", false, "")
+	fs.StringVar(&a.flags.configPath, "config", "", "")
+	if len(args) > 0 && args[0] == "scan" {
+		args = args[1:]
+	}
+	cmd.SetArgs(args)
+	cmd.SetOut(&out)
+	err := cmd.ExecuteContext(ctx)
+	a.stopProgress(err == nil)
+	if err == nil {
+		return ExitOK, out.String(), errOut.String()
+	}
+	fmt.Fprintln(&errOut, "brooom:", renderError(err))
+	return exitCode(err), out.String(), errOut.String()
 }
 
-// runScanCmd runs `brooom <args>` with a background context.
+// runScanCmd runs the report pipeline with a background context.
 func runScanCmd(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	return runCtx(t, context.Background(), args...)

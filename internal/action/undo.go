@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/session"
@@ -25,7 +24,7 @@ const (
 	// UndoCannot means the entry cannot be restored; Reason says why.
 	UndoCannot UndoKind = "cannot-restore"
 	// UndoOutside means the scope guard refused the entry's location. The data
-	// is untouched in quarantine or the trash; only the scope of this run is
+	// is untouched in the trash; only the scope of this run is
 	// too narrow, so it is reported apart from entries that cannot be restored.
 	UndoOutside UndoKind = "outside-scope"
 	// UndoDone means the entry was restored by an earlier undo run.
@@ -59,7 +58,7 @@ func (e *undoConflictError) Is(target error) bool { return target == trash.ErrRe
 
 // PlanUndo classifies every entry of m, last applied first. Entries are undone
 // in reverse order because later steps can depend on earlier ones (a parent
-// directory quarantined after its child must be back before the child is put
+// directory trashed after its child must be back before the child is put
 // into it). Manifests are user-editable files, so nothing in an entry is
 // trusted: paths are checked against env.Guard here and again by the actions.
 // The plan only reads the file system.
@@ -108,8 +107,8 @@ func notUndoable(e session.Entry) (UndoKind, string) {
 			reason += " (" + e.Error + ")"
 		}
 		return UndoCannot, reason
-	case e.Trash != nil && e.Trash.Strategy == config.StrategyDelete:
-		return UndoCannot, "permanently deleted (the delete strategy keeps no copy)"
+	case e.Trash != nil && e.Trash.Strategy != trash.StrategyTrash:
+		return UndoCannot, legacyStrategyReason(*e.Trash)
 	case isMaintenance(e.Action):
 		return UndoCannot, "git maintenance cannot be undone"
 	case !e.Restorable:
@@ -229,4 +228,14 @@ func shortSHA(sha string) string {
 		return sha[:7]
 	}
 	return sha
+}
+
+// legacyStrategyReason explains why an entry that an earlier release removed
+// with its quarantine or delete strategy cannot be undone, and where a
+// quarantined copy still lies.
+func legacyStrategyReason(rec trash.Record) string {
+	if rec.StoredPath == "" {
+		return "permanently deleted by the " + string(rec.Strategy) + " strategy of an earlier release"
+	}
+	return "removed with the " + string(rec.Strategy) + " strategy of an earlier release; move " + rec.StoredPath + " back by hand"
 }

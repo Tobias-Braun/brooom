@@ -123,9 +123,9 @@ func TestApplyRepoConfig(t *testing.T) {
 				t.Errorf("ai=%d logs=%d", *d.AIArtifacts.MinAgeDays, *d.Logs.MinAgeDays)
 			}
 		}},
-		{name: "raise size floors large-untracked", rc: &RepoConfig{Thresholds: &ThresholdOverrides{MinSizeBytes: int64p(500 << 20)}}, check: func(t *testing.T, c *Config) {
-			if c.Thresholds.MinSizeBytes != 500<<20 || c.Detectors.LargeUntracked.MinSizeBytes != 500<<20 {
-				t.Errorf("size not floored: %+v", c.Detectors.LargeUntracked)
+		{name: "raise size", rc: &RepoConfig{Thresholds: &ThresholdOverrides{MinSizeBytes: int64p(500 << 20)}}, check: func(t *testing.T, c *Config) {
+			if c.Thresholds.MinSizeBytes != 500<<20 {
+				t.Errorf("size not raised: %d", c.Thresholds.MinSizeBytes)
 			}
 		}},
 		{name: "protected appended deduped in order", rc: &RepoConfig{ProtectedBranches: []string{"hotfix/*", "main", "hotfix/*", "prod"}}, check: func(t *testing.T, c *Config) {

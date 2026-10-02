@@ -11,8 +11,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/Tobias-Braun/brooom/internal/config"
 )
 
 // This file is the whole macOS Trash logic. It carries no build tag on
@@ -81,9 +79,6 @@ func newMacTrash(home string) *macTrash {
 		mkdirAll:      os.MkdirAll,
 	}
 }
-
-// Strategy implements Trasher.
-func (m *macTrash) Strategy() config.TrashStrategy { return config.StrategyTrash }
 
 // Remove implements Trasher as a batch of one.
 func (m *macTrash) Remove(ctx context.Context, path string) (Record, error) {
@@ -221,7 +216,7 @@ func originalGone(path string) error {
 // record builds the Record of a successfully trashed item.
 func (m *macTrash) record(it pendingItem, stored string) Record {
 	return Record{
-		Strategy:     config.StrategyTrash,
+		Strategy:     StrategyTrash,
 		OriginalPath: it.path,
 		StoredPath:   stored,
 		SizeBytes:    it.size,
@@ -277,11 +272,11 @@ func (m *macTrash) trashToHome(ctx context.Context, it pendingItem) (string, err
 	return dst, nil
 }
 
-// trashDenied wraps permission failures with the quarantine hint; other
-// errors are only named.
+// trashDenied wraps permission failures with what fixes them; other errors
+// are only named.
 func trashDenied(path string, err error) error {
 	if isPermissionErr(err) {
-		return fmt.Errorf("cannot move %q into ~/.Trash: %w; use --trash-strategy quarantine instead", path, err)
+		return fmt.Errorf("cannot move %q into ~/.Trash: %w; grant the terminal Full Disk Access or remove it by hand", path, err)
 	}
 	return fmt.Errorf("cannot move %q into ~/.Trash: %w", path, err)
 }
