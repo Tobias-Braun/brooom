@@ -1,6 +1,5 @@
 ---
 import HeroScene from './HeroScene.astro';
-import { REPO_URL } from '../lib/url';
 ---
 
 <section class="hero" aria-labelledby="hero-title">
@@ -15,9 +14,7 @@ import { REPO_URL } from '../lib/url';
         projects leave behind. Nothing changes before you have seen the plan and said yes.
       </p>
       <div class="ctas">
-        <a class="btn btn-primary" href="#install">Install</a>
-        <a class="btn btn-secondary" href={REPO_URL}>View on GitHub</a>
-      </div>
+        <a class="btn btn-primary" href="#install">Install</a>      </div>
     </div>
     <HeroScene />
   </div>

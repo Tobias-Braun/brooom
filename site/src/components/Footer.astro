@@ -1,29 +1,16 @@
 ---
 import BroomMark from './BroomMark.astro';
 import { REPO_URL, repoFile } from '../lib/url';
-
-const docs = [
-  { href: repoFile('docs/SPEC.md'), label: 'Specification' },
-  { href: repoFile('docs/ARCHITECTURE.md'), label: 'Architecture' },
-  { href: repoFile('docs/findings.md'), label: 'Findings schema' },
-];
 ---
 
 <footer class="site-footer">
   <div class="wrap inner">
     <p class="status">
       <BroomMark size={22} id="broom-footer" />
-      Status: under active development towards v0.1.0.
+      Status: under active development towards the first major release.
     </p>
-    <nav aria-label="Documentation">
+    <nav aria-label="Footer">
       <ul>
-        {
-          docs.map((d) => (
-            <li>
-              <a href={d.href}>{d.label}</a>
-            </li>
-          ))
-        }
         <li><a href={REPO_URL}>GitHub</a></li>
       </ul>
     </nav>

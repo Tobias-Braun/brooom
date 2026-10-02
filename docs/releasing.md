@@ -12,8 +12,8 @@ prepared but has `skip_upload: true`.
 
    ```sh
    git switch main && git pull --ff-only
-   git tag -a v0.1.0 -m "v0.1.0"
-   git push origin v0.1.0
+   git tag -a v1.0.0 -m "v1.0.0"
+   git push origin v1.0.0
    ```
 
 3. The `Release` workflow runs on the tag (`v*`). It builds linux, darwin and
