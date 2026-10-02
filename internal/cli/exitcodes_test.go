@@ -16,7 +16,7 @@ func TestUsageErrorsExitTwo(t *testing.T) {
 		msg  string
 	}{
 		{"unknown top-level command", []string{"foo"}, ExitUsage, "unknown command"},
-		{"missing path for sweep", []string{"sweep", "tidy", "extra"}, ExitUsage, "no such file"},
+		{"missing path for sweep", []string{"sweep", "tidy", "extra"}, ExitUsage, `path "extra"`},
 		{"two paths for sweep", []string{"sweep", "tidy", "a", "b"}, ExitUsage, "accepts at most 2 arg"},
 		{"removed command", []string{"roots"}, ExitUsage, "unknown command"},
 		{"undo too many", []string{"undo", "a", "b"}, ExitUsage, "accepts at most 1 arg"},

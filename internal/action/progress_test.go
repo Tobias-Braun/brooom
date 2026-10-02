@@ -31,7 +31,13 @@ func TestExecutorReportsPlanAndApplyProgress(t *testing.T) {
 		"phase:apply/2", "bytes:1000", "step:" + a, "bytes:250", "step:" + b,
 		"pause",
 	}
-	if got := rec.Events(); !slices.Equal(got, want) {
+	got := rec.Events()
+	// Plan steps are reported by the worker pool as each finding finishes,
+	// so only their set is fixed, not their order.
+	if len(got) > 2 {
+		slices.Sort(got[1:3])
+	}
+	if !slices.Equal(got, want) {
 		t.Fatalf("events\n got %q\nwant %q", got, want)
 	}
 }
