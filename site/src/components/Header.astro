@@ -5,13 +5,14 @@ import { REPO_URL, withBase } from '../lib/url';
 /**
  * Anchor navigation without a collapsing menu: the page ships no JavaScript,
  * so the short link list simply wraps below the wordmark on narrow screens.
+ * The anchors point at the home page, so they also work from the legal pages.
  */
 const links = [
-  { href: '#presets', label: 'Presets' },
-  { href: '#install', label: 'Install' },
-  { href: '#features', label: 'Features' },
-  { href: '#detectors', label: 'Detectors' },
-  { href: '#config', label: 'Config' },
+  { href: withBase('#presets'), label: 'Presets' },
+  { href: withBase('#install'), label: 'Install' },
+  { href: withBase('#features'), label: 'Features' },
+  { href: withBase('#detectors'), label: 'Detectors' },
+  { href: withBase('#config'), label: 'Config' },
 ];
 ---
 

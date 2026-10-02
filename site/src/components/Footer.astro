@@ -1,6 +1,6 @@
 ---
 import BroomMark from './BroomMark.astro';
-import { REPO_URL, repoFile } from '../lib/url';
+import { REPO_URL, repoFile, withBase } from '../lib/url';
 ---
 
 <footer class="site-footer">
@@ -12,6 +12,8 @@ import { REPO_URL, repoFile } from '../lib/url';
     <nav aria-label="Footer">
       <ul>
         <li><a href={REPO_URL}>GitHub</a></li>
+        <li><a href={withBase('imprint')}>Legal Notice</a></li>
+        <li><a href={withBase('privacy')}>Privacy</a></li>
       </ul>
     </nav>
     <p class="license">Released under the <a href={repoFile('LICENSE')}>MIT license</a>.</p>

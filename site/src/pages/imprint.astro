@@ -1,0 +1,33 @@
+---
+import Legal from '../layouts/Legal.astro';
+import { REPO_URL, repoFile } from '../lib/url';
+---
+
+<Legal title="Legal Notice">
+  <h2>Information according to § 5 DDG</h2>
+  <p>
+    Tobias Braun<br />
+    c/o flexdienst – #21233<br />
+    Kurt-Schumacher-Straße 74<br />
+    67663 Kaiserslautern<br />
+    Germany
+  </p>
+
+  <h2>Responsible for content according to § 18 (2) MStV</h2>
+  <p>Tobias Braun (address as above)</p>
+
+  <h2>Liability for content and links</h2>
+  <p>
+    I am responsible for my own content on these pages under the general laws. I am not obliged to monitor
+    third-party information or to look for circumstances that indicate illegal activity. This website links to
+    external websites, such as <a href={REPO_URL}>GitHub</a>, whose content I do not control; their operators are
+    responsible for it. When I become aware of a legal violation, I remove the affected content or link
+    immediately.
+  </p>
+
+  <h2>Copyright</h2>
+  <p>
+    The content of this website is subject to German copyright law. Brooom itself, including the source code of
+    this website, is released under the <a href={repoFile('LICENSE')}>MIT license</a>.
+  </p>
+</Legal>
