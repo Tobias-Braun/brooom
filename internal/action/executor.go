@@ -7,7 +7,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/output"
@@ -64,9 +63,9 @@ type Options struct {
 	Env *Env
 	// Command is the command line stored in the manifest.
 	Command string
-	// SessionID is optional; callers that build a quarantine trasher need the
-	// id before the run. Generated with session.NewID when empty.
-	SessionID string
+	// Root is the repository or folder the run works on, recorded in the
+	// manifest for `brooom sessions`.
+	Root string
 	// UndoFlags are the pre-quoted scope flags (--path, --config)
 	// appended to the printed undo command, so the hint works from anywhere.
 	UndoFlags []string
@@ -106,27 +105,11 @@ type Plan struct {
 type Group struct {
 	Detector string
 	Action   findings.ActionType
-	// Strategy is the resolved trash strategy of the group's items, empty for
-	// actions that do not remove through a trasher. Items of one detector and
-	// action can differ in it, so it is part of the group key.
-	Strategy config.TrashStrategy
 	Items    []Item
 }
 
-// Label is how prompts and plan headers name the group's action. The action
-// type of a removal is always "trash", which would understate a permanent
-// delete when the confirmation is the user's last chance to stop it, so the
-// resolved strategy is spelled out instead. The manifest and JSON output keep
-// the plain action type.
-func (g Group) Label() string {
-	switch g.Strategy {
-	case config.StrategyDelete:
-		return "delete permanently"
-	case config.StrategyQuarantine:
-		return "quarantine"
-	}
-	return string(g.Action)
-}
+// Label is how prompts and plan headers name the group's action.
+func (g Group) Label() string { return string(g.Action) }
 
 // Item is one planned step and whether the user confirmed it.
 type Item struct {
@@ -328,7 +311,6 @@ func failedEntry(s Skip) session.Entry {
 
 // apply confirms and executes a non-empty plan.
 func (e *Executor) apply(ctx context.Context, plan *Plan, res *Result) (*Result, error) {
-	e.warnBeforeDelete(plan)
 	if e.opts.Yes {
 		plan.setConfirmed(true)
 	} else {
@@ -370,11 +352,8 @@ type runState struct {
 // a crash mid-run still leaves a record of what was already done.
 func (e *Executor) execute(ctx context.Context, items []Item, res *Result, planSkips int) (*Result, error) {
 	now := e.opts.Now()
-	id := e.opts.SessionID
-	if id == "" {
-		id = session.NewID(now)
-	}
-	m := &session.Manifest{Version: session.ManifestVersion, ID: id, StartedAt: now.UTC(), Command: e.opts.Command, Entries: []session.Entry{}}
+	id := session.NewID(now)
+	m := &session.Manifest{Version: session.ManifestVersion, ID: id, StartedAt: now.UTC(), Command: e.opts.Command, Root: e.opts.Root, Entries: []session.Entry{}}
 	if err := e.opts.Store.Save(m); err != nil {
 		return res, fmt.Errorf("create session manifest (nothing was changed): %w", err)
 	}
@@ -524,31 +503,6 @@ func (rs *runState) record(en session.Entry) error {
 		return fmt.Errorf("save session manifest %s after %s: %w", rs.m.ID, entryLabel(en.Path, en.Ref), err)
 	}
 	return nil
-}
-
-// warnBeforeDelete shows the one-time permanence warning of the delete
-// strategy before anything asks for confirmation: a warning that only appears
-// once the user has said yes cannot inform that decision. It runs in apply
-// only, so dry runs (whose output may be piped away) never consume it, and the
-// trash action still calls BeforeDelete right before a removal as a backstop
-// for steps that reach it without a plan.
-func (e *Executor) warnBeforeDelete(plan *Plan) {
-	env := e.opts.Env
-	if env == nil || env.BeforeDelete == nil || env.Trasher == nil {
-		return
-	}
-	for _, g := range plan.Groups {
-		if g.Action != findings.ActionTrash && g.Action != findings.ActionRemoveWorktree {
-			continue
-		}
-		// An error here surfaces again when the step itself is applied.
-		if tr, err := env.Trasher(g.Detector); err == nil && tr.Strategy() == config.StrategyDelete {
-			env.BeforeDelete()
-			// Returning after the first delete-strategy group is intended:
-			// the permanence warning is shown once per run, not per group.
-			return
-		}
-	}
 }
 
 // plannedBranchDeletes collects the delete-branch steps of a run, so hints can

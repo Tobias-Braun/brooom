@@ -130,9 +130,6 @@ func brooom(t *testing.T, stdin string, args ...string) (int, string, string) {
 	return code, out.String(), errOut.String()
 }
 
-// quarantine is the trash strategy of every test that could trash files.
-var quarantine = []string{"--trash-strategy", "quarantine"}
-
 // mergedSweep sweeps the merged branches only; tests add --dry-run or --yes.
 var mergedSweep = []string{"sweep", "after-agents", "-d", "merged-branch"}
 
@@ -257,15 +254,7 @@ func TestSweepHasNoForce(t *testing.T) {
 	}
 }
 
-// forceClean exports the findings of a detector with --force and acts on them
-// with clean --from --force --yes.
-func forceClean(t *testing.T, detector string) (int, string, string) {
-	t.Helper()
-	_, out, _ := brooom(t, "", "scan", "-d", detector, "--force", "--format", "json")
-	return brooom(t, "", "clean", "--from", writeRaw(t, out), "--yes", "--force")
-}
-
-func TestStaleBranchesNeedForce(t *testing.T) {
+func TestSweepKeepsStaleBranches(t *testing.T) {
 	cfg := map[string]any{"detectors": map[string]any{"stale-branch": map[string]any{"enabled": true, "min_age_days": 1, "include_unpushed": true}}}
 	f := newCleanupFixture(t, cfg)
 	f.feature("feat/old")
@@ -276,28 +265,6 @@ func TestStaleBranchesNeedForce(t *testing.T) {
 	}
 	if !f.hasBranch("feat/old") {
 		t.Fatalf("sweep deleted an unmerged branch:\n%s", out)
-	}
-
-	code, out, errOut = forceClean(t, config.DetectorStaleBranch)
-	if code != ExitOK {
-		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
-	}
-	if f.hasBranch("feat/old") {
-		t.Errorf("--force did not delete the unmerged branch:\n%s", out)
-	}
-}
-
-func TestForceNeverDeletesCheckedOutBranch(t *testing.T) {
-	cfg := map[string]any{"detectors": map[string]any{"stale-branch": map[string]any{"enabled": true, "min_age_days": 1, "include_unpushed": true}}}
-	f := newCleanupFixture(t, cfg)
-	f.feature("feat/current")
-	f.repo.Checkout("feat/current")
-	code, out, errOut := forceClean(t, config.DetectorStaleBranch)
-	if code != ExitOK && code != ExitError {
-		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
-	}
-	if !f.hasBranch("feat/current") {
-		t.Errorf("checked-out branch was deleted:\n%s", out)
 	}
 }
 
@@ -328,7 +295,7 @@ func TestWorktreesCleanup(t *testing.T) {
 		t.Fatalf("dry run removed the worktree: %v", err)
 	}
 
-	code, out, errOut = brooom(t, "", append(append(slices.Clone(worktreeSweep), "--yes"), quarantine...)...)
+	code, out, errOut = brooom(t, "", append(slices.Clone(worktreeSweep), "--yes")...)
 	if code != ExitOK {
 		t.Fatalf("apply: code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -395,7 +362,7 @@ func TestAfterAgentsSweep(t *testing.T) {
 	}
 	f.publish()
 
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "after-agents", "--yes"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", "sweep", "after-agents", "--yes")
 	if code != ExitOK {
 		t.Fatalf("apply: code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -446,7 +413,7 @@ func TestTidyLeavesGitAlone(t *testing.T) {
 	f.mergeCommit("feat/merged")
 	f.publish()
 
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "tidy", "--yes"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", "sweep", "tidy", "--yes")
 	if code != ExitOK {
 		t.Fatalf("tidy: code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -463,7 +430,7 @@ func TestDirtyWorktreeIsNeverRemovedBySweep(t *testing.T) {
 	f.publish()
 	testutil.WriteFile(t, wt, "scratch.txt", "uncommitted\n")
 
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "--yes"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", "sweep", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -528,22 +495,6 @@ func TestConfigFormatDoesNotBlockSweep(t *testing.T) {
 				t.Errorf("sweep did not run: %v", f.branches())
 			}
 		})
-	}
-}
-
-// TestConfigFormatDoesNotBlockCleanAndPurge: the other acting commands follow
-// the same rule; clean --from never looks at the format when acting.
-func TestConfigFormatDoesNotBlockCleanAndPurge(t *testing.T) {
-	f := newCleanupFixture(t, map[string]any{"output": map[string]any{"format": "json"}})
-	dir, _ := junkDir(t, f.repo.Dir, "target")
-	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
-	code, _, errOut := brooom(t, "", "clean", "--from", report, "--yes", "--trash-strategy", "quarantine")
-	if code != ExitOK || exists(dir) {
-		t.Errorf("clean: code %d, stderr %q, dir exists %v", code, errOut, exists(dir))
-	}
-	code, _, errOut = brooom(t, "", "git", "purge", "--prune", "now", "--dry-run")
-	if code != ExitOK {
-		t.Errorf("git purge: code %d, stderr %q", code, errOut)
 	}
 }
 
@@ -626,12 +577,9 @@ func TestDisabledDetectorsAreSkipped(t *testing.T) {
 	cfg := map[string]any{"detectors": map[string]any{"merged-branch": map[string]any{"enabled": false}}}
 	f := newCleanupFixture(t, cfg)
 	f.mergedAndSquashed()
-	code, out, errOut := brooom(t, "", sweepArgs("--dry-run", "--verbose")...)
+	code, out, _ := brooom(t, "", sweepArgs("--dry-run")...)
 	if code != ExitOK || !strings.Contains(out, "nothing to clean") {
 		t.Errorf("code %d, stdout %q", code, out)
-	}
-	if !strings.Contains(errOut, "skipping detector merged-branch") {
-		t.Errorf("no verbose note: %q", errOut)
 	}
 	code, out, _ = brooom(t, "", sweepArgs("--format", "json")...)
 	if code != ExitOK || !json.Valid([]byte(out)) {
@@ -639,11 +587,20 @@ func TestDisabledDetectorsAreSkipped(t *testing.T) {
 	}
 }
 
-func TestInvalidTrashStrategy(t *testing.T) {
+// TestRemovedCommandsAndFlagsAreUsageErrors pins the cuts of #306: what was
+// removed fails loudly instead of being silently ignored.
+func TestRemovedCommandsAndFlagsAreUsageErrors(t *testing.T) {
 	newCleanupFixture(t, nil)
-	code, _, errOut := brooom(t, "", "sweep", "--dry-run", "--trash-strategy", "shred")
-	if code != ExitUsage || !strings.Contains(errOut, "trash, quarantine, delete") {
-		t.Errorf("code %d, stderr %q", code, errOut)
+	for _, args := range [][]string{
+		{"scan"}, {"clean", "--from", "x.json"}, {"git", "purge"}, {"purge"}, {"roots", "list"},
+		{"update-check"}, {"config", "validate"}, {"sessions", "20260101"}, {"."},
+		{"sweep", "--dry-run", "--trash-strategy", "delete"},
+		{"sweep", "--dry-run", "--progress", "never"},
+		{"sweep", "--dry-run", "--verbose"},
+	} {
+		if code, _, errOut := brooom(t, "", args...); code != ExitUsage {
+			t.Errorf("%v: code %d, stderr %q; want a usage error", args, code, errOut)
+		}
 	}
 }
 
@@ -661,19 +618,6 @@ func TestUnwritableSessionsDirFailsBeforeChanging(t *testing.T) {
 	}
 	if !f.hasBranch("feat/merged") {
 		t.Errorf("a branch was deleted although the manifest could not be written")
-	}
-}
-
-func TestScanFooterPointsToSweep(t *testing.T) {
-	f := newCleanupFixture(t, nil)
-	f.mergedAndSquashed()
-	code, out, _ := brooom(t, "", "scan", "--detector", "merged-branch")
-	if code != ExitOK || !strings.Contains(out, "nothing was changed; run `brooom sweep --detector merged-branch` to review and clean these") {
-		t.Errorf("table footer: code %d\n%s", code, out)
-	}
-	_, out, _ = brooom(t, "", "scan", "--detector", "merged-branch", "--format", "json")
-	if strings.Contains(out, "nothing was changed") {
-		t.Errorf("json output has a footer")
 	}
 }
 

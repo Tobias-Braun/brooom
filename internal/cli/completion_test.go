@@ -17,7 +17,6 @@ import (
 // candidate lines (without the trailing directive line) and the directive.
 func complete(t *testing.T, args ...string) ([]string, string) {
 	t.Helper()
-	t.Setenv(NoUpdateCheckEnv, "1")
 	code, out, errOut := run(t, append([]string{"__complete"}, args...)...)
 	if code != ExitOK {
 		t.Fatalf("__complete %q: exit %d, stderr %q", args, code, errOut)
@@ -67,7 +66,6 @@ func TestCompleteStaticFlagValues(t *testing.T) {
 	}{
 		{"format", []string{"--format", ""}, []string{"json", "table", "plain"}, nil, ""},
 		{"format prefix", []string{"--format", "nd"}, []string{"ndjson"}, []string{"json", "table"}, ""},
-		{"sweep trash strategy", []string{"sweep", "--trash-strategy", ""}, []string{"trash", "quarantine", "delete"}, nil, "permanently"},
 		{"preset", []string{"sweep", ""}, []string{"after-agents", "tidy", "everything"}, nil, "agent run"},
 		{"preset prefix", []string{"sweep", "af"}, []string{"after-agents"}, []string{"tidy"}, ""},
 		{"detector", []string{"--detector", ""}, []string{"merged-branch", "worktrees", "build-artifacts"}, nil, ""},
@@ -124,40 +122,27 @@ func TestCompleteDetectorDescriptionsAndCommas(t *testing.T) {
 	}
 }
 
-func TestCompleteTrashStrategyDeleteIsFlaggedPermanent(t *testing.T) {
-	emptyHome(t)
-	lines, _ := complete(t, "sweep", "--trash-strategy", "d")
-	if len(lines) != 1 || !strings.HasPrefix(lines[0], "delete\t") || !strings.Contains(lines[0], "cannot be undone") {
-		t.Errorf("delete candidate = %q", lines)
-	}
-}
-
 func TestCompleteSessionIDs(t *testing.T) {
 	store := sessionsHome(t)
-	t.Setenv(NoUpdateCheckEnv, "1")
 	saveSession(t, store, "20260101-000000-aaaa", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), true)
 	saveSession(t, store, "20260301-000000-bbbb", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), true)
 
-	for _, cmd := range []string{"undo", "sessions"} {
-		t.Run(cmd, func(t *testing.T) {
-			lines, directive := complete(t, cmd, "")
-			if directive != noFileComp {
-				t.Errorf("directive = %q", directive)
-			}
-			if got := values(lines); len(got) != 2 || got[0] != "20260301-000000-bbbb" || got[1] != "20260101-000000-aaaa" {
-				t.Fatalf("ids = %q, want newest first", got)
-			}
-			if !strings.Contains(lines[0], "sweep --apply") || !strings.Contains(lines[0], "1 applied") || !strings.Contains(lines[0], "2026-0") {
-				t.Errorf("description lacks date or summary: %q", lines[0])
-			}
-		})
+	lines, directive := complete(t, "undo", "")
+	if directive != noFileComp {
+		t.Errorf("directive = %q", directive)
+	}
+	if got := values(lines); len(got) != 2 || got[0] != "20260301-000000-bbbb" || got[1] != "20260101-000000-aaaa" {
+		t.Fatalf("ids = %q, want newest first", got)
+	}
+	if !strings.Contains(lines[0], "sweep --yes") || !strings.Contains(lines[0], "1 applied") || !strings.Contains(lines[0], "2026-0") {
+		t.Errorf("description lacks date or summary: %q", lines[0])
 	}
 
-	lines, _ := complete(t, "undo", "20260101")
+	lines, _ = complete(t, "undo", "20260101")
 	if got := values(lines); len(got) != 1 || got[0] != "20260101-000000-aaaa" {
 		t.Errorf("prefix filter: %q", got)
 	}
-	// Both commands take a single session id.
+	// undo takes a single session id.
 	if lines, _ := complete(t, "undo", "20260101-000000-aaaa", ""); len(values(lines)) != 0 {
 		t.Errorf("second argument completed: %q", lines)
 	}
@@ -176,7 +161,7 @@ func TestCompleteSessionIDsDegradeToEmpty(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "broken.json"), []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if lines, _ := complete(t, "sessions", ""); len(lines) != 0 {
+	if lines, _ := complete(t, "undo", ""); len(lines) != 0 {
 		t.Errorf("corrupt manifest offered: %q", lines)
 	}
 	// BROOOM_HOME that is not absolute makes the store unreachable.
@@ -190,14 +175,13 @@ func TestCompleteSessionIDsDegradeToEmpty(t *testing.T) {
 // complete directories; the first argument of sweep is a preset.
 func TestCompletePathArguments(t *testing.T) {
 	emptyHome(t)
-	t.Setenv(NoUpdateCheckEnv, "1")
 	dirs := fmt.Sprintf(":%d", cobra.ShellCompDirectiveFilterDirs)
-	for _, args := range [][]string{{""}, {"scan", ""}, {"review", ""}, {"git", "purge", ""}, {"sweep", "tidy", ""}, {"undo", "--path", ""}, {"clean", "--path", ""}} {
+	for _, args := range [][]string{{"review", ""}, {"sweep", "tidy", ""}, {"undo", "--path", ""}} {
 		if _, directive := complete(t, args...); directive != dirs {
 			t.Errorf("%q: directive %q, want %q", args, directive, dirs)
 		}
 	}
-	for _, args := range [][]string{{"scan", "a", ""}, {"sweep", "tidy", "a", ""}} {
+	for _, args := range [][]string{{"review", "a", ""}, {"sweep", "tidy", "a", ""}} {
 		if lines, directive := complete(t, args...); len(lines) != 0 || directive != noFileComp {
 			t.Errorf("%q: %q %q, want nothing", args, lines, directive)
 		}
@@ -219,7 +203,6 @@ func TestCompletionNeverWrites(t *testing.T) {
 
 func TestCompletionCommand(t *testing.T) {
 	emptyHome(t)
-	t.Setenv(NoUpdateCheckEnv, "1")
 	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
 		t.Run(shell, func(t *testing.T) {
 			code, out, errOut := run(t, "completion", shell)

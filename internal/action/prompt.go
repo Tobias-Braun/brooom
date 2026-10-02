@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/output"
 )
@@ -89,14 +88,9 @@ func matchAnswer(a, allowed string) rune {
 // confirm asks one question for the whole plan, which was printed right
 // above it, and sets Item.Confirmed on every item for a yes. Anything else
 // (no, an empty answer, end of input) confirms nothing, so the default is
-// always to change nothing. Permanent deletions are named in the question
-// itself: the plan header says so too, but the question is the last thing
-// read before answering.
+// always to change nothing.
 func (c *confirmer) confirm(p *Plan) bool {
 	what := fmt.Sprintf("%s (%s)", plural(p.itemCount(), "item"), output.FormatSize(p.ReclaimableBytes()))
-	if n := p.permanentCount(); n > 0 {
-		what += fmt.Sprintf(", %d of them deleted permanently", n)
-	}
 	prompt, allowed := "Proceed with "+what+"? [y/N] ", "yn"
 	if c.sel != nil {
 		prompt, allowed = "Proceed with "+what+"? [y/N/e to choose] ", "yne"
@@ -163,18 +157,6 @@ func itemLine(s Step) string {
 
 func (p *Plan) clearConfirmed() { p.setConfirmed(false) }
 
-// permanentCount is the number of items removed with the delete strategy,
-// which no undo can bring back.
-func (p *Plan) permanentCount() int {
-	n := 0
-	for _, g := range p.Groups {
-		if g.Strategy == config.StrategyDelete {
-			n += len(g.Items)
-		}
-	}
-	return n
-}
-
 // itemCount is the number of planned items over all groups.
 func (p *Plan) itemCount() int {
 	n := 0
@@ -221,7 +203,7 @@ func renderPlan(w io.Writer, p *Plan) {
 	renderSkips(w, "skipped", p.Skipped)
 	renderSkips(w, "failed to plan", p.Failed)
 	if p.FlaggedOnly > 0 {
-		fmt.Fprintf(w, "flagged, not actionable: %d (see brooom scan)\n", p.FlaggedOnly)
+		fmt.Fprintf(w, "flagged, not actionable: %d (listed in the --dry-run report)\n", p.FlaggedOnly)
 	}
 }
 

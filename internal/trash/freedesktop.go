@@ -10,8 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/Tobias-Braun/brooom/internal/config"
 )
 
 // freedesktop implements the freedesktop.org Trash specification 1.0 for
@@ -37,9 +35,6 @@ type trashLoc struct {
 	dir    string
 	topdir string
 }
-
-// Strategy implements Trasher.
-func (f *freedesktop) Strategy() config.TrashStrategy { return config.StrategyTrash }
 
 // Remove implements Trasher. The .trashinfo is created before the item is
 // moved, so a crash can leave an info file without an item but never an item
@@ -85,7 +80,7 @@ func (f *freedesktop) Remove(ctx context.Context, path string) (Record, error) {
 		appendDirSize(loc.dir, size, infoPath, name)
 	}
 	return Record{
-		Strategy:     config.StrategyTrash,
+		Strategy:     StrategyTrash,
 		OriginalPath: real,
 		StoredPath:   stored,
 		InfoPath:     infoPath,

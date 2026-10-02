@@ -14,9 +14,9 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/testutil"
 )
 
-// These tests cover findings whose safety-relevant fields were edited: a
-// findings file is untrusted input, so the actions must derive every safety
-// fact from the live state and never from Meta, Args or Detector.
+// These tests cover findings whose safety-relevant fields were edited: a step
+// may come from any caller, so the actions must derive every safety fact from
+// the live state and never from Meta, Args or Detector.
 
 // repoTrashFixture is a trash fixture whose guard allows a real repository
 // with an ignored build directory and an untracked file.
@@ -35,41 +35,10 @@ func repoTrashFixture(t *testing.T) (*trashFixture, *testutil.Repo) {
 	}
 	fx := newTrashFixture(t)
 	fx.env.Guard = guard
-	fx.strategy = config.StrategyDelete
 	return fx, repo
 }
 
-func TestTrashDeleteRefusesUntrackedWithoutMeta(t *testing.T) {
-	fx, repo := repoTrashFixture(t)
-	tests := []struct {
-		name    string
-		rel     string
-		force   bool
-		refused bool
-	}{
-		{"untracked file, meta stripped", "thesis-draft.bin", false, true},
-		{"untracked file, meta stripped, force", "thesis-draft.bin", true, true},
-		{"directory of untracked files", "drafts", false, true},
-		{"ignored directory may be deleted", "build", false, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fx.env.Force = tt.force
-			f := trashFinding(filepath.Join(repo.Dir, filepath.FromSlash(tt.rel)))
-			f.Meta = nil
-			step, err := trashAction{}.Plan(context.Background(), fx.env, f)
-			if tt.refused {
-				wantSkip(t, err, "refusing to permanently delete untracked files")
-				return
-			}
-			if err != nil || !strings.Contains(step.Description, "permanently delete") {
-				t.Fatalf("step = %+v, err = %v", step, err)
-			}
-		})
-	}
-}
-
-func TestTrashDeleteFailsClosedWithoutGit(t *testing.T) {
+func TestTrashFailsClosedWithoutGit(t *testing.T) {
 	fx, repo := repoTrashFixture(t)
 	fx.env.Git = nil
 	_, err := trashAction{}.Plan(context.Background(), fx.env, trashFinding(filepath.Join(repo.Dir, "build")))
@@ -77,26 +46,6 @@ func TestTrashDeleteFailsClosedWithoutGit(t *testing.T) {
 	fx.env.Git = failingGit{}
 	_, err = trashAction{}.Plan(context.Background(), fx.env, trashFinding(filepath.Join(repo.Dir, "build")))
 	wantSkip(t, err, "cannot be ruled out")
-}
-
-// TestTrashApplyRechecksUntracked covers a file that appeared between Plan
-// and Apply: Apply must not trust the earlier plan.
-func TestTrashApplyRechecksUntracked(t *testing.T) {
-	fx, repo := repoTrashFixture(t)
-	step, err := trashAction{}.Plan(context.Background(), fx.env, trashFinding(filepath.Join(repo.Dir, "build")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	late := testutil.WriteFile(t, repo.Dir, "build/precious.txt", "created after the plan")
-	// Not ignored any more once the ignore rule is gone.
-	testutil.WriteFile(t, repo.Dir, ".gitignore", "")
-	en, err := trashAction{}.Apply(context.Background(), fx.env, step)
-	if err == nil || en.Status == "applied" || !strings.Contains(en.Error, "untracked") {
-		t.Fatalf("entry = %+v, err = %v", en, err)
-	}
-	if _, err := os.Lstat(late); err != nil {
-		t.Fatalf("file was removed: %v", err)
-	}
 }
 
 func TestTrashRefusesCatalogProtectedPaths(t *testing.T) {

@@ -1,9 +1,9 @@
 # Findings schema
 
 Findings are the contract between detectors, output formats, actions and
-future clients (dashboard, agent). `brooom scan --format json` prints a
-`Report`; `--format ndjson` prints one `Finding` per line; `brooom clean
---from <file>` reads a `Report` back.
+future clients (dashboard, agent). `brooom sweep --format json` prints a
+`Report` (and changes nothing); `--format ndjson` prints one `Finding` per
+line.
 
 The schema is versioned by `schema_version` (currently **1**). Fields may be
 added without a version bump; removing or renaming fields, or changing their
@@ -95,7 +95,7 @@ on them without `--force`. `--force` never overrides `file_open_by_process`,
 | `scopes` | Scanned repos, walked folders (type `root`) and user locations. |
 | `findings` | Sorted by detector, path, ref. Never `null`. |
 | `totals` | `{findings, actionable, reclaimable_bytes, by_detector}`; nested paths are counted once. |
-| `errors` | Problems that did not abort the scan `{detector?, path?, message, fatal?}`. `fatal: true` means a detector failed on the target (the report may be incomplete; `scan` exits 4); without it the entry is a note (something skipped or partly checked). |
+| `errors` | Problems that did not abort the scan `{detector?, path?, message, fatal?}`. `fatal: true` means a detector failed on the target (the report may be incomplete; `sweep` with a machine format exits 4); without it the entry is a note (something skipped or partly checked). |
 
 ## Example
 

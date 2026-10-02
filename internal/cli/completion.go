@@ -36,7 +36,6 @@ func registerCompletions(root *cobra.Command, a *app) {
 	// deliberately not surfaced at runtime.
 	_ = root.RegisterFlagCompletionFunc("detector", completeDetectors)
 	_ = root.RegisterFlagCompletionFunc("format", completeFormats)
-	_ = root.RegisterFlagCompletionFunc("progress", completeProgressModes)
 
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
@@ -59,14 +58,10 @@ func registerLocalCompletions(c *cobra.Command) {
 	if local.Lookup("path") != nil {
 		_ = c.RegisterFlagCompletionFunc("path", completeDirs)
 	}
-	if local.Lookup("trash-strategy") != nil {
-		_ = c.RegisterFlagCompletionFunc("trash-strategy", completeTrashStrategies)
-	}
 }
 
-// registerSessionArgs completes session ids for `undo` and `sessions`, the
-// preset and path of `sweep` and the path argument of the bare command, `scan`
-// and `git purge`.
+// registerSessionArgs completes session ids for `undo`, the preset and path
+// of `sweep` and the path argument of `review`.
 func registerSessionArgs(root *cobra.Command, a *app) {
 	sessionIDs := func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
@@ -74,10 +69,8 @@ func registerSessionArgs(root *cobra.Command, a *app) {
 		}
 		return a.completeSessionIDs(toComplete), completionDirective
 	}
-	for _, path := range [][]string{{"undo"}, {"sessions"}} {
-		if c, _, err := root.Find(path); err == nil && c != root {
-			c.ValidArgsFunction = sessionIDs
-		}
+	if c, _, err := root.Find([]string{"undo"}); err == nil && c != root {
+		c.ValidArgsFunction = sessionIDs
 	}
 	if c, _, err := root.Find([]string{"sweep"}); err == nil && c != root {
 		c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -90,11 +83,8 @@ func registerSessionArgs(root *cobra.Command, a *app) {
 			return nil, completionDirective
 		}
 	}
-	root.ValidArgsFunction = firstArgDirs
-	for _, path := range [][]string{{"scan"}, {"review"}, {"git", "purge"}} {
-		if c, _, err := root.Find(path); err == nil && c != root {
-			c.ValidArgsFunction = firstArgDirs
-		}
+	if c, _, err := root.Find([]string{"review"}); err == nil && c != root {
+		c.ValidArgsFunction = firstArgDirs
 	}
 }
 
@@ -154,16 +144,6 @@ func completeFormats(_ *cobra.Command, _ []string, toComplete string) ([]string,
 	return filterPrefix(output.Names(), toComplete, nil), completionDirective
 }
 
-// completeProgressModes offers the values of --progress.
-func completeProgressModes(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	descriptions := map[string]string{
-		progressAuto:   "draw on stderr only for an interactive terminal (default)",
-		progressAlways: "always draw, also without a terminal",
-		progressNever:  "never draw",
-	}
-	return filterPrefix(progressModes, toComplete, descriptions), completionDirective
-}
-
 // presetNames is the single place the completion of the sweep preset
 // argument gets its values from.
 func presetNames() []string { return presets.Names() }
@@ -177,18 +157,6 @@ func completePresets(_ *cobra.Command, _ []string, toComplete string) ([]string,
 		}
 	}
 	return filterPrefix(presetNames(), toComplete, descriptions), completionDirective
-}
-
-// completeTrashStrategies offers the trash strategies; the description of
-// delete says loudly that it cannot be undone.
-func completeTrashStrategies(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	descriptions := map[string]string{
-		string(config.StrategyTrash):      "move to the OS trash (default)",
-		string(config.StrategyQuarantine): "move to ~/.brooom/quarantine, kept for a retention period",
-		string(config.StrategyDelete):     "delete permanently (cannot be undone)",
-	}
-	names := []string{string(config.StrategyTrash), string(config.StrategyQuarantine), string(config.StrategyDelete)}
-	return filterPrefix(names, toComplete, descriptions), completionDirective
 }
 
 // filterPrefix returns the names starting with prefix, annotated with their

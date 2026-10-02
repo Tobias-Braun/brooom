@@ -6,7 +6,6 @@ const (
 	DetectorMergedBranch   = "merged-branch"
 	DetectorWorktrees      = "worktrees"
 	DetectorGitBloat       = "git-bloat"
-	DetectorLargeUntracked = "large-untracked"
 	DetectorAIArtifacts    = "ai-artifacts"
 	DetectorLogs           = "log-and-runtime-files"
 	DetectorBuildArtifacts = "build-artifacts"
@@ -16,7 +15,7 @@ const (
 func DetectorNames() []string {
 	return []string{
 		DetectorStaleBranch, DetectorMergedBranch, DetectorWorktrees,
-		DetectorGitBloat, DetectorLargeUntracked, DetectorAIArtifacts,
+		DetectorGitBloat, DetectorAIArtifacts,
 		DetectorLogs, DetectorBuildArtifacts,
 	}
 }
@@ -30,7 +29,6 @@ func (c *Config) DetectorEnabled(name string) bool {
 		DetectorMergedBranch:   d.MergedBranch.Enabled,
 		DetectorWorktrees:      d.Worktrees.Enabled,
 		DetectorGitBloat:       d.GitBloat.Enabled,
-		DetectorLargeUntracked: d.LargeUntracked.Enabled,
 		DetectorAIArtifacts:    d.AIArtifacts.Enabled,
 		DetectorLogs:           d.Logs.Enabled,
 		DetectorBuildArtifacts: d.BuildArtifacts.Enabled,

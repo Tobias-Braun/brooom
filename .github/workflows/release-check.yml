@@ -79,7 +79,7 @@ jobs:
           mkdir bin
           tar -xzf dist/brooom_*_darwin_${{ matrix.arch }}.tar.gz -C bin brooom
           file bin/brooom
-      - name: Version, quarantine and Trash run
+      - name: Version, sweep and Trash run
         run: sh scripts/smoke-darwin.sh bin/brooom
 
   install-ps1:

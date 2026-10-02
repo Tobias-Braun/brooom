@@ -59,15 +59,13 @@ func StdIO() IO {
 // globalFlags are the flags shared by every command.
 type globalFlags struct {
 	// path is the folder or repository to work on instead of the working
-	// directory. It is the positional argument of the bare command, scan,
-	// sweep and git purge, and --path of undo and clean.
+	// directory. It is the positional argument of sweep and review, and
+	// --path of undo.
 	path       string
 	detectors  []string
 	format     string
 	quiet      bool
 	noColor    bool
-	verbose    bool
-	progress   string
 	configPath string
 }
 
@@ -75,10 +73,9 @@ type globalFlags struct {
 // command shows its plan, asks once and then acts; --dry-run stops after the
 // plan and --yes skips the question.
 type applyFlags struct {
-	dryRun        bool
-	yes           bool
-	force         bool
-	trashStrategy string
+	dryRun bool
+	yes    bool
+	force  bool
 }
 
 // apply reports whether the run acts on its plan (after the confirmation).
@@ -98,13 +95,6 @@ type app struct {
 	// tests set it, so both dialects are covered on every OS.
 	goos string
 
-	// postRunHooks run in order after a successful command. Append to it;
-	// never assign a command's PersistentPostRun (see postRunHook).
-	postRunHooks []postRunHook
-
-	// update is the state of the opt-in background update check.
-	update updateState
-
 	// stdinTTY reports whether prompting is possible; nil means "io.In is a
 	// terminal". Tests inject it to script confirmations.
 	stdinTTY func() bool
@@ -119,7 +109,7 @@ type app struct {
 	progressDecided bool
 	display         *progressui.Display
 	// clock returns the current time; nil means time.Now. Tests inject it to
-	// age quarantined sessions.
+	// fix the time recorded in manifests.
 	clock func() time.Time
 }
 
@@ -143,29 +133,17 @@ type detectorFailedError struct{ err error }
 func (e detectorFailedError) Error() string { return e.err.Error() }
 func (e detectorFailedError) Unwrap() error { return e.err }
 
-// listError is an error whose message is deliberately several lines (a
-// heading followed by one indented line per problem). Its constructor must
-// already have sanitised every untrusted part; renderError only keeps the
-// line breaks of such errors.
-type listError struct{ msg string }
-
-func (e listError) Error() string { return e.msg }
-
 // renderError returns the text printed after "brooom:". Every message is
 // sanitised so a control character or newline in a quoted path cannot forge
-// output lines. The one exception is the message of a listError or
+// output lines. The one exception is the message of a
 // config.ValidationError, whose own newlines are kept and whose lines are
 // sanitised one by one as a backstop; any wrapping prefix (for example the
 // config file path) is still sanitised as a whole.
 func renderError(err error) string {
 	full := err.Error()
 	inner := ""
-	var le listError
 	var ve *config.ValidationError
-	switch {
-	case errors.As(err, &le):
-		inner = le.Error()
-	case errors.As(err, &ve):
+	if errors.As(err, &ve) {
 		inner = ve.Error()
 	}
 	prefix, ok := strings.CutSuffix(full, inner)
@@ -215,6 +193,11 @@ func executeContext(ctx context.Context, a *app, args []string) int {
 		return ExitOK
 	}
 	fmt.Fprintln(stdio.Err, "brooom:", renderError(err))
+	return exitCode(err)
+}
+
+// exitCode maps the error of a failed command to its exit code.
+func exitCode(err error) int {
 	var ue usageError
 	var sf scanFailedError
 	var df detectorFailedError
@@ -231,47 +214,34 @@ func executeContext(ctx context.Context, a *app, args []string) int {
 
 func newRootCmd(a *app) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "brooom [path]",
+		Use:   "brooom",
 		Short: "Sweep disk clutter from AI-assisted development",
-		Example: `  brooom
-  brooom ~/code
-  brooom sweep
+		Example: `  brooom sweep
   brooom sweep after-agents
+  brooom sweep tidy ~/code
   brooom undo`,
 		Long: `Brooom finds and safely cleans the clutter that heavy AI/agent-assisted
-development leaves behind: agent run logs and runtime files, stale and merged
-git branches, leftover worktrees, bloated git histories and build artifacts.
+development leaves behind: agent run logs and runtime files, merged git
+branches, leftover worktrees, bloated git histories and build artifacts.
 
-Safety first: every command that changes something shows its plan and asks
-once before it acts (--dry-run only shows the plan, --yes skips the question),
-removed files go to the trash by default, and every session can be undone.
-Sweep never removes unmerged or uncommitted work.
-Brooom never removes a directory that contains version control metadata (.git,
-.hg, .jj, .svn) or a Windows junction, and the delete strategy is refused
-outside a git repository and whenever git cannot confirm that a path holds no
-untracked files.
+'brooom sweep [preset] [path]' shows what it would clean, asks once and then
+cleans. Presets choose what is swept, the config file (brooom config path)
+customizes it, and --format picks the output.
+
+Safety first: removed files go to the OS trash and every session can be
+undone. Sweep never removes unmerged or uncommitted work, and Brooom never
+removes a directory that contains version control metadata (.git, .hg, .jj,
+.svn) or a Windows junction.
 
 Without a path Brooom only looks at the git repository you are in. Pass a
-folder (brooom ~/code, brooom sweep tidy ~/code) to work on every repository
-below it.`,
+folder (brooom sweep tidy ~/code) to work on every repository below it.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Args:          rootPathArg,
+		Args:          cobra.NoArgs,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			if err := rejectIgnoredScanFlags(cmd); err != nil {
-				return err
-			}
-			if _, err := parseProgressMode(a.flags.progress); err != nil {
-				return err
-			}
-			a.startUpdateCheck(cmd)
-			return nil
+			return rejectIgnoredScanFlags(cmd)
 		},
-		PersistentPostRun: a.runPostRunHooks,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a.setPath(args)
-			return a.runScan(cmd, scanOptions{})
-		},
+		RunE: groupRunE,
 	}
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		return usageError{err}
@@ -281,25 +251,16 @@ below it.`,
 	pf.StringVarP(&a.flags.format, "format", "f", "", "output format: table, tree, json, ndjson, plain, summary")
 	pf.BoolVarP(&a.flags.quiet, "quiet", "q", false, "print only essential output")
 	pf.BoolVar(&a.flags.noColor, "no-color", false, "disable colors (also honours NO_COLOR)")
-	pf.BoolVarP(&a.flags.verbose, "verbose", "v", false, "print progress and diagnostics to stderr")
-	pf.StringVar(&a.flags.progress, "progress", progressAuto, "live progress display on stderr: auto (terminals only), always, never")
 	pf.StringVar(&a.flags.configPath, "config", "", "config file (default ~/.brooom/config.json)")
 
-	a.postRunHooks = append(a.postRunHooks, a.finishUpdateCheck, a.retentionNotice)
-
 	root.AddCommand(
-		newScanCmd(a),
 		newSweepCmd(a),
 		newReviewCmd(a),
-		newGitCmd(a),
-		newCleanCmd(a),
 		newUndoCmd(a),
 		newSessionsCmd(a),
-		newPurgeCmd(a),
 		newEmptyTrashCmd(a),
 		newConfigCmd(a),
 		newVersionCmd(a),
-		newUpdateCheckCmd(a),
 	)
 	root.SetHelpCommand(newHelpCmd())
 	customizeCompletionCmd(root)
@@ -367,46 +328,22 @@ func (a *app) setPath(args []string) {
 	}
 }
 
-// addPathFlag registers --path for the commands whose positional argument is
-// something else (undo takes a session id, clean reads --from).
-func addPathFlag(cmd *cobra.Command, a *app) {
-	cmd.Flags().StringVar(&a.flags.path, "path", "", "work on this folder or repository instead of the current one")
-}
-
-// rootPathArg accepts at most one argument for the bare command. A word that
-// is neither an existing directory nor spelled like a path is a mistyped or
-// removed subcommand (`brooom sweeep`, `brooom branches`), and saying so beats
-// "no such directory".
-func rootPathArg(cmd *cobra.Command, args []string) error {
-	if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
-		return err
-	}
-	if len(args) == 0 || looksLikePath(args[0]) {
-		return nil
-	}
-	if fi, err := os.Stat(args[0]); err == nil && fi.IsDir() {
-		return nil
-	}
-	return fmt.Errorf("unknown command %q for %q", args[0], cmd.CommandPath())
-}
-
 // looksLikePath reports whether s is spelled like a path rather than a
 // command name: it has a separator or starts with "." or "~".
 func looksLikePath(s string) bool {
 	return strings.ContainsAny(s, `/\`) || strings.HasPrefix(s, ".") || strings.HasPrefix(s, "~")
 }
 
+// addPathFlag registers --path for undo, whose positional argument is a
+// session id.
+func addPathFlag(cmd *cobra.Command, a *app) {
+	cmd.Flags().StringVar(&a.flags.path, "path", "", "work on this folder or repository instead of the current one")
+}
+
 // addApplyFlags registers the flags of commands that can modify things.
-// sweep leaves out --force (see addForceFlag): it never acts on dirty or
-// unmerged work.
+// There is no --force: sweep never acts on dirty or unmerged work, and review
+// asks about each such item instead.
 func addApplyFlags(cmd *cobra.Command, f *applyFlags) {
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "only show what would be done and change nothing")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "do not ask for confirmation (for scripts)")
-	cmd.Flags().StringVar(&f.trashStrategy, "trash-strategy", "", "override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files)")
-}
-
-// addForceFlag registers --force for the commands that may act on findings
-// with overridable blocking risk flags.
-func addForceFlag(cmd *cobra.Command, f *applyFlags) {
-	cmd.Flags().BoolVar(&f.force, "force", false, "also act on findings with blocking risk flags (e.g. git branch -D)")
 }

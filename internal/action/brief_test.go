@@ -96,7 +96,7 @@ func TestRenderBriefSummary(t *testing.T) {
 func TestRenderBriefSummaryNothingApplied(t *testing.T) {
 	var out bytes.Buffer
 	renderBriefSummary(&out, &Result{Skipped: 1}, false)
-	if want := "1 item skipped (blocked or changed since the scan; run with --verbose for details)\nnothing cleaned. 0 B reclaimed\n"; out.String() != want {
+	if want := "1 item skipped (blocked or changed since the scan; run with --dry-run for details)\nnothing cleaned. 0 B reclaimed\n"; out.String() != want {
 		t.Errorf("got %q", out.String())
 	}
 }

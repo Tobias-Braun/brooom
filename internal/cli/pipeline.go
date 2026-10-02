@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Tobias-Braun/brooom/internal/buildinfo"
@@ -36,7 +35,6 @@ const defaultFormat = "table"
 type scanRequest struct {
 	opts      scanOptions
 	cfg       *config.Config
-	cfgPath   string
 	format    string
 	detectors []detect.Detector
 }
@@ -45,6 +43,9 @@ type scanRequest struct {
 // configuration are returned, not discarded, so the action executor of sweep
 // can act on the findings within exactly the scope that was scanned.
 type scanResult struct {
+	// Root is the repository or folder the scan covers (the first allowed
+	// location), recorded in session manifests.
+	Root    string
 	Report  *findings.Report
 	Config  *config.Config
 	Env     *detect.Env
@@ -70,7 +71,7 @@ func (a *app) newScanRequest(opts scanOptions) (*scanRequest, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg, path, err := a.loadConfig()
+	cfg, err := a.loadConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -82,30 +83,27 @@ func (a *app) newScanRequest(opts scanOptions) (*scanRequest, error) {
 	if opts.configOverlay != nil {
 		opts.configOverlay(cfg)
 	}
-	if opts.targetsOnly {
-		detectors = nil
-	}
-	return &scanRequest{opts: opts, cfg: cfg, cfgPath: path, format: format, detectors: detectors}, nil
+	return &scanRequest{opts: opts, cfg: cfg, format: format, detectors: detectors}, nil
 }
 
 // loadConfig loads the config file named by --config, or the default one.
 // An explicitly given file must exist; a missing default file means the
 // defaults. Load and validation errors are returned unchanged because they
 // name the offending key.
-func (a *app) loadConfig() (*config.Config, string, error) {
+func (a *app) loadConfig() (*config.Config, error) {
 	path, err := a.configPath()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if err := a.requireExplicitConfig(path); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	a.noteDeprecatedConfig(cfg)
-	return cfg, path, nil
+	return cfg, nil
 }
 
 // resolveFormat picks the output format (flag, then config, then table) and
@@ -124,8 +122,7 @@ func resolveFormat(flagValue, configValue string) (string, error) {
 	return name, nil
 }
 
-// resolveActingFormat is resolveFormat for a run that acts (no --dry-run, purge
-// operations). Its plan and confirmation text are human output, so a machine
+// resolveActingFormat is resolveFormat for a run that acts (no --dry-run). Its plan and confirmation text are human output, so a machine
 // format that only came from the config's output.format (the user never passed
 // --format) must not block the run: it falls back to the default human format.
 // An explicit --format is returned as is, for the caller to refuse.
@@ -229,6 +226,7 @@ func (a *app) execute(ctx context.Context, req *scanRequest, onFinding func(find
 	if err != nil {
 		return nil, err
 	}
+	root := ts.allowed[0]
 	ts.addExtraTargets(ctx, req.cfg, req.detectors)
 	effective, targets, effErrs := effectiveConfigs(req.cfg, ts.targets)
 	ts.errs = append(ts.errs, effErrs...)
@@ -243,17 +241,16 @@ func (a *app) execute(ctx context.Context, req *scanRequest, onFinding func(find
 	if err != nil {
 		return nil, err
 	}
-	a.progressf("config: %s", req.cfgPath)
-	a.progressf("scanning %d target(s) with %d detector(s)", len(targets), len(req.detectors))
 
-	found, runErrs, stats := a.runDetectors(ctx, env, targets, req, effective, req.opts.filterStream(onFinding))
-	if kept := req.opts.filter(found); len(kept) != len(found) {
-		a.progressf("dropped %d finding(s) below the preset's confidence floor", len(found)-len(kept))
-		found = kept
-	}
+	found, runErrs := detect.Run(ctx, env, targets, req.detectors, detect.RunOptions{
+		Concurrency: req.cfg.Scan.Concurrency,
+		Applies:     appliesFunc(effective),
+		OnFinding:   req.opts.filterStream(onFinding),
+		Progress:    a.reporter(),
+	})
+	found = req.opts.filter(found)
 	// Whatever renders the results next writes to the terminal too.
 	a.reporter().Pause()
-	a.logDetectorStats(req.detectors, found, stats)
 	sort.SliceStable(runErrs, func(i, j int) bool {
 		x, y := runErrs[i], runErrs[j]
 		if x.Detector != y.Detector {
@@ -266,7 +263,7 @@ func (a *app) execute(ctx context.Context, req *scanRequest, onFinding func(find
 	})
 	errs := append(ts.errs, runErrs...)
 	report := findings.NewReport(buildinfo.Get().Version, env.Now, scopesOf(targets), found, errs)
-	res := &scanResult{Report: report, Config: req.cfg, Env: env, Guard: guard, Targets: targets}
+	res := &scanResult{Root: root, Report: report, Config: req.cfg, Env: env, Guard: guard, Targets: targets}
 	if ctx.Err() != nil {
 		return res, errScanInterrupted
 	}
@@ -318,9 +315,6 @@ func newEnv(req *scanRequest, runner gitx.Runner, guard *scope.Guard) (*detect.E
 		// One lazily loaded listing serves every detector of the scan.
 		Open: procs.NewSnapshot(),
 	}
-	for _, d := range req.detectors {
-		env.Selected = append(env.Selected, d.Name())
-	}
 	if runner != nil {
 		env.Repos = gitx.NewCache(runner)
 	}
@@ -339,26 +333,6 @@ func newEnv(req *scanRequest, runner gitx.Runner, guard *scope.Guard) (*detect.E
 	return env, nil
 }
 
-// runDetectors runs the selected detectors, timing them when verbose.
-func (a *app) runDetectors(ctx context.Context, env *detect.Env, targets []scope.Target, req *scanRequest,
-	effective map[string]*config.Config, onFinding func(findings.Finding)) ([]findings.Finding, []findings.ScanError, *detectorStats) {
-	stats := &detectorStats{elapsed: map[string]time.Duration{}}
-	dets := req.detectors
-	if a.verboseOn() {
-		dets = make([]detect.Detector, len(req.detectors))
-		for i, d := range req.detectors {
-			dets[i] = timedDetector{Detector: d, stats: stats}
-		}
-	}
-	found, errs := detect.Run(ctx, env, targets, dets, detect.RunOptions{
-		Concurrency: req.cfg.Scan.Concurrency,
-		Applies:     appliesFunc(effective),
-		OnFinding:   onFinding,
-		Progress:    a.reporter(),
-	})
-	return found, errs, stats
-}
-
 // scopesOf returns the deduplicated target scopes in target order.
 func scopesOf(targets []scope.Target) []findings.Scope {
 	scopes := []findings.Scope{}
@@ -372,67 +346,9 @@ func scopesOf(targets []scope.Target) []findings.Scope {
 	return scopes
 }
 
-// detectorStats accumulates the time spent in each detector across targets.
-type detectorStats struct {
-	mu      sync.Mutex
-	elapsed map[string]time.Duration
-}
-
-func (s *detectorStats) add(name string, d time.Duration) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.elapsed[name] += d
-}
-
-// timedDetector measures Detect for the verbose per-detector summary. It
-// embeds the detector so Name and Category (used by Applies) pass through.
-type timedDetector struct {
-	detect.Detector
-	stats *detectorStats
-}
-
-func (t timedDetector) Detect(ctx context.Context, env *detect.Env, target scope.Target, emit func(findings.Finding)) error {
-	start := time.Now()
-	defer func() { t.stats.add(t.Name(), time.Since(start)) }()
-	return t.Detector.Detect(ctx, env, target, emit)
-}
-
-// verboseOn reports whether diagnostics go to stderr: --verbose is ignored
-// when --quiet is given.
-func (a *app) verboseOn() bool { return a.flags.verbose && !a.flags.quiet }
-
-// progressf writes one diagnostic line to stderr in verbose mode. Progress
-// never goes to stdout, which keeps json, ndjson and plain pipe-safe.
-func (a *app) progressf(format string, args ...any) {
-	if a.verboseOn() {
-		fmt.Fprintln(a.io.Err, output.Sanitize(fmt.Sprintf(format, args...)))
-	}
-}
-
-// logDetectorStats prints the finding count and the accumulated time of each
-// selected detector.
-func (a *app) logDetectorStats(dets []detect.Detector, found []findings.Finding, stats *detectorStats) {
-	if !a.verboseOn() {
-		return
-	}
-	counts := map[string]int{}
-	for _, f := range found {
-		counts[f.Detector]++
-	}
-	for _, d := range dets {
-		stats.mu.Lock()
-		el := stats.elapsed[d.Name()]
-		stats.mu.Unlock()
-		a.progressf("  %s: %d finding(s) in %s", d.Name(), counts[d.Name()], el.Round(time.Millisecond))
-	}
-}
-
-// logScanErrors prints scan errors to stderr: always when always is set
-// (streaming formats cannot render them), otherwise only in verbose mode.
-func (a *app) logScanErrors(errs []findings.ScanError, always bool) {
-	if !always && !a.verboseOn() {
-		return
-	}
+// logScanErrors prints scan errors to stderr, for the outputs that cannot
+// render them (streaming and pipe formats, the plan of an acting run).
+func (a *app) logScanErrors(errs []findings.ScanError) {
 	for _, e := range errs {
 		fmt.Fprintln(a.io.Err, "scan error:", formatScanError(e))
 	}

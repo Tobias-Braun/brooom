@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
 	"github.com/Tobias-Braun/brooom/internal/scope"
@@ -22,25 +21,25 @@ import (
 func forgedUndoEntry(dest string) session.Entry {
 	return session.Entry{
 		Action: findings.ActionTrash, Status: session.StatusApplied, Path: dest,
-		Trash: &trash.Record{OriginalPath: dest, StoredPath: dest + ".stored", Strategy: config.StrategyQuarantine},
+		Trash: &trash.Record{OriginalPath: dest, StoredPath: dest + ".stored", Strategy: trash.StrategyTrash},
 	}
 }
 
 func TestTrashUndoRefusesForgedDestinations(t *testing.T) {
 	ctx := context.Background()
 	fx := newTrashFixture(t)
-	stub := &stubTrasher{strategy: config.StrategyQuarantine}
+	stub := &stubTrasher{}
 	fx.useStub(stub)
 	fx.mkdir("proj/.git/hooks")
 	fx.mkdir("brooom-home/sessions")
-	fx.mkdir("brooom-home/quarantine/s1")
+	fx.mkdir("brooom-home/cache")
 
 	tests := []struct{ name, dest string }{
 		{"git hook", fx.path("proj/.git/hooks/pre-commit")},
 		{"git dir itself", fx.path("proj/.git")},
 		{"oddly cased git dir", fx.path("proj/.GIT/config")},
 		{"session manifest", fx.path("brooom-home/sessions/20260101-000000-abcd.json")},
-		{"quarantine content", fx.path("brooom-home/quarantine/s1/file")},
+		{"brooom cache", fx.path("brooom-home/cache/file")},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -62,7 +61,7 @@ func TestTrashUndoRefusesGitAliasByIdentity(t *testing.T) {
 		t.Skip("creating symlinks needs privileges on Windows")
 	}
 	fx := newTrashFixture(t)
-	stub := &stubTrasher{strategy: config.StrategyQuarantine}
+	stub := &stubTrasher{}
 	fx.useStub(stub)
 	fx.mkdir("proj/.git")
 	if err := os.Symlink(fx.path("proj/.git"), fx.path("proj/alias")); err != nil {
@@ -76,7 +75,7 @@ func TestTrashUndoRefusesGitAliasByIdentity(t *testing.T) {
 
 func TestTrashUndoStillRestoresOrdinaryDestination(t *testing.T) {
 	fx := newTrashFixture(t)
-	stub := &stubTrasher{strategy: config.StrategyQuarantine}
+	stub := &stubTrasher{}
 	fx.useStub(stub)
 	fx.mkdir("proj")
 	if err := (trashAction{}).Undo(context.Background(), fx.env, forgedUndoEntry(fx.path("proj/a.log"))); err != nil {
@@ -93,7 +92,7 @@ func TestTrashApplyRechecksForgedStep(t *testing.T) {
 
 	t.Run("nested git repository", func(t *testing.T) {
 		fx := newTrashFixture(t)
-		stub := &stubTrasher{strategy: config.StrategyQuarantine}
+		stub := &stubTrasher{}
 		fx.useStub(stub)
 		fx.mkdir("proj/vendor/dep/.git")
 		fx.write("proj/vendor/dep/a.txt", "x")
@@ -105,7 +104,7 @@ func TestTrashApplyRechecksForgedStep(t *testing.T) {
 	})
 	t.Run("open file", func(t *testing.T) {
 		fx := newTrashFixture(t)
-		stub := &stubTrasher{strategy: config.StrategyQuarantine}
+		stub := &stubTrasher{}
 		fx.useStub(stub)
 		p := fx.write("proj/a.log", "x")
 		fx.setOpen(func(_ context.Context, paths []string) (map[string]bool, error) {
@@ -115,18 +114,6 @@ func TestTrashApplyRechecksForgedStep(t *testing.T) {
 		wantSkip(t, err, "open by a process")
 		if len(stub.removed) != 0 {
 			t.Fatal("open file was removed")
-		}
-	})
-	t.Run("delete strategy on untracked data", func(t *testing.T) {
-		fx := newTrashFixture(t)
-		fx.env.Force = true
-		f := deleteUntracked(fx)
-		stub := &stubTrasher{strategy: config.StrategyDelete}
-		fx.useStub(stub)
-		_, err := trashAction{}.Apply(ctx, fx.env, Step{Finding: f})
-		wantSkip(t, err, "permanently delete untracked")
-		if len(stub.removed) != 0 {
-			t.Fatal("untracked file was deleted permanently")
 		}
 	})
 }
@@ -156,44 +143,9 @@ func forgedRepoFixture(t *testing.T, force bool) (*trashFixture, *testutil.Repo)
 // no risk flags, so nothing the step says can vouch for its safety.
 func TestTrashApplyForgedStepEmptyMeta(t *testing.T) {
 	ctx := context.Background()
-	for _, force := range []bool{false, true} {
-		name := map[bool]string{false: "without force", true: "with force"}[force]
-		t.Run("delete untracked "+name, func(t *testing.T) {
-			fx, repo := forgedRepoFixture(t, force)
-			stub := &stubTrasher{strategy: config.StrategyDelete}
-			fx.useStub(stub)
-			_, err := trashAction{}.Apply(ctx, fx.env, Step{Finding: trashFinding(filepath.Join(repo.Dir, "notes"))})
-			wantSkip(t, err, "permanently delete")
-			if len(stub.removed) != 0 {
-				t.Fatal("untracked data was deleted permanently")
-			}
-		})
-		t.Run("delete outside a repository "+name, func(t *testing.T) {
-			fx := newTrashFixture(t)
-			fx.env.Force = force
-			stub := &stubTrasher{strategy: config.StrategyDelete}
-			fx.useStub(stub)
-			_, err := trashAction{}.Apply(ctx, fx.env, Step{Finding: trashFinding(fx.write("proj/a.bin", "x"))})
-			wantSkip(t, err, "permanently delete")
-			if len(stub.removed) != 0 {
-				t.Fatal("unprovable path was deleted permanently")
-			}
-		})
-	}
-	t.Run("delete ignored build output is allowed", func(t *testing.T) {
-		fx, repo := forgedRepoFixture(t, false)
-		stub := &stubTrasher{strategy: config.StrategyDelete}
-		fx.useStub(stub)
-		if _, err := (trashAction{}).Apply(ctx, fx.env, Step{Finding: trashFinding(filepath.Join(repo.Dir, "build"))}); err != nil {
-			t.Fatalf("Apply: %v", err)
-		}
-		if len(stub.removed) != 1 {
-			t.Fatalf("removed = %d, want 1", len(stub.removed))
-		}
-	})
 	t.Run("tracked files need force", func(t *testing.T) {
 		fx, repo := forgedRepoFixture(t, false)
-		stub := &stubTrasher{strategy: config.StrategyQuarantine}
+		stub := &stubTrasher{}
 		fx.useStub(stub)
 		_, err := trashAction{}.Apply(ctx, fx.env, Step{Finding: trashFinding(filepath.Join(repo.Dir, "src"))})
 		wantSkip(t, err, "tracked by git")
@@ -203,7 +155,7 @@ func TestTrashApplyForgedStepEmptyMeta(t *testing.T) {
 	})
 	t.Run("tracked files with force", func(t *testing.T) {
 		fx, repo := forgedRepoFixture(t, true)
-		stub := &stubTrasher{strategy: config.StrategyQuarantine}
+		stub := &stubTrasher{}
 		fx.useStub(stub)
 		if _, err := (trashAction{}).Apply(ctx, fx.env, Step{Finding: trashFinding(filepath.Join(repo.Dir, "src"))}); err != nil {
 			t.Fatalf("Apply: %v", err)
@@ -216,7 +168,7 @@ func TestTrashApplyForgedStepEmptyMeta(t *testing.T) {
 
 func TestTrashUndoRefusesBrooomHome(t *testing.T) {
 	fx := newTrashFixture(t)
-	stub := &stubTrasher{strategy: config.StrategyQuarantine}
+	stub := &stubTrasher{}
 	fx.useStub(stub)
 	fx.mkdir("brooom-home")
 	for _, rel := range []string{"brooom-home/config.toml", "brooom-home/cache/x"} {

@@ -10,15 +10,15 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/testutil"
 )
 
-// pathSession applies `clean --from --path <repo>` from outside the
-// repository's working directory (quarantine strategy, isolated home) and returns the removed file,
-// the arguments of the printed undo command and the fixture.
+// pathSession runs `sweep tidy <repo>` from outside the repository's working
+// directory (test trash, isolated home) and returns the removed file, the
+// arguments of the printed undo command and the fixture.
 func pathSession(t *testing.T) (removed string, undoArgs []string, f *cleanupFixture) {
 	t.Helper()
 	f = newCleanupFixture(t, nil)
-	dir, file := junkDir(t, f.repo.Dir, "node_modules")
-	path := writeReportFile(t, trashFinding(f.repo.Dir, dir))
-	code, out, errOut := clean(t, "", "--from", path, "--path", f.repo.Dir, "--yes")
+	file := oldJunk(t, f.repo.Dir)
+	t.Chdir(testutil.ResolvedTempDir(t))
+	code, out, errOut := brooom(t, "", "sweep", "tidy", f.repo.Dir, "--yes")
 	if code != ExitOK || exists(file) {
 		t.Fatalf("apply: code %d, file kept %v\n%s\n%s", code, exists(file), out, errOut)
 	}
@@ -83,7 +83,7 @@ func TestUndoOfOldWorkspaceSessionExplainsPath(t *testing.T) {
 }
 
 // TestUndoScopeRefusalIsNotCountedAsNotRestorable is the wording of #192: data
-// that sits safely in quarantine is skipped, never "not restorable".
+// that sits safely in the trash is skipped, never "not restorable".
 func TestUndoScopeRefusalIsNotCountedAsNotRestorable(t *testing.T) {
 	f := newUndoFixture(t)
 	p := f.write("a.txt", "a")
@@ -118,8 +118,8 @@ func TestUndoHintKeepsPathAndConfigFlags(t *testing.T) {
 // flags the hint stays `brooom undo <id>`.
 func TestUndoHintOmitsScopeForRepoSessions(t *testing.T) {
 	f := newCleanupFixture(t, nil)
-	dir, file := junkDir(t, f.repo.Dir, "node_modules")
-	code, out, _ := clean(t, "", "--from", writeReportFile(t, trashFinding(f.repo.Dir, dir)), "--yes")
+	file := oldJunk(t, f.repo.Dir)
+	code, out, _ := brooom(t, "", "sweep", "tidy", "--yes")
 	if code != ExitOK || exists(file) {
 		t.Fatalf("code %d\n%s", code, out)
 	}

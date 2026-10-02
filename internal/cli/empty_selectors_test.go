@@ -10,28 +10,22 @@ import (
 // may be touched.
 func TestEmptySelectorsAreUsageErrors(t *testing.T) {
 	f := newCleanupFixture(t, nil)
-	dir, file := junkDir(t, f.repo.Dir, "node_modules")
-	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
+	file := oldJunk(t, f.repo.Dir)
 
 	tests := []struct {
 		name string
 		args []string
 		flag string
 	}{
-		{"id empty", []string{"clean", "--from", report, "--id", ""}, "--id"},
-		{"id comma only", []string{"clean", "--from", report, "--id", ","}, "--id"},
-		{"id empty element", []string{"clean", "--from", report, "--id", "abc,,def"}, "--id"},
-		{"id blank", []string{"clean", "--from", report, "--id", " "}, "--id"},
-		{"path empty", []string{"clean", "--from", report, "--path", ""}, "--path"},
 		{"path blank", []string{"undo", "--path", " "}, "--path"},
-		{"detector empty", []string{"sweep", "-d", ""}, "--detector"},
-		{"detector empty element", []string{"sweep", "-d", "build-artifacts,"}, "--detector"},
-		{"detector on clean", []string{"clean", "--from", report, "-d", ""}, "--detector"},
+		{"path empty", []string{"undo", "--path", ""}, "--path"},
+		{"detector empty", []string{"sweep", "tidy", "-d", ""}, "--detector"},
+		{"detector comma only", []string{"sweep", "tidy", "-d", ","}, "--detector"},
+		{"detector empty element", []string{"sweep", "tidy", "-d", "log-and-runtime-files,"}, "--detector"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			args := append(append([]string{}, tt.args...), "--yes")
-			args = append(args, quarantine...)
 			code, out, errOut := brooom(t, "", args...)
 			if code != ExitUsage || !strings.Contains(errOut, tt.flag) {
 				t.Fatalf("code %d, want usage error naming %s\nstdout: %s\nstderr: %s", code, tt.flag, out, errOut)
@@ -46,15 +40,11 @@ func TestEmptySelectorsAreUsageErrors(t *testing.T) {
 // TestNonEmptySelectorsStillWork makes sure the check does not reject valid
 // spellings: repeated flags, comma lists and a leading space.
 func TestNonEmptySelectorsStillWork(t *testing.T) {
-	f := newCleanupFixture(t, nil)
-	dir, _ := junkDir(t, f.repo.Dir, "node_modules")
-	report := writeReportFile(t, trashFinding(f.repo.Dir, dir))
-	id := trashFinding(f.repo.Dir, dir).ID
+	newCleanupFixture(t, nil)
 	for _, args := range [][]string{
-		{"clean", "--from", report, "--id", id, "--dry-run"},
-		{"clean", "--from", report, "--id", id + "," + id, "--dry-run"},
-		{"clean", "--from", report, "--id", id, "--id", id, "--dry-run"},
-		{"scan", "-d", "build-artifacts,worktrees"},
+		{"sweep", "-d", "build-artifacts,worktrees", "--dry-run"},
+		{"sweep", "-d", "build-artifacts", "-d", "worktrees", "--dry-run"},
+		{"sweep", "-d", " worktrees", "--dry-run"},
 	} {
 		code, out, errOut := brooom(t, "", args...)
 		if code == ExitUsage {

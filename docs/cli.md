@@ -10,7 +10,6 @@ Every command that changes something shows its plan and asks once before it acts
 
 - [Global flags](#global-flags)
 - [`brooom`](#brooom)
-- [`brooom clean`](#brooom-clean)
 - [`brooom completion`](#brooom-completion)
 - [`brooom completion bash`](#brooom-completion-bash)
 - [`brooom completion fish`](#brooom-completion-fish)
@@ -21,17 +20,11 @@ Every command that changes something shows its plan and asks once before it acts
 - [`brooom config init`](#brooom-config-init)
 - [`brooom config path`](#brooom-config-path)
 - [`brooom config show`](#brooom-config-show)
-- [`brooom config validate`](#brooom-config-validate)
 - [`brooom empty-trash`](#brooom-empty-trash)
-- [`brooom git`](#brooom-git)
-- [`brooom git purge`](#brooom-git-purge)
-- [`brooom purge`](#brooom-purge)
 - [`brooom review`](#brooom-review)
-- [`brooom scan`](#brooom-scan)
 - [`brooom sessions`](#brooom-sessions)
 - [`brooom sweep`](#brooom-sweep)
 - [`brooom undo`](#brooom-undo)
-- [`brooom update-check`](#brooom-update-check)
 - [`brooom version`](#brooom-version)
 
 ## Global flags
@@ -47,126 +40,53 @@ accept every global flag, because the shell passes them on while completing.
 | `-d`, `--detector` | - | run only these detectors (repeatable) |
 | `-f`, `--format` | - | output format: table, tree, json, ndjson, plain, summary |
 | `--no-color` | - | disable colors (also honours NO_COLOR) |
-| `--progress` | `auto` | live progress display on stderr: auto (terminals only), always, never |
 | `-q`, `--quiet` | - | print only essential output |
-| `-v`, `--verbose` | - | print progress and diagnostics to stderr |
 
 ## `brooom`
 
 Sweep disk clutter from AI-assisted development
 
 ```text
-brooom [path] [flags]
+brooom [flags]
 ```
 
 ```text
 Brooom finds and safely cleans the clutter that heavy AI/agent-assisted
-development leaves behind: agent run logs and runtime files, stale and merged
-git branches, leftover worktrees, bloated git histories and build artifacts.
+development leaves behind: agent run logs and runtime files, merged git
+branches, leftover worktrees, bloated git histories and build artifacts.
 
-Safety first: every command that changes something shows its plan and asks
-once before it acts (--dry-run only shows the plan, --yes skips the question),
-removed files go to the trash by default, and every session can be undone.
-Sweep never removes unmerged or uncommitted work.
-Brooom never removes a directory that contains version control metadata (.git,
-.hg, .jj, .svn) or a Windows junction, and the delete strategy is refused
-outside a git repository and whenever git cannot confirm that a path holds no
-untracked files.
+'brooom sweep [preset] [path]' shows what it would clean, asks once and then
+cleans. Presets choose what is swept, the config file (brooom config path)
+customizes it, and --format picks the output.
+
+Safety first: removed files go to the OS trash and every session can be
+undone. Sweep never removes unmerged or uncommitted work, and Brooom never
+removes a directory that contains version control metadata (.git, .hg, .jj,
+.svn) or a Windows junction.
 
 Without a path Brooom only looks at the git repository you are in. Pass a
-folder (brooom ~/code, brooom sweep tidy ~/code) to work on every repository
-below it.
+folder (brooom sweep tidy ~/code) to work on every repository below it.
 ```
 
 **Examples**
 
 ```sh
-brooom
-brooom ~/code
 brooom sweep
 brooom sweep after-agents
+brooom sweep tidy ~/code
 brooom undo
 ```
 
 **Subcommands**
 
-- [`brooom clean`](#brooom-clean): Act on a reviewed findings file (from --format json)
 - [`brooom completion`](#brooom-completion): Generate the autocompletion script for the specified shell
-- [`brooom config`](#brooom-config): Create, show, edit and validate the configuration
+- [`brooom config`](#brooom-config): Create, show and edit the configuration file
 - [`brooom empty-trash`](#brooom-empty-trash): Permanently delete what brooom moved to the OS trash
-- [`brooom git`](#brooom-git): Git history maintenance
-- [`brooom purge`](#brooom-purge): Permanently delete quarantined sessions past their retention and stale scan caches
 - [`brooom review`](#brooom-review): Decide one by one on dirty worktrees and unmerged branches
-- [`brooom scan`](#brooom-scan): Scan for clutter and report findings (never modifies anything)
-- [`brooom sessions`](#brooom-sessions): List applied sessions, or show one session's manifest
+- [`brooom sessions`](#brooom-sessions): List the sessions that changed something
 - [`brooom sweep`](#brooom-sweep): Scan, show what to clean, ask once, then clean
 - [`brooom undo`](#brooom-undo): Restore what a session removed (default: the latest session)
-- [`brooom update-check`](#brooom-update-check): Check GitHub for a newer release (opt-in, contacts api.github.com)
 - [`brooom version`](#brooom-version): Print version information
-
-
-## `brooom clean`
-
-Act on a reviewed findings file (from --format json)
-
-```text
-brooom clean --from <findings.json> [flags]
-```
-
-```text
-Apply the suggested actions of a findings file produced with
-'brooom scan --format json'. Edit or filter the file (or pass --id) to choose
-what gets cleaned. Every finding is re-validated before anything is done.
-
-The file is untrusted input. The scope comes from this invocation (the current
-repository, or the folder --path names), never from the file:
-findings outside it are refused and make the command exit with 1. User-level
-locations are only accepted where they belong to a repository of the scope
-(for example its Claude Code transcripts). The action in the file only selects
-which action to run; risk flags, sizes and ages in the file are never trusted,
-and each finding is checked again against the live state before it is applied.
-
-Your configuration applies as in a scan: -d/--detector selects which findings
-are acted on (an unknown detector is a usage error), and findings of a detector
-that is disabled, in the configuration or by a repository's .brooom.json, or
-below an excluded directory are refused. Catalog-protected files such as .env
-and .mcp.json are never removed. Git maintenance findings ignore any expiry
-in the file and use the configured one.
-
-A finding without a suggested action stays untouched, even with --force: scan
-again with --force (export with 'brooom scan --force --format json') to get
-an action for findings blocked by an overridable risk flag.
-
-The plan is shown and confirmed once before anything is done; --dry-run stops
-after the plan and --yes skips the question. Use '--from -' to read the file
-from stdin. Stdin is then the findings, so there is no terminal to confirm on:
-pass --yes or --dry-run (or use a file, which keeps the confirmation).
-
-The file may be UTF-8 (with or without a byte order mark) or UTF-16 with a
-byte order mark, so 'brooom scan --format json > findings.json' also works in
-Windows PowerShell 5.1, which writes UTF-16.
-```
-
-**Examples**
-
-```sh
-brooom scan --format json > findings.json
-brooom clean --from findings.json
-brooom clean --from findings.json --id 8f2a41c7 --dry-run
-brooom scan --format json | brooom clean --from - --yes
-```
-
-**Flags**
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--dry-run` | - | only show what would be done and change nothing |
-| `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--from` | - | findings file ('-' for stdin) |
-| `--id` | - | only act on these finding IDs (repeatable, comma-separated) |
-| `--path` | - | work on this folder or repository instead of the current one |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
-| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
 ## `brooom completion`
@@ -181,9 +101,8 @@ brooom completion [flags]
 Generate the autocompletion script for brooom for the given shell.
 
 The scripts complete commands, flags and flag values (detector names, output
-formats, presets, trash strategies), session ids for 'undo' and 'sessions' and
-the configured roots for 'roots remove', each with a short description where
-the shell supports it. Completion never scans, writes or contacts the network.
+formats, presets), session ids for 'undo' and folders for the path arguments,
+each with a short description where the shell supports it. Completion never scans, writes or contacts the network.
 
 Bash (needs the bash-completion package):
 
@@ -407,7 +326,7 @@ brooom completion zsh --no-descriptions
 
 ## `brooom config`
 
-Create, show, edit and validate the configuration
+Create, show and edit the configuration file
 
 ```text
 brooom config [flags]
@@ -416,10 +335,10 @@ brooom config [flags]
 **Examples**
 
 ```sh
+brooom config path
 brooom config init
 brooom config show
 brooom config edit
-brooom config validate
 ```
 
 **Subcommands**
@@ -428,7 +347,6 @@ brooom config validate
 - [`brooom config init`](#brooom-config-init): Write a config file with the defaults
 - [`brooom config path`](#brooom-config-path): Print the config file path
 - [`brooom config show`](#brooom-config-show): Print the effective configuration
-- [`brooom config validate`](#brooom-config-validate): Validate the config file
 
 
 ## `brooom config edit`
@@ -515,29 +433,6 @@ brooom config show --format table
 ```
 
 
-## `brooom config validate`
-
-Validate the config file
-
-```text
-brooom config validate [flags]
-```
-
-```text
-Check the config file and report every problem. Inside a git repository the
-repository's .brooom.json is checked as well, exactly as a scan would apply
-it, so the result depends on the current directory. A root that does not exist
-is only a warning, because a root on an unmounted volume is legitimate.
-```
-
-**Examples**
-
-```sh
-brooom config validate
-brooom config validate --config ./brooom.json
-```
-
-
 ## `brooom empty-trash`
 
 Permanently delete what brooom moved to the OS trash
@@ -555,8 +450,7 @@ is still of the recorded type (and, for a file, of the recorded size). Items
 that changed are listed with the reason and kept.
 
 The manifest entries of deleted items are marked as not restorable, so
-'brooom undo' and 'brooom sessions' stay truthful. Quarantined sessions are
-emptied by 'brooom purge' instead.
+'brooom undo' and 'brooom sessions' stay truthful.
 ```
 
 **Examples**
@@ -571,122 +465,6 @@ brooom empty-trash --dry-run
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--dry-run` | - | only list the items and delete nothing |
-| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
-
-
-## `brooom git`
-
-Git history maintenance
-
-```text
-brooom git [flags]
-```
-
-**Examples**
-
-```sh
-brooom git purge
-brooom git purge --gc
-```
-
-**Subcommands**
-
-- [`brooom git purge`](#brooom-git-purge): Report git bloat and run gc, prune and reflog expiry (each opt-in)
-
-
-## `brooom git purge`
-
-Report git bloat and run gc, prune and reflog expiry (each opt-in)
-
-```text
-brooom git purge [path] [flags]
-```
-
-```text
-Report loose objects, pack count, reflog size and large blobs, and run the
-selected maintenance operations. Without a flag nothing but the report is
-produced. Each operation is opt-in and independent, none can be undone, and
-each is validated with git's own dry run before it is offered. The plan is
-shown and confirmed once before anything runs (--yes skips the question,
---dry-run stops after the plan).
-
-  --gc                    run 'git gc --prune=<prune_expire>' on repositories
-                          with a loose-object or pack finding (healthy
-                          repositories are never touched)
-  --reflog-expire <date>  run 'git reflog expire --all' with <date> as expiry
-                          (stash entries excepted) on every repository in
-                          scope where it would remove entries
-  --prune <date>          run 'git prune --expire=<date>' on every repository
-                          in scope where it would delete objects
-
-What they do:
-
-  * git gc: repacks loose objects and packs (this can take a while and rewrites packs), deletes unreachable objects older than the configured prune_expire, and also expires reflog entries per gc.reflogExpire / gc.reflogExpireUnreachable (git defaults 90 / 30 days) and runs 'git rerere gc'. Recovery points are lost too. Stash entries (refs/stash) are kept: Brooom protects them even if gc.refs/stash.reflogExpire is set. Worktree registrations are kept too (gc.worktreePruneExpire=never); use 'brooom worktrees' to prune them safely. Not restorable.
-  * git reflog expire: removes reflog entries older than the date. Deleted branches and reset commits older than that can no longer be recovered via the reflog (entries of unreachable commits also follow gc.reflogExpireUnreachable). Stash entries (refs/stash) are uncommitted work and are never expired; the plan counts the old ones that are kept. Not restorable.
-  * git prune: deletes unreachable objects older than the date permanently; commits only reachable through them cannot be recovered. Not restorable.
-
-Dates use git's syntax, e.g. '90.days.ago', '2.weeks.ago' or '2026-01-01'. The order is fixed: reflog
-expiry, then prune, then gc, so later steps see the expired reflog. A
-repository with a rebase, merge, cherry-pick, revert or bisect in progress is
-skipped. Large blobs need a history rewrite (git filter-repo), which Brooom
-does not do. Pass a folder as the path for all repositories below it.
-```
-
-**Examples**
-
-```sh
-brooom git purge
-brooom git purge --gc
-brooom git purge --reflog-expire 90.days.ago --prune 2.weeks.ago --dry-run
-```
-
-**Flags**
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--dry-run` | - | only show what would be done and change nothing |
-| `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
-| `--gc` | - | run git gc on repositories with a loose-object or pack finding (repos without one are not touched) |
-| `--prune` | - | delete unreachable objects older than this git date, e.g. 2.weeks.ago (permanent) |
-| `--reflog-expire` | - | expire reflog entries older than this git date, e.g. 90.days.ago (removes recovery points) |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
-| `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
-
-
-## `brooom purge`
-
-Permanently delete quarantined sessions past their retention and stale scan caches
-
-```text
-brooom purge [flags]
-```
-
-```text
-List the quarantined sessions (~/.brooom/quarantine/<session-id>) that are
-older than trash.quarantine_retention_days and, after one confirmation, delete
-them permanently (--dry-run only lists them, --yes skips the question). A retention of 0 means quarantined files never expire, so
-nothing is listed. Only session directories are touched, never anything else
-in the quarantine directory, the OS trash or the session manifests; the
-manifests of purged sessions are marked as not restorable.
-
-The same run also lists and removes stale directory size caches
-(~/.brooom/cache/dirsize-v1-*.json): files unused for 30 days, files of
-folders that no longer exist and leftovers of interrupted writes. The caches
-are rebuilt by the next scan, so this frees disk space only.
-```
-
-**Examples**
-
-```sh
-brooom purge
-brooom purge --dry-run
-```
-
-**Flags**
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--dry-run` | - | only list the sessions and cache files and delete nothing |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
@@ -727,70 +505,29 @@ brooom review --dry-run
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--dry-run` | - | only show what would be done and change nothing |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
-
-
-## `brooom scan`
-
-Scan for clutter and report findings (never modifies anything)
-
-```text
-brooom scan [path] [flags]
-```
-
-```text
-Scan the current repository (or the repository or folder the path names;
-below a folder every repository and project is scanned) and report findings. Scanning never
-modifies anything; use 'brooom sweep' or 'brooom clean --from <file>' to act
-on findings. -d/--detector limits the scan to single detectors, including the
-ones no sweep preset runs (stale-branch, large-untracked).
-
-The plain format is a bare path list for pipes and omits informational
-findings, such as linked worktrees outside the scanned scope; use another
-format to see them.
-
---force only changes what is reported: findings blocked by an overridable risk
-flag then suggest their action, so the file can be given to 'brooom clean
---from'. Nothing is modified either way.
-```
-
-**Examples**
-
-```sh
-brooom scan
-brooom scan ~/code --format json > findings.json
-brooom scan --detector merged-branch,worktrees --format plain
-brooom scan --force --format json > findings.json
-```
-
-**Flags**
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--force` | - | report the actions --force would allow for findings with overridable risk flags (read-only) |
 
 
 ## `brooom sessions`
 
-List applied sessions, or show one session's manifest
+List the sessions that changed something
 
 ```text
-brooom sessions [session-id] [flags]
+brooom sessions [flags]
 ```
 
 ```text
-List the sessions recorded by the runs that changed something, or show one session in detail
-(pass the full id or a unique prefix). Supports --format table (default),
-plain (session ids, or entry paths for one session), json and ndjson (one
-manifest, or one entry, per line). Read-only: nothing is modified.
+List the sessions recorded by the runs that changed something, newest
+first: the id (for 'brooom undo <id>'), the repository or folder the run
+worked on, the number of items it removed and the space it reclaimed.
+Supports --format table (default), plain (session ids), json and ndjson (one
+manifest per line). Read-only: nothing is modified.
 ```
 
 **Examples**
 
 ```sh
 brooom sessions
-brooom sessions 20260929
 brooom sessions --format json
 ```
 
@@ -841,10 +578,14 @@ does not include. Findings below the preset's confidence floor are dropped.
 
 Sweep never removes unmerged or uncommitted work: worktrees with changes,
 branches that are not merged and other findings with blocking risk flags are
-listed as skipped. Stale branches and large untracked files are in no preset;
-use 'brooom scan -d stale-branch' or '-d large-untracked' to list them.
+listed as skipped; 'brooom review' decides on them one by one.
 
-Removed files go to the trash and everything is recorded for 'brooom undo'.
+--dry-run, or a machine format (json, ndjson, plain), prints the report in
+the chosen --format and changes nothing. The plain format is a bare path list
+for pipes and omits informational findings, such as linked worktrees outside
+the scanned scope; use another format to see them.
+
+Removed files go to the OS trash and everything is recorded for 'brooom undo'.
 ```
 
 **Examples**
@@ -861,7 +602,6 @@ brooom sweep everything --yes
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--dry-run` | - | only show what would be done and change nothing |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
 
 
@@ -907,36 +647,8 @@ brooom undo --path ~/code
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--dry-run` | - | only show what would be done and change nothing |
-| `--force` | - | also act on findings with blocking risk flags (e.g. git branch -D) |
 | `--path` | - | work on this folder or repository instead of the current one |
-| `--trash-strategy` | - | override the trash strategy: trash, quarantine, delete (delete needs a git repository that shows no untracked files) |
 | `-y`, `--yes` | - | do not ask for confirmation (for scripts) |
-
-
-## `brooom update-check`
-
-Check GitHub for a newer release (opt-in, contacts api.github.com)
-
-```text
-brooom update-check [flags]
-```
-
-```text
-Ask GitHub once whether a newer Brooom release exists. Running this command
-is your consent to that single request: it is unauthenticated and sends no
-data about you. Brooom never checks on its own unless you set
-"update_check": true in the config file.
-
-Brooom does not update itself; it only prints how to upgrade for the way it
-was installed. Set BROOOM_UPDATE_URL to point the check at a mirror.
-```
-
-**Examples**
-
-```sh
-brooom update-check
-brooom update-check --format json
-```
 
 
 ## `brooom version`

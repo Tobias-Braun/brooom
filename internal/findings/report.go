@@ -23,7 +23,7 @@ func NewID(detector string, kind Kind, path, ref string) string {
 }
 
 // Report is the full result of a scan: all findings plus metadata and totals.
-// It is what `--format json` prints and what `brooom clean --from` reads.
+// It is what `--format json` prints.
 type Report struct {
 	SchemaVersion int       `json:"schema_version"`
 	BrooomVersion string    `json:"brooom_version"`
@@ -39,9 +39,7 @@ type Report struct {
 }
 
 // SkipPrefix starts the Message of a ScanError that reports a whole path as
-// skipped (no detector involved). The engine writes it and `brooom git purge`
-// reads it to avoid warning twice; sharing the constant keeps the two from
-// drifting apart.
+// skipped (no detector involved).
 const SkipPrefix = "skipped: "
 
 // ScanError is a problem encountered during a scan. It never aborts the scan,

@@ -311,8 +311,8 @@ func TestValidateDate(t *testing.T) {
 	if !errors.Is(err, ErrInvalidDate) || !strings.Contains(err.Error(), "garbage") {
 		t.Errorf("garbage: %v", err)
 	}
-	if err := CheckDateSyntax("-x"); !errors.Is(err, ErrInvalidDate) {
-		t.Errorf("CheckDateSyntax(-x) = %v", err)
+	if err := ValidateDate(ctx, fx.git, fx.repo.Dir, "-x"); !errors.Is(err, ErrInvalidDate) {
+		t.Errorf("ValidateDate(-x) = %v", err)
 	}
 }
 

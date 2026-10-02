@@ -142,7 +142,7 @@ func find(det string, ty findings.ActionType, path, ref string, size int64) find
 }
 
 func TestDryRunPrintsPlanAndCreatesNothing(t *testing.T) {
-	fx := newFixture(t, func(o *Options) { o.Apply = false; o.RerunHint = "brooom branches --apply" })
+	fx := newFixture(t, func(o *Options) { o.Apply = false; o.RerunHint = "brooom sweep" })
 	repo := fx.path("repo")
 	fx.fake(findings.ActionDeleteBranch)
 	fx.fake(findings.ActionTrash)
@@ -165,8 +165,8 @@ merged-branch / delete-branch: 2 items, %[2]s
   delete-branch repo:feat/b (%[4]s)
     $ run repo:feat/b
 total reclaimable: %[5]s
-flagged, not actionable: 1 (see brooom scan)
-dry run: nothing was changed; brooom branches --apply to execute
+flagged, not actionable: 1 (listed in the --dry-run report)
+dry run: nothing was changed; brooom sweep to execute
 `, output.FormatSize(2_000_000), output.FormatSize(2500), output.FormatSize(1000), output.FormatSize(1500), output.FormatSize(2_002_500))
 	if got := fx.out.String(); got != want {
 		t.Errorf("output mismatch\n got:\n%s\nwant:\n%s", got, want)
@@ -556,15 +556,16 @@ func TestConfirmationFlows(t *testing.T) {
 }
 
 func TestManifestLifecycle(t *testing.T) {
-	fx := newFixture(t, func(o *Options) { o.SessionID = "20260930-120000-abcd" })
+	fx := newFixture(t, func(o *Options) { o.Root = "/work/repo" })
 	var seen []int
 	check := func(s Step) (session.Entry, error) {
-		m, err := fx.store.Load("20260930-120000-abcd")
-		if err != nil {
+		ms, _, err := fx.store.List()
+		if err != nil || len(ms) != 1 {
 			t.Errorf("manifest missing before Apply of %s: %v", label(s.Finding), err)
 			return session.Entry{}, nil
 		}
-		if !m.FinishedAt.IsZero() || m.Command != "brooom test" || m.Version != session.ManifestVersion {
+		m := ms[0]
+		if !m.FinishedAt.IsZero() || m.Command != "brooom test" || m.Root != "/work/repo" || m.Version != session.ManifestVersion {
 			t.Errorf("unexpected manifest %+v", m)
 		}
 		seen = append(seen, len(m.Entries))
@@ -595,12 +596,15 @@ func TestManifestLifecycle(t *testing.T) {
 // snapshot taken at the start and every entry is durable in <id>.journal
 // (visible through Load); Finish then folds the journal into the snapshot.
 func TestApplyJournalsEntriesInsteadOfRewritingManifest(t *testing.T) {
-	const id = "20260930-120000-abcd"
-	fx := newFixture(t, func(o *Options) { o.SessionID = id })
-	snapshot := filepath.Join(fx.store.Dir, id+".json")
-	journal := filepath.Join(fx.store.Dir, id+".journal")
+	fx := newFixture(t, nil)
+	var snapshot, journal string
 	var start []byte
 	fx.fake(findings.ActionTrash).apply = func(s Step) (session.Entry, error) {
+		if snapshot == "" {
+			id := fx.manifests()[0].ID
+			snapshot = filepath.Join(fx.store.Dir, id+".json")
+			journal = filepath.Join(fx.store.Dir, id+".journal")
+		}
 		cur, err := os.ReadFile(snapshot)
 		if err != nil {
 			t.Fatal(err)
@@ -862,7 +866,7 @@ func TestReplanSkipAtApplyTime(t *testing.T) {
 func TestSummaryUndoHintOnlyForRestorable(t *testing.T) {
 	for _, restorable := range []bool{true, false} {
 		t.Run(fmt.Sprint(restorable), func(t *testing.T) {
-			fx := newFixture(t, func(o *Options) { o.SessionID = "sid-1" })
+			fx := newFixture(t, nil)
 			fx.fake(findings.ActionDeleteBranch).apply = func(s Step) (session.Entry, error) {
 				return session.Entry{Restorable: restorable, RecoveryHint: "git branch feat/x 1a2b3c4"}, nil
 			}
@@ -871,13 +875,13 @@ func TestSummaryUndoHintOnlyForRestorable(t *testing.T) {
 				t.Fatal(err)
 			}
 			out := fx.out.String()
-			if got := strings.Contains(out, "undo: brooom undo sid-1"); got != restorable {
+			if got := strings.Contains(out, "undo: brooom undo "+res.SessionID); got != restorable {
 				t.Errorf("undo hint present=%v, want %v\n%s", got, restorable, out)
 			}
 			for _, want := range []string{
 				"summary: 1 applied, 0 skipped, 0 failed",
 				"reclaimed: " + output.FormatSize(2_500_000),
-				"session: sid-1",
+				"session: " + res.SessionID,
 				"recovery hints:",
 				"git branch feat/x 1a2b3c4",
 			} {

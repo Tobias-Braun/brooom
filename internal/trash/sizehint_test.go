@@ -30,10 +30,10 @@ func TestSizeHintAppliesToExactPathOnly(t *testing.T) {
 // (and so in the session manifest), which is what makes "reclaimed" equal the
 // size the plan announced.
 func TestRemoveUsesPlannedSize(t *testing.T) {
-	q, root := newTestQuarantine(t, "sess")
-	p := filepath.Join(root, "work", "item")
+	m, _, home := newFakeTrash(t)
+	p := filepath.Join(home, "work", "item")
 	writeFile(t, p, "12345", 0o644)
-	rec, err := q.Remove(WithSizeHint(context.Background(), p, 777), p)
+	rec, err := m.Remove(WithSizeHint(context.Background(), p, 777), p)
 	if err != nil {
 		t.Fatal(err)
 	}

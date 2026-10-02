@@ -30,7 +30,7 @@ func TestSweepChooseUntickItems(t *testing.T) {
 			return checked, true, nil
 		},
 	}
-	code := execute(a, append(sweepArgs(), quarantine...))
+	code := execute(a, sweepArgs())
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut.String(), out.String())
 	}

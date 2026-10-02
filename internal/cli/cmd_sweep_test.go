@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -54,19 +55,6 @@ func (f *cleanupFixture) snapshot() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// scannedDetectors returns the detectors a verbose run reported on, in the
-// order of the per-detector summary lines ("  name: N finding(s) in ...").
-func scannedDetectors(stderr string) []string {
-	var out []string
-	for _, line := range strings.Split(stderr, "\n") {
-		name, rest, ok := strings.Cut(strings.TrimSpace(line), ": ")
-		if ok && strings.Contains(rest, "finding(s) in") {
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
 func TestSweepDryRunChangesNothing(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
@@ -95,7 +83,7 @@ func TestSweepYesPrintsTheBriefSummary(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "--yes"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", "sweep", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -125,7 +113,7 @@ func TestSweepYesPrintsTheBriefSummary(t *testing.T) {
 func TestSweepConfirmedShowsPlanThenBriefSummary(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, out, errOut := runApp(t, "y\n", true, time.Time{}, append([]string{"sweep"}, quarantine...)...)
+	code, out, errOut := runApp(t, "y\n", true, time.Time{}, "sweep")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -136,31 +124,12 @@ func TestSweepConfirmedShowsPlanThenBriefSummary(t *testing.T) {
 	}
 }
 
-// TestSweepVerboseShowsTheFullSummary: --verbose keeps the plan and the
-// multi-line summary.
-func TestSweepVerboseShowsTheFullSummary(t *testing.T) {
-	f := newCleanupFixture(t, nil)
-	f.mergedAndSquashed()
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "--yes", "--verbose"}, quarantine...)...)
-	if code != ExitOK {
-		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
-	}
-	for _, want := range []string{"feat/merged", "$ git branch -d", "summary: 2 applied"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output lacks %q:\n%s", want, out)
-		}
-	}
-	if f.hasBranch("feat/merged") {
-		t.Error("--verbose did not apply")
-	}
-}
-
 // TestSweepQuietPrintsOnlyFailures: a successful quiet sweep with --yes is
 // silent.
 func TestSweepQuietPrintsOnlyFailures(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "-q", "--yes"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", "sweep", "-q", "--yes")
 	if code != ExitOK || out != "" {
 		t.Fatalf("code %d, stdout %q, stderr %q", code, out, errOut)
 	}
@@ -186,40 +155,57 @@ func TestSweepHasNoApplyFlag(t *testing.T) {
 	}
 }
 
+// sweepSelection resolves the preset and detectors a sweep invocation would
+// scan, without scanning.
+func sweepSelection(t *testing.T, arg string, detectors ...string) (presets.Preset, []string, string) {
+	t.Helper()
+	var errOut bytes.Buffer
+	a := &app{io: IO{Err: &errOut}}
+	a.flags.detectors = detectors
+	p, err := a.resolvePreset(arg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := a.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, err := a.resolveSelection(cfg, cleanupSelection{detectors: p.Detectors, label: "sweep " + p.Name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p, names, errOut.String()
+}
+
 func TestSweepPresetSelection(t *testing.T) {
 	tidyCfg := map[string]any{"sweep": map[string]any{"preset": "tidy"}}
 	tests := []struct {
 		name     string
 		cfg      map[string]any
-		args     []string
+		arg      string
 		want     []string // detectors that must be scanned
 		wantNone []string // detectors that must not be scanned
 	}{
-		{"no argument, no config uses everything", nil, nil,
+		{"no argument, no config uses everything", nil, "",
 			[]string{config.DetectorMergedBranch, config.DetectorWorktrees, config.DetectorGitBloat, config.DetectorBuildArtifacts},
-			[]string{config.DetectorStaleBranch, config.DetectorLargeUntracked}},
-		{"config default", tidyCfg, nil,
+			[]string{config.DetectorStaleBranch}},
+		{"config default", tidyCfg, "",
 			[]string{config.DetectorLogs}, []string{config.DetectorMergedBranch}},
-		{"argument overrides config", tidyCfg, []string{"after-agents"},
+		{"argument overrides config", tidyCfg, "after-agents",
 			[]string{config.DetectorMergedBranch, config.DetectorAIArtifacts}, []string{config.DetectorLogs}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := newCleanupFixture(t, tt.cfg)
-			f.mergedAndSquashed()
-			code, _, errOut := brooom(t, "", append([]string{"sweep", "--dry-run", "--verbose"}, tt.args...)...)
-			if code != ExitOK {
-				t.Fatalf("code %d, stderr %q", code, errOut)
-			}
-			got := scannedDetectors(errOut)
+			newCleanupFixture(t, tt.cfg)
+			_, got, _ := sweepSelection(t, tt.arg)
 			for _, d := range tt.want {
 				if !slices.Contains(got, d) {
-					t.Errorf("%s was not scanned: %v", d, got)
+					t.Errorf("%s was not selected: %v", d, got)
 				}
 			}
 			for _, d := range tt.wantNone {
 				if slices.Contains(got, d) {
-					t.Errorf("%s was scanned: %v", d, got)
+					t.Errorf("%s was selected: %v", d, got)
 				}
 			}
 		})
@@ -238,24 +224,19 @@ func TestSweepInvalidConfigPresetIsRejected(t *testing.T) {
 // config file, which must keep working.
 func TestSweepLegacyConfigPresetStillLoads(t *testing.T) {
 	newCleanupFixture(t, map[string]any{"sweep": map[string]any{"preset": "safe"}})
-	code, _, errOut := brooom(t, "", "sweep", "--dry-run", "--verbose")
-	if code != ExitOK || !strings.Contains(errOut, `running "everything"`) {
-		t.Errorf("code %d, stderr %q", code, errOut)
+	p, _, errOut := sweepSelection(t, "")
+	if p.Name != "everything" || !strings.Contains(errOut, `running "everything"`) {
+		t.Errorf("preset %s, stderr %q", p.Name, errOut)
 	}
-	if !slices.Contains(scannedDetectors(errOut), config.DetectorGitBloat) {
-		t.Errorf("legacy safe did not run everything: %v", scannedDetectors(errOut))
+	if code, _, errOut := brooom(t, "", "sweep", "--dry-run"); code != ExitOK {
+		t.Errorf("code %d, stderr %q", code, errOut)
 	}
 }
 
 func TestSweepDetectorNarrowsPreset(t *testing.T) {
-	f := newCleanupFixture(t, nil)
-	f.mergedAndSquashed()
-	code, _, errOut := brooom(t, "", "sweep", "--detector", "merged-branch", "--dry-run", "--verbose")
-	if code != ExitOK {
-		t.Fatalf("code %d, stderr %q", code, errOut)
-	}
-	if got := scannedDetectors(errOut); !slices.Equal(got, []string{config.DetectorMergedBranch}) {
-		t.Errorf("scanned %v, want only merged-branch", got)
+	newCleanupFixture(t, nil)
+	if _, got, _ := sweepSelection(t, "", "merged-branch"); !slices.Equal(got, []string{config.DetectorMergedBranch}) {
+		t.Errorf("selected %v, want only merged-branch", got)
 	}
 }
 
@@ -296,7 +277,7 @@ func TestSweepBlockedFindingsAreNeverPlanned(t *testing.T) {
 	f.publish()
 	testutil.WriteFile(t, wt, "scratch.txt", "uncommitted\n")
 
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "everything", "--yes"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", "sweep", "everything", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -318,7 +299,8 @@ func TestSweepFloorsBuildArtifactsOfActiveProjects(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	testutil.WriteFile(t, f.repo.Dir, "package.json", "{}\n")
 	testutil.WriteFile(t, filepath.Join(f.repo.Dir, "node_modules", "x"), "index.js", "x\n")
-	_, out, errOut := brooom(t, "", "scan", "-d", "build-artifacts", "--format", "json")
+	// The pipeline without a preset shows what the detector found.
+	_, out, errOut := runScanCmd(t, "-d", "build-artifacts", "--format", "json")
 	var report findings.Report
 	if err := json.Unmarshal([]byte(out), &report); err != nil {
 		t.Fatalf("scan: %v\n%s\n%s", err, out, errOut)

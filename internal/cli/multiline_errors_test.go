@@ -29,14 +29,14 @@ func assertLines(t *testing.T, errOut string, wants ...string) {
 }
 
 func TestMultiLineErrorsRenderPerLine(t *testing.T) {
-	t.Run("scan with an invalid config", func(t *testing.T) {
+	t.Run("sweep with an invalid config", func(t *testing.T) {
 		cfg, _, _ := configEnv(t)
-		writeFile(t, cfg, `{"version":1,"scan":{"max_depth":-1},"trash":{"strategy":"shred"}}`)
-		code, _, errOut := run(t, "scan")
+		writeFile(t, cfg, `{"version":1,"scan":{"max_depth":-1},"output":{"format":"xml"}}`)
+		code, _, errOut := run(t, "sweep", "--dry-run")
 		if code != ExitError {
 			t.Fatalf("code=%d err=%q", code, errOut)
 		}
-		assertLines(t, errOut, "scan.max_depth", "trash.strategy")
+		assertLines(t, errOut, "scan.max_depth", "output.format")
 	})
 }
 
@@ -50,15 +50,15 @@ func TestMultiLineErrorsCannotForgeLines(t *testing.T) {
 	const evil = "x\nforged: line"
 	t.Run("path argument", func(t *testing.T) {
 		configEnv(t)
-		_, _, errOut := run(t, "scan", evil)
+		_, _, errOut := run(t, "sweep", "tidy", evil)
 		assertNoForgedLine(t, errOut)
 	})
 	t.Run("invalid config", func(t *testing.T) {
 		cfg, _, _ := configEnv(t)
-		writeFile(t, cfg, `{"version":1,"trash":{"strategy":"rel\nforged: yes"}}`)
-		_, _, errOut := run(t, "scan")
+		writeFile(t, cfg, `{"version":1,"output":{"format":"rel\nforged: yes"}}`)
+		_, _, errOut := run(t, "sweep", "--dry-run")
 		assertNoForgedLine(t, errOut)
-		if !strings.Contains(errOut, "trash.strategy") {
+		if !strings.Contains(errOut, "output.format") {
 			t.Errorf("problem missing:\n%s", errOut)
 		}
 	})

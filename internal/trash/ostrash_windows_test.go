@@ -15,8 +15,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows/registry"
-
-	"github.com/Tobias-Braun/brooom/internal/config"
 )
 
 // These tests call the real Recycle Bin and therefore run on Windows CI only.
@@ -29,7 +27,7 @@ import (
 // refuse every item, so no real-shell behaviour would ever be exercised.
 func newTestTrasher(t *testing.T) *winTrash {
 	t.Helper()
-	tr, err := newOSTrasher(Options{})
+	tr, err := newOSTrasher()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +41,7 @@ func newTestTrasher(t *testing.T) *winTrash {
 // or a broken path check) and must never be hidden behind a skip.
 func failOnHint(t *testing.T, err error) {
 	t.Helper()
-	if err != nil && strings.Contains(err.Error(), quarantineHint) {
+	if err != nil && strings.Contains(err.Error(), manualHint) {
 		t.Fatalf("unexpected pre-flight refusal: %v", err)
 	}
 }
@@ -139,7 +137,7 @@ func checkFileRecord(t *testing.T, rec Record, p string) {
 	if !rec.Restorable || rec.StoredPath == "" || rec.InfoPath == "" || rec.SizeBytes != fiveByteFileSize(t) || rec.IsDir {
 		t.Fatalf("bad record: %+v", rec)
 	}
-	if rec.Strategy != config.StrategyTrash {
+	if rec.Strategy != StrategyTrash {
 		t.Errorf("strategy = %q", rec.Strategy)
 	}
 }
@@ -303,8 +301,8 @@ func TestRestoreRefusals(t *testing.T) {
 		rec  Record
 		want error
 	}{
-		{"wrong strategy", Record{Strategy: config.StrategyQuarantine, OriginalPath: orig}, ErrNotRestorable},
-		{"missing stored", Record{Strategy: config.StrategyTrash, OriginalPath: orig,
+		{"wrong strategy", Record{Strategy: Strategy("quarantine"), OriginalPath: orig}, ErrNotRestorable},
+		{"missing stored", Record{Strategy: StrategyTrash, OriginalPath: orig,
 			StoredPath: filepath.VolumeName(orig) + `\$Recycle.Bin\` + sid + `\$RNOPE.txt`}, ErrNotRestorable},
 	}
 	for _, tt := range tests {
@@ -315,7 +313,7 @@ func TestRestoreRefusals(t *testing.T) {
 		})
 	}
 	t.Run("stored outside bin", func(t *testing.T) {
-		rec := Record{Strategy: config.StrategyTrash, OriginalPath: orig, StoredPath: outside, Restorable: true}
+		rec := Record{Strategy: StrategyTrash, OriginalPath: orig, StoredPath: outside, Restorable: true}
 		if err := tr.Restore(context.Background(), rec); err == nil {
 			t.Fatal("restore from outside the bin accepted")
 		}
@@ -348,7 +346,7 @@ func TestRestoreConflictAndSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A record without StoredPath is found again by path and time.
-	searched := Record{Strategy: config.StrategyTrash, OriginalPath: p, RemovedAt: rec.RemovedAt.Add(time.Second)}
+	searched := Record{Strategy: StrategyTrash, OriginalPath: p, RemovedAt: rec.RemovedAt.Add(time.Second)}
 	if err := tr.Restore(context.Background(), searched); err != nil {
 		t.Fatalf("Restore by search: %v", err)
 	}
@@ -362,7 +360,7 @@ func TestRestoreConflictAndSearch(t *testing.T) {
 // the Recycle Bin properties were opened once, and Remove then refuses on
 // purpose. Any other outcome must be a working removal.
 func TestRealRegistrySettings(t *testing.T) {
-	tr, err := newOSTrasher(Options{})
+	tr, err := newOSTrasher()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +370,7 @@ func TestRealRegistrySettings(t *testing.T) {
 	}
 	rec, err := tr.Remove(context.Background(), p)
 	if err != nil {
-		if strings.Contains(err.Error(), quarantineHint) {
+		if strings.Contains(err.Error(), manualHint) {
 			t.Skipf("Recycle Bin settings unavailable on this machine: %v", err)
 		}
 		t.Fatal(err)

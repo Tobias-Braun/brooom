@@ -10,7 +10,7 @@ import (
 // newOSTrasher returns the freedesktop.org trash implementation used on
 // Linux and the BSDs. The trash location is resolved once, from the
 // environment at construction time.
-func newOSTrasher(opts Options) (Trasher, error) {
+func newOSTrasher() (Trasher, error) {
 	home, err := homeTrashDir(os.Getenv)
 	if err != nil {
 		return nil, err

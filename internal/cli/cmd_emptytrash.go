@@ -29,8 +29,7 @@ is still of the recorded type (and, for a file, of the recorded size). Items
 that changed are listed with the reason and kept.
 
 The manifest entries of deleted items are marked as not restorable, so
-'brooom undo' and 'brooom sessions' stay truthful. Quarantined sessions are
-emptied by 'brooom purge' instead.`,
+'brooom undo' and 'brooom sessions' stay truthful.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runEmptyTrash(dryRun, yes)
@@ -114,7 +113,7 @@ func trashedItems(store *session.Store) ([]trashedItem, error) {
 // stillInTrash reports whether the entry moved something to the OS trash that
 // was not restored and whose stored copy still exists.
 func stillInTrash(e session.Entry) bool {
-	if e.Status != session.StatusApplied || e.Trash == nil || e.Trash.Strategy != config.StrategyTrash {
+	if e.Status != session.StatusApplied || e.Trash == nil || e.Trash.Strategy != trash.StrategyTrash {
 		return false
 	}
 	if !e.Trash.Restorable || e.Trash.StoredPath == "" {

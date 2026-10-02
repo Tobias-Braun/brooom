@@ -19,28 +19,26 @@ const CurrentVersion = 1
 type Config struct {
 	// Version of the file format; files with a newer version are rejected.
 	Version int `json:"version"`
-	// LegacyRoots holds the "roots" key of earlier releases (a registry of
-	// workspace roots for --workspaces). It is read so old config files keep
-	// loading, never used and never written; Deprecated names it.
-	LegacyRoots json.RawMessage `json:"roots,omitempty"`
+	// The Legacy fields hold keys of earlier releases: "roots" (the workspace
+	// root registry), "trash" (trash strategies), "agent" and "update_check".
+	// They are read so old config files keep loading, never used and never
+	// written; noteDeprecated reports the ones that changed behaviour.
+	LegacyRoots       json.RawMessage `json:"roots,omitempty"`
+	LegacyTrash       json.RawMessage `json:"trash,omitempty"`
+	LegacyAgent       json.RawMessage `json:"agent,omitempty"`
+	LegacyUpdateCheck json.RawMessage `json:"update_check,omitempty"`
 	// Thresholds are the global defaults for age and size filters.
 	Thresholds Thresholds `json:"thresholds"`
 	// Git holds settings shared by all git detectors and actions.
 	Git Git `json:"git"`
 	// Detectors holds the per-detector settings and toggles.
 	Detectors Detectors `json:"detectors"`
-	// Trash selects how removed files are disposed of.
-	Trash Trash `json:"trash"`
 	// Output holds output defaults.
 	Output Output `json:"output"`
 	// Scan holds walker/cache settings.
 	Scan Scan `json:"scan"`
-	// Agent holds settings for the (future) agent layer.
-	Agent Agent `json:"agent"`
 	// Sweep holds the defaults of `brooom sweep`.
 	Sweep Sweep `json:"sweep"`
-	// UpdateCheck enables `brooom update-check` to contact GitHub. Opt-in.
-	UpdateCheck bool `json:"update_check"`
 
 	// The fields below are never read from or written to a file.
 	//
@@ -111,10 +109,12 @@ type Detectors struct {
 	MergedBranch   MergedBranch   `json:"merged-branch"`
 	Worktrees      Worktrees      `json:"worktrees"`
 	GitBloat       GitBloat       `json:"git-bloat"`
-	LargeUntracked LargeUntracked `json:"large-untracked"`
 	AIArtifacts    AIArtifacts    `json:"ai-artifacts"`
 	Logs           Logs           `json:"log-and-runtime-files"`
 	BuildArtifacts BuildArtifacts `json:"build-artifacts"`
+	// LegacyLargeUntracked holds the settings of the removed large-untracked
+	// detector; read, never used, see Config.LegacyRoots.
+	LegacyLargeUntracked json.RawMessage `json:"large-untracked,omitempty"`
 }
 
 // StaleBranch configures the stale-branch detector.
@@ -161,7 +161,7 @@ type Worktrees struct {
 	MinAgeDays int `json:"min_age_days"`
 }
 
-// GitBloat configures the git-bloat detector and the git purge actions.
+// GitBloat configures the git-bloat detector and its git maintenance actions.
 type GitBloat struct {
 	Enabled bool `json:"enabled"`
 	// LooseObjectsThreshold: report when a repo has more loose objects.
@@ -179,15 +179,6 @@ type GitBloat struct {
 	PruneExpire string `json:"prune_expire"`
 }
 
-// LargeUntracked configures the large-untracked detector.
-type LargeUntracked struct {
-	Enabled bool `json:"enabled"`
-	// MinSizeBytes: untracked/ignored files at least this large are reported.
-	MinSizeBytes int64 `json:"min_size_bytes"`
-	// IncludeIgnored also reports ignored files (not only untracked ones).
-	IncludeIgnored bool `json:"include_ignored"`
-}
-
 // AIArtifacts configures the ai-artifacts detector.
 type AIArtifacts struct {
 	Enabled bool `json:"enabled"`
@@ -195,7 +186,7 @@ type AIArtifacts struct {
 	// The data of the scanned repositories below the home directory is always
 	// included now and other user-level locations never are, so the key is
 	// read (old files keep loading) but has no effect; Deprecated names it.
-	LegacyUserLocations *bool `json:"user_locations,omitempty"`
+	LegacyUserLocations json.RawMessage `json:"user_locations,omitempty"`
 	// Tools enables or disables catalog tools by id, e.g. {"cursor": false}.
 	// Tools not listed are enabled.
 	Tools map[string]bool `json:"tools,omitempty"`
@@ -212,7 +203,7 @@ type Logs struct {
 	Enabled bool `json:"enabled"`
 	// LegacyUserLocations is the user_locations switch of earlier releases
 	// (global pip, npm, uv and Go caches); read, never used, see Deprecated.
-	LegacyUserLocations *bool `json:"user_locations,omitempty"`
+	LegacyUserLocations json.RawMessage `json:"user_locations,omitempty"`
 	// Categories enables or disables entry categories by id (e.g.
 	// {"os-junk": false}). Categories not listed are enabled.
 	Categories map[string]bool `json:"categories,omitempty"`
@@ -281,31 +272,6 @@ type CatalogProtect struct {
 	Reason   string   `json:"reason"`
 }
 
-// TrashStrategy selects how removed files are disposed of.
-type TrashStrategy string
-
-const (
-	// StrategyTrash moves files to the OS trash (default).
-	StrategyTrash TrashStrategy = "trash"
-	// StrategyQuarantine moves files to ~/.brooom/quarantine/<session>.
-	StrategyQuarantine TrashStrategy = "quarantine"
-	// StrategyDelete deletes permanently. Requires explicit opt-in.
-	StrategyDelete TrashStrategy = "delete"
-)
-
-// Trash configures file disposal.
-type Trash struct {
-	Strategy TrashStrategy `json:"strategy"`
-	// PerDetector overrides the strategy per detector name.
-	PerDetector map[string]TrashStrategy `json:"per_detector,omitempty"`
-	// QuarantineRetentionDays: quarantined sessions older than this are
-	// purged by `brooom purge` (and announced on the next run). 0 means
-	// "never purge"; negative values are invalid.
-	QuarantineRetentionDays int `json:"quarantine_retention_days"`
-	// AllowDelete must be true for StrategyDelete to be usable from config.
-	AllowDelete bool `json:"allow_delete"`
-}
-
 // Output configures output defaults.
 type Output struct {
 	// Format is the default --format (table, tree, json, ndjson, plain,
@@ -333,17 +299,4 @@ type Sweep struct {
 	// Preset is the preset used when `brooom sweep` gets no --preset flag:
 	// one of PresetNames.
 	Preset string `json:"preset"`
-}
-
-// Agent configures the future agent layer (not used by the v1 CLI).
-type Agent struct {
-	// Provider: "anthropic" or "openai-compatible".
-	Provider string `json:"provider,omitempty"`
-	// Endpoint for openai-compatible providers.
-	Endpoint string `json:"endpoint,omitempty"`
-	// Model name.
-	Model string `json:"model,omitempty"`
-	// APIKeyEnv names the environment variable holding the API key. Keys are
-	// never stored in the config file.
-	APIKeyEnv string `json:"api_key_env,omitempty"`
 }

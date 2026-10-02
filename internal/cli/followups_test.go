@@ -15,7 +15,6 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/detect"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/scope"
-	"github.com/Tobias-Braun/brooom/internal/updatecheck"
 )
 
 // leafFor parses args against a fresh command tree bound to a and returns the
@@ -33,28 +32,23 @@ func leafFor(t *testing.T, a *app, args []string) *cobra.Command {
 	return cmd
 }
 
-// TestHintQuotingIsOSAware reproduces #182 items 3 and 12 for the CLI: a
-// suggested command has to work in PowerShell and cmd.exe, where single
+// TestHintQuotingIsOSAware reproduces #182 items 3 and 12 for the CLI: the
+// printed undo command has to work in PowerShell and cmd.exe, where single
 // quotes are wrong (cmd.exe), and on unix a `$` must not be left to the shell
 // inside double quotes.
 func TestHintQuotingIsOSAware(t *testing.T) {
 	tests := []struct {
 		goos, cfg, want string
 	}{
-		{"windows", `C:\my dir\c.json`, "run `brooom sweep --config \"C:\\my dir\\c.json\"`"},
-		{"linux", `/my dir/c.json`, "run `brooom sweep --config '/my dir/c.json'`"},
-		{"linux", `$HOME/c.json`, "run `brooom sweep --config '$HOME/c.json'`"},
+		{"windows", `C:\my dir\c.json`, `--config "C:\my dir\c.json"`},
+		{"linux", `/my dir/c.json`, `--config '/my dir/c.json'`},
+		{"linux", `$HOME/c.json`, `--config '$HOME/c.json'`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.goos+" "+tt.cfg, func(t *testing.T) {
-			args := []string{"scan", "--config", tt.cfg}
-			a := &app{args: args, goos: tt.goos}
+			a := &app{goos: tt.goos}
 			a.flags.configPath = tt.cfg
-			res := &scanResult{Report: &findings.Report{Findings: []findings.Finding{{
-				Detector: "merged-branch", Confidence: findings.ConfidenceHigh,
-				SuggestedAction: findings.SuggestedAction{Type: findings.ActionDeleteBranch},
-			}}}}
-			if got := a.scanHint(leafFor(t, a, args), res); !strings.Contains(got, tt.want) {
+			if got := strings.Join(a.scopeFlags(), " "); got != tt.want {
 				t.Errorf("got  %s\nwant %s", got, tt.want)
 			}
 		})
@@ -72,7 +66,7 @@ func TestHelpForUnknownTopicIsUsageError(t *testing.T) {
 	}{
 		{"unknown topic", []string{"help", "foo"}, ExitUsage},
 		{"unknown nested topic", []string{"help", "config", "bogus"}, ExitUsage},
-		{"known topic", []string{"help", "scan"}, ExitOK},
+		{"known topic", []string{"help", "sweep"}, ExitOK},
 		{"known nested topic", []string{"help", "config", "show"}, ExitOK},
 		{"bare help", []string{"help"}, ExitOK},
 	}
@@ -98,9 +92,6 @@ func TestHelpForUnknownTopicIsUsageError(t *testing.T) {
 func TestEveryCommandRejectsUnknownArguments(t *testing.T) {
 	isolate(t)
 	t.Chdir(t.TempDir())
-	// These commands take positional arguments by design; they are checked
-	// without any instead (they require at least one).
-	variadic := map[string]bool{"brooom roots add": true, "brooom roots remove": true}
 	seen := 0
 	var walkTree func(c *cobra.Command)
 	walkTree = func(c *cobra.Command) {
@@ -108,9 +99,6 @@ func TestEveryCommandRejectsUnknownArguments(t *testing.T) {
 			seen++
 			path := strings.Fields(c.CommandPath())[1:]
 			args := append(append([]string{}, path...), "bogus-1", "bogus-2", "bogus-3")
-			if variadic[c.CommandPath()] {
-				args = path
-			}
 			t.Run(c.CommandPath(), func(t *testing.T) {
 				code, out, errOut := brooom(t, "", args...)
 				if code != ExitUsage {
@@ -123,7 +111,7 @@ func TestEveryCommandRejectsUnknownArguments(t *testing.T) {
 		}
 	}
 	walkTree(NewRootCommand())
-	if seen < 20 {
+	if seen < 15 {
 		t.Fatalf("only %d commands walked; the tree walk guards nothing", seen)
 	}
 }
@@ -152,21 +140,10 @@ func TestQuietOutputIsExact(t *testing.T) {
 		t.Errorf("quiet dry run:\n got %q\nwant %q", got, want)
 	}
 
-	// The full quiet summary is clean's; a quiet sweep is silent on success.
-	report := writeRaw(t, func() string { _, o, _ := brooom(t, "", "scan", "-d", "merged-branch", "-f", "json"); return o }())
-	code, out, errOut = brooom(t, "", "clean", "--from", report, "--yes", "-q")
-	if code != ExitOK || errOut != "" {
-		t.Fatalf("apply: code %d, stderr %q", code, errOut)
-	}
-	wantApply := "summary: 2 applied, 0 skipped, 0 failed\n" +
-		"recovery hints:\n" +
-		"  <repo> (feat/merged): run inside the repository: git branch feat/merged <sha>. " +
-		"The commits are still reachable from main, so git gc will not prune them.\n" +
-		"  <repo> (feat/squash): run inside the repository: git branch feat/squash <sha>. " +
-		"The commits are still reachable from origin/feat/squash, so git gc will not prune them.\n" +
-		"undo: brooom undo <session>\n"
-	if got := normalizeVolatile(out, f.repo.Dir); got != wantApply {
-		t.Errorf("quiet apply:\n got %q\nwant %q", got, wantApply)
+	// A quiet sweep is silent on success.
+	code, out, errOut = brooom(t, "", sweepArgs("--yes", "-q")...)
+	if code != ExitOK || out != "" || errOut != "" {
+		t.Fatalf("apply: code %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }
 
@@ -302,7 +279,7 @@ func TestDetectorFailuresStayVisibleAndExitFour(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			newCleanupFixture(t, nil)
 			d := registerFake(t, detect.CategoryFiles, failing)
-			code, out, errOut := brooom(t, "", "scan", "-d", d.name, "-f", format)
+			code, out, errOut := runScanCmd(t, "-d", d.name, "-f", format)
 			if code != ExitDetectorFailed {
 				t.Errorf("exit %d, want %d (stdout %q stderr %q)", code, ExitDetectorFailed, out, errOut)
 			}
@@ -330,39 +307,6 @@ func TestExitCodeRuleIsDocumented(t *testing.T) {
 			t.Errorf("docs/ARCHITECTURE.md lacks %q", want)
 		}
 	}
-}
-
-// TestUpdateCheckSanitizesRemoteValues reproduces #182 item 10: the release
-// URL and version come from the network and were printed raw.
-func TestUpdateCheckSanitizesRemoteValues(t *testing.T) {
-	newReleaseFixture(t, 200, `v2.0.0+\u001b[2Jpwn`, 0)
-	a, out, errOut := newTestApp(t, "1.0.0")
-	if code := execute(a, []string{"update-check"}); code != ExitOK {
-		t.Fatalf("code %d stderr %q", code, errOut)
-	}
-	if strings.ContainsRune(out.String(), 0x1b) {
-		t.Errorf("stdout carries a raw ESC: %q", out)
-	}
-	if !strings.Contains(out.String(), `\x1b`) {
-		t.Errorf("escaped ESC missing: %q", out)
-	}
-}
-
-func TestBackgroundNoticeSanitizesVersion(t *testing.T) {
-	newReleaseFixture(t, 200, `v2.0.0+\u001b[2Jpwn`, 0)
-	a, _, errOut := newTestApp(t, "1.0.0")
-	enableBackground(a)
-	a.update.grace = 5_000_000_000
-	if code := execute(a, []string{"version"}); code != ExitOK {
-		t.Fatalf("code %d", code)
-	}
-	if strings.ContainsRune(errOut.String(), 0x1b) {
-		t.Errorf("stderr carries a raw ESC: %q", errOut)
-	}
-	if !strings.Contains(errOut.String(), "is available") {
-		t.Errorf("no notice: %q", errOut)
-	}
-	_ = updatecheck.BaseURLEnv
 }
 
 // TestExplicitConfigErrorIsSanitized reproduces #182 item 11: the missing

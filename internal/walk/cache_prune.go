@@ -219,8 +219,8 @@ func RemoveStaleCache(stale []StaleCacheFile) ([]StaleCacheFile, error) {
 var pruned sync.Map
 
 // pruneOnce removes age-stale cache files the first time this process writes
-// into dir, so abandoned roots do not accumulate for users who never run
-// `brooom purge`. Best effort: errors are ignored.
+// into dir, so abandoned roots do not accumulate. Best effort: errors are
+// ignored.
 func pruneOnce(dir string) {
 	if _, done := pruned.LoadOrStore(dir, true); done {
 		return

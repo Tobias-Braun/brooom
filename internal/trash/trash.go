@@ -1,13 +1,6 @@
-// Package trash disposes of files and directories according to a strategy
-// and restores them where possible.
-//
-// Three strategies share one interface:
-//
-//   - trash:      the OS trash (Windows Recycle Bin, macOS Trash, freedesktop
-//     trash on Linux/BSD), one implementation per OS in trash_<os>.go
-//   - quarantine: a move into ~/.brooom/quarantine/<session-id>/ that
-//     `brooom purge` empties after the retention period
-//   - delete:     immediate permanent deletion (explicit opt-in only)
+// Package trash moves files and directories to the OS trash (Windows Recycle
+// Bin, macOS Trash, freedesktop trash on Linux/BSD; one implementation per OS
+// in ostrash_<os>.go) and restores them.
 //
 // Every removal returns a Record that is stored in the session manifest so
 // `brooom undo` can restore what is restorable. Implementations must never
@@ -36,10 +29,7 @@ package trash
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
-
-	"github.com/Tobias-Braun/brooom/internal/config"
 )
 
 // ErrNotRestorable is returned by Restore for records that cannot be
@@ -49,13 +39,20 @@ var ErrNotRestorable = errors.New("item cannot be restored")
 // ErrRestoreConflict is returned when the original path exists again.
 var ErrRestoreConflict = errors.New("original path already exists")
 
+// Strategy names how a Record was removed. Brooom only moves to the OS
+// trash; manifests of earlier releases may also hold "quarantine" (a copy
+// below ~/.brooom/quarantine) or "delete" (no copy).
+type Strategy string
+
+// StrategyTrash is the OS trash.
+const StrategyTrash Strategy = "trash"
+
 // Record describes one removed item and how to restore it.
 type Record struct {
-	Strategy config.TrashStrategy `json:"strategy"`
+	Strategy Strategy `json:"strategy"`
 	// OriginalPath is the absolute path the item was removed from.
 	OriginalPath string `json:"original_path"`
-	// StoredPath is where the item now lives: the file inside the OS trash
-	// or quarantine directory. Empty for StrategyDelete.
+	// StoredPath is where the item now lives: the file inside the OS trash.
 	StoredPath string `json:"stored_path,omitempty"`
 	// InfoPath is an OS trash metadata file (freedesktop .trashinfo,
 	// Windows $I file) that must be removed on restore. Optional.
@@ -70,10 +67,8 @@ type Record struct {
 	Restorable bool `json:"restorable"`
 }
 
-// Trasher removes and restores files with one strategy.
+// Trasher removes and restores files.
 type Trasher interface {
-	// Strategy returns the strategy this trasher implements.
-	Strategy() config.TrashStrategy
 	// Remove disposes of path (file, directory or symlink) and returns a
 	// record describing how to restore it. The caller has already validated
 	// path through a scope.Guard. On Windows, files locked by another
@@ -82,30 +77,12 @@ type Trasher interface {
 	Remove(ctx context.Context, path string) (Record, error)
 	// Restore moves a removed item back to its original path. It fails with
 	// ErrRestoreConflict if something exists there, and ErrNotRestorable if
-	// the stored copy is gone or the strategy was delete.
+	// the stored copy is gone.
 	Restore(ctx context.Context, r Record) error
 }
 
-// Options configures trasher construction.
-type Options struct {
-	// SessionID names the quarantine subdirectory.
-	SessionID string
-	// QuarantineDir is ~/.brooom/quarantine.
-	QuarantineDir string
-}
-
-// New returns the trasher for a strategy. The OS trash is implemented per
-// platform in ostrash_<os>.go (newOSTrasher), quarantine in quarantine.go and
-// permanent deletion in delete.go.
-func New(strategy config.TrashStrategy, opts Options) (Trasher, error) {
-	switch strategy {
-	case config.StrategyTrash, "":
-		return newOSTrasher(opts)
-	case config.StrategyQuarantine:
-		return newQuarantine(opts)
-	case config.StrategyDelete:
-		return newDeleter(opts)
-	default:
-		return nil, fmt.Errorf("unknown trash strategy %q (use trash, quarantine or delete)", strategy)
-	}
+// New returns the OS trasher of this platform (newOSTrasher in
+// ostrash_<os>.go).
+func New() (Trasher, error) {
+	return newOSTrasher()
 }

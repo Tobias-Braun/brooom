@@ -18,7 +18,7 @@ func missingConfigArgs(t *testing.T) []string {
 }
 
 func TestExplicitMissingConfigIsAnError(t *testing.T) {
-	for _, cmd := range [][]string{{"config", "validate"}, {"config", "show"}} {
+	for _, cmd := range [][]string{{"config", "show"}, {"sweep", "--dry-run"}} {
 		t.Run(strings.Join(cmd, " "), func(t *testing.T) {
 			args := append(missingConfigArgs(t), cmd...)
 			code, out, errOut := run(t, args...)
@@ -31,8 +31,8 @@ func TestExplicitMissingConfigIsAnError(t *testing.T) {
 
 func TestImplicitMissingConfigKeepsDefaults(t *testing.T) {
 	t.Setenv(config.HomeEnv, t.TempDir())
-	code, out, errOut := run(t, "config", "validate")
-	if code != ExitOK || !strings.Contains(out, "defaults apply") {
+	code, out, errOut := run(t, "config", "show")
+	if code != ExitOK || !strings.Contains(out, `"version": 1`) {
 		t.Fatalf("code=%d out=%q err=%q", code, out, errOut)
 	}
 }
@@ -61,10 +61,6 @@ func TestSessionsPlain(t *testing.T) {
 	if lines := strings.Split(strings.TrimSpace(out), "\n"); len(lines) != 2 || lines[0] != "20260102-000000-bbbb" {
 		t.Errorf("plain list = %q", out)
 	}
-	code, out, _ = run(t, "sessions", "20260101", "-f", "plain")
-	if code != ExitOK || !strings.Contains(out, "/x/node_modules") {
-		t.Errorf("plain detail code=%d out=%q", code, out)
-	}
 }
 
 func TestSessionsNDJSON(t *testing.T) {
@@ -80,10 +76,6 @@ func TestSessionsNDJSON(t *testing.T) {
 	var m map[string]any
 	if err := json.Unmarshal([]byte(lines[0]), &m); err != nil || m["id"] == nil {
 		t.Errorf("ndjson line %q: %v", lines[0], err)
-	}
-	code, out, _ = run(t, "sessions", "20260101", "-f", "ndjson")
-	if code != ExitOK || len(strings.Split(strings.TrimSpace(out), "\n")) != 2 {
-		t.Errorf("ndjson detail code=%d out=%q", code, out)
 	}
 }
 
@@ -101,19 +93,17 @@ func TestScanOnlyFlagsRejectedElsewhere(t *testing.T) {
 		args []string
 		ok   bool
 	}{
-		{"validate -d", []string{"config", "validate", "-d", "nope"}, false},
-		{"validate -w", []string{"config", "validate", "-w"}, false},
-		{"validate --root", []string{"config", "validate", "--root", "x"}, false},
-		{"validate -f", []string{"config", "validate", "-f", "json"}, false},
-		{"purge -d", []string{"purge", "-d", "x"}, false},
-		{"version -w", []string{"version", "-w"}, false},
+		{"config show -d", []string{"config", "show", "-d", "nope"}, false},
+		{"config path -f", []string{"config", "path", "-f", "json"}, false},
+		{"empty-trash -d", []string{"empty-trash", "-d", "x"}, false},
+		{"empty-trash -f", []string{"empty-trash", "-f", "json"}, false},
+		{"version -d", []string{"version", "-d", "x"}, false},
 		{"sessions -d", []string{"sessions", "-d", "x"}, false},
-		{"config show -w", []string{"config", "show", "-w"}, false},
 		{"config show -f", []string{"config", "show", "-f", "json"}, true},
 		{"sessions -f", []string{"sessions", "-f", "json"}, true},
 		{"version -f", []string{"version", "-f", "json"}, true},
-		{"config validate plain", []string{"config", "validate"}, true},
-		{"scan -d rejects unknown detector only", []string{"scan", "-d", "nope"}, false},
+		{"config path plain", []string{"config", "path"}, true},
+		{"sweep -d rejects unknown detector only", []string{"sweep", "-d", "nope", "--dry-run"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -129,80 +119,17 @@ func TestScanOnlyFlagsRejectedElsewhere(t *testing.T) {
 }
 
 func TestScanFlagsStillAcceptedWhereUsed(t *testing.T) {
-	root := newRootCmd(&app{})
-	for _, path := range [][]string{{"scan"}, {"sweep"}, {"clean"}, {"git", "purge"}} {
-		cmd, _, err := root.Find(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, f := range []string{"workspaces", "root", "detector", "format"} {
-			if f == "format" && path[0] == "clean" {
-				continue // clean renders no format; see TestCleanRejectsExplicitFormat
-			}
-			if msg := unsupportedScanFlag(cmd.CommandPath(), f); msg != "" {
-				t.Errorf("%s must accept --%s", cmd.CommandPath(), f)
+	for path, flags := range map[string][]string{
+		"brooom sweep":  {"detector", "format"},
+		"brooom review": {"detector"},
+	} {
+		for _, f := range flags {
+			if msg := unsupportedScanFlag(path, f); msg != "" {
+				t.Errorf("%s must accept --%s", path, f)
 			}
 		}
 	}
-}
-
-// TestUpdateNoticeFollowsConfigFormat: `version` never reads output.format
-// and prints a table, so the configured json must not suppress the notice
-// there (#237); commands that render findings still honour it.
-func TestUpdateNoticeFollowsConfigFormat(t *testing.T) {
-	f := newReleaseFixture(t, 200, "v2.0.0", 0)
-	a, _, errOut := newTestApp(t, "1.0.0")
-	a.update.stdoutTTY = func() bool { return true }
-	a.update.loadConfig = func(string) (*config.Config, error) {
-		return &config.Config{UpdateCheck: true, Output: config.Output{Format: "json"}}, nil
-	}
-	a.update.grace = 200 * time.Millisecond
-	if code := execute(a, []string{"version"}); code != ExitOK {
-		t.Fatal(errOut.String())
-	}
-	if !strings.Contains(errOut.String(), "available") || f.hits.Load() == 0 {
-		t.Errorf("version renders a table, the notice must show: stderr %q hits %d", errOut, f.hits.Load())
-	}
-}
-
-func TestUpdateCheckAllowedHonoursConfigFormatOnlyForFindings(t *testing.T) {
-	tests := []struct {
-		args []string
-		want bool
-	}{
-		{[]string{"scan"}, false},
-		{[]string{"sweep", "--dry-run"}, false},
-		{[]string{"sweep"}, true},
-		{[]string{"sessions"}, true},
-		{[]string{"sessions", "-f", "json"}, false},
-	}
-	for _, tt := range tests {
-		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
-			newReleaseFixture(t, 200, "v2.0.0", 0)
-			a, _, _ := newTestApp(t, "1.0.0")
-			a.update.stdoutTTY = func() bool { return true }
-			a.update.loadConfig = func(string) (*config.Config, error) {
-				return &config.Config{UpdateCheck: true, Output: config.Output{Format: "json"}}, nil
-			}
-			cmd := leafFor(t, a, tt.args)
-			if got := a.updateCheckAllowed(cmd); got != tt.want {
-				t.Errorf("updateCheckAllowed = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestUpdateCheckJSONVersionsWithoutPrefix(t *testing.T) {
-	newReleaseFixture(t, 200, "v1.4.0", 0)
-	a, out, errOut := newTestApp(t, "v1.2.0")
-	if code := execute(a, []string{"update-check", "-f", "json"}); code != ExitOK {
-		t.Fatal(errOut.String())
-	}
-	var got updateReport
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Current != "1.2.0" || got.Latest != "1.4.0" {
-		t.Errorf("current %q latest %q, want bare versions", got.Current, got.Latest)
+	if unsupportedScanFlag("brooom review", "format") == "" {
+		t.Error("review prints text only and must reject --format")
 	}
 }

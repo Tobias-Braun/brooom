@@ -34,7 +34,7 @@ func TestOutsideScopeWorktreeIsShownWithoutVerbose(t *testing.T) {
 	}
 	for format, wants := range formats {
 		t.Run(format, func(t *testing.T) {
-			code, out, errOut := brooom(t, "", "scan", "-d", "worktrees", "--format", format)
+			code, out, errOut := runScanCmd(t, "-d", "worktrees", "--format", format)
 			if code != ExitOK {
 				t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 			}
@@ -49,7 +49,7 @@ func TestOutsideScopeWorktreeIsShownWithoutVerbose(t *testing.T) {
 		})
 	}
 
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "after-agents", "-d", "worktrees", "--yes"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", "sweep", "after-agents", "-d", "worktrees", "--yes")
 	if code != ExitOK {
 		t.Fatalf("apply: code %d, stderr %q\n%s", code, errOut, out)
 	}
@@ -73,7 +73,7 @@ func TestLinkedWorktreeRunCleansTheRepository(t *testing.T) {
 	f.publish()
 	t.Chdir(own)
 
-	code, out, errOut := brooom(t, "", append([]string{"sweep", "after-agents", "-d", "worktrees", "--yes"}, quarantine...)...)
+	code, out, errOut := brooom(t, "", "sweep", "after-agents", "-d", "worktrees", "--yes")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}

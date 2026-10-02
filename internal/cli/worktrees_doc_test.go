@@ -12,12 +12,12 @@ import (
 // from the help text and the README instead of finding entries silently
 // missing.
 func TestWorktreesDocumentPlainException(t *testing.T) {
-	cmd, _, err := NewRootCommand().Find([]string{"scan"})
+	cmd, _, err := NewRootCommand().Find([]string{"sweep"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(cmd.Long, "plain format") || !strings.Contains(cmd.Long, "omits") {
-		t.Errorf("scan help does not mention the plain exception:\n%s", cmd.Long)
+		t.Errorf("sweep help does not mention the plain exception:\n%s", cmd.Long)
 	}
 	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 	if err != nil {

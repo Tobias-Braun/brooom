@@ -40,20 +40,8 @@ type Env struct {
 	Config *config.Config
 	Git    gitx.Runner
 	Guard  *scope.Guard
-	// Trasher returns the trasher for a detector (honouring per-detector
-	// strategy overrides and the --trash-strategy flag).
-	Trasher func(detector string) (trash.Trasher, error)
-	// TrasherFor returns the trasher for an explicit strategy. Undo needs it
-	// because it must restore with the strategy recorded in the manifest, not
-	// with whatever the current config or --trash-strategy selects; Trasher
-	// only takes a detector name. Unlike Trasher it is bound to the session
-	// that is being undone where a strategy needs one.
-	TrasherFor func(strategy config.TrashStrategy) (trash.Trasher, error)
-	// BeforeDelete, when set, is called by the trash action right before an
-	// item is removed with the delete strategy. It is the place for the
-	// one-time permanence warning: Plan must stay free of side effects because
-	// dry runs claim that nothing was changed.
-	BeforeDelete func()
+	// Trasher moves removed files to the OS trash and restores them.
+	Trasher trash.Trasher
 	// Force allows acting on findings with blocking risk flags and makes
 	// delete-branch use -D.
 	Force bool
@@ -76,11 +64,6 @@ type Step struct {
 	Description string
 	// Command is the equivalent shell command for display, if any.
 	Command string
-	// Strategy is the trash strategy the step will use, set only by steps
-	// that remove files through a trasher. Plans, prompts and headers use it
-	// to say "delete permanently" instead of the generic action name; it is
-	// display state and never reaches the manifest or JSON output.
-	Strategy config.TrashStrategy
 	// live is action-specific state the apply-pass re-plan hands to Apply
 	// (delete-branch: its decision); nil in every other plan.
 	live any

@@ -39,10 +39,9 @@ type Dirs struct {
 	ConfigFile string
 	Cache      string
 	Sessions   string
-	Quarantine string
 }
 
-// EnsureDirs creates the Brooom home and its cache, sessions and quarantine
+// EnsureDirs creates the Brooom home and its cache and sessions
 // subdirectories with mode 0700 (they can hold paths and file contents of the
 // user's projects) and returns the layout. Existing directories are left
 // untouched, not chmod-ed, so a user's own permissions are respected; an
@@ -52,7 +51,7 @@ func EnsureDirs() (Dirs, error) {
 	if err != nil {
 		return Dirs{}, err
 	}
-	for _, p := range []string{d.Home, d.Cache, d.Sessions, d.Quarantine} {
+	for _, p := range []string{d.Home, d.Cache, d.Sessions} {
 		if err := ensureDir(p); err != nil {
 			return Dirs{}, err
 		}
@@ -87,6 +86,5 @@ func ResolveDirs() (Dirs, error) {
 		ConfigFile: filepath.Join(h, ConfigFileName),
 		Cache:      filepath.Join(h, "cache"),
 		Sessions:   filepath.Join(h, "sessions"),
-		Quarantine: filepath.Join(h, "quarantine"),
 	}, nil
 }

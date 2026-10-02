@@ -12,7 +12,7 @@ import (
 
 func TestShowProgressMatrix(t *testing.T) {
 	// The base is a person at an ordinary terminal running a human format.
-	base := progressInputs{mode: progressAuto, format: "table", stderrTTY: true, term: "xterm-256color"}
+	base := progressInputs{format: "table", stderrTTY: true, term: "xterm-256color"}
 	with := func(mod func(*progressInputs)) progressInputs {
 		in := base
 		mod(&in)
@@ -23,27 +23,18 @@ func TestShowProgressMatrix(t *testing.T) {
 		in   progressInputs
 		want bool
 	}{
-		{"auto on a terminal", base, true},
-		{"auto tree", with(func(i *progressInputs) { i.format = "tree" }), true},
-		{"auto summary", with(func(i *progressInputs) { i.format = "summary" }), true},
-		{"auto stderr is not a terminal", with(func(i *progressInputs) { i.stderrTTY = false }), false},
-		{"auto quiet", with(func(i *progressInputs) { i.quiet = true }), false},
-		{"auto verbose", with(func(i *progressInputs) { i.verbose = true }), false},
-		{"auto CI set", with(func(i *progressInputs) { i.ci = "true" }), false},
-		{"auto CI set to any value", with(func(i *progressInputs) { i.ci = "0" }), false},
-		{"auto TERM dumb", with(func(i *progressInputs) { i.term = "dumb" }), false},
-		{"auto TERM unset is not dumb", with(func(i *progressInputs) { i.term = "" }), true},
-		{"auto json", with(func(i *progressInputs) { i.format = "json" }), false},
-		{"auto ndjson", with(func(i *progressInputs) { i.format = "ndjson" }), false},
-		{"auto plain", with(func(i *progressInputs) { i.format = "plain" }), false},
-		{"never on a terminal", with(func(i *progressInputs) { i.mode = progressNever }), false},
-		{"always without a terminal", with(func(i *progressInputs) { i.mode = progressAlways; i.stderrTTY = false }), true},
-		{"always overrides CI, quiet, verbose and dumb", with(func(i *progressInputs) {
-			i.mode, i.ci, i.quiet, i.verbose, i.term = progressAlways, "1", true, true, "dumb"
-		}), true},
-		{"always never draws for json", with(func(i *progressInputs) { i.mode = progressAlways; i.format = "json" }), false},
-		{"always never draws for ndjson", with(func(i *progressInputs) { i.mode = progressAlways; i.format = "ndjson" }), false},
-		{"always never draws for plain", with(func(i *progressInputs) { i.mode = progressAlways; i.format = "plain" }), false},
+		{"on a terminal", base, true},
+		{"tree", with(func(i *progressInputs) { i.format = "tree" }), true},
+		{"summary", with(func(i *progressInputs) { i.format = "summary" }), true},
+		{"stderr is not a terminal", with(func(i *progressInputs) { i.stderrTTY = false }), false},
+		{"quiet", with(func(i *progressInputs) { i.quiet = true }), false},
+		{"CI set", with(func(i *progressInputs) { i.ci = "true" }), false},
+		{"CI set to any value", with(func(i *progressInputs) { i.ci = "0" }), false},
+		{"TERM dumb", with(func(i *progressInputs) { i.term = "dumb" }), false},
+		{"TERM unset is not dumb", with(func(i *progressInputs) { i.term = "" }), true},
+		{"json", with(func(i *progressInputs) { i.format = "json" }), false},
+		{"ndjson", with(func(i *progressInputs) { i.format = "ndjson" }), false},
+		{"plain", with(func(i *progressInputs) { i.format = "plain" }), false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -51,36 +42,6 @@ func TestShowProgressMatrix(t *testing.T) {
 				t.Errorf("showProgress(%+v) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestParseProgressMode(t *testing.T) {
-	for _, ok := range []string{"auto", "always", "never"} {
-		if got, err := parseProgressMode(ok); err != nil || got != ok {
-			t.Errorf("parseProgressMode(%q) = %q, %v", ok, got, err)
-		}
-	}
-	for _, bad := range []string{"", "Auto", "yes", "true", "1", "off"} {
-		if _, err := parseProgressMode(bad); err == nil {
-			t.Errorf("parseProgressMode(%q) accepted", bad)
-		}
-	}
-}
-
-func TestInvalidProgressValueIsUsageError(t *testing.T) {
-	isolate(t)
-	for _, args := range [][]string{{"scan", "--progress=fancy"}, {"--progress", ""}, {"undo", "--progress=on"}, {"config", "show", "--progress=x"}} {
-		code, out, errOut := runScanCmd(t, args...)
-		if code != ExitUsage || out != "" || !strings.Contains(errOut, "invalid --progress") {
-			t.Errorf("%v: code %d, stdout %q, stderr %q; want usage error", args, code, out, errOut)
-		}
-	}
-}
-
-func TestProgressFlagIsDocumented(t *testing.T) {
-	code, out, _ := run(t, "scan", "--help")
-	if code != ExitOK || !strings.Contains(out, "--progress string") || !strings.Contains(out, `(default "auto")`) {
-		t.Errorf("--progress missing from the help: code %d\n%s", code, out)
 	}
 }
 
@@ -138,7 +99,6 @@ func TestNoDisplayWhenAutoConditionsFail(t *testing.T) {
 		{"CI", true, map[string]string{"CI": "true"}, []string{"sweep", "--dry-run"}},
 		{"TERM dumb", true, map[string]string{"TERM": "dumb"}, []string{"sweep", "--dry-run"}},
 		{"quiet", true, nil, []string{"sweep", "after-agents", "-d", "merged-branch", "--dry-run", "--quiet"}},
-		{"never", true, nil, []string{"sweep", "after-agents", "-d", "merged-branch", "--dry-run", "--progress=never"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -158,7 +118,7 @@ func TestNoDisplayWhenAutoConditionsFail(t *testing.T) {
 func TestNoColorKeepsTheDisplayButDropsColour(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	code, _, errOut := runTTY(t, true, map[string]string{"NO_COLOR": "1"}, "sweep", "after-agents", "-d", "merged-branch", "--dry-run", "--progress=always")
+	code, _, errOut := runTTY(t, true, map[string]string{"NO_COLOR": "1"}, "sweep", "after-agents", "-d", "merged-branch", "--dry-run")
 	if code != ExitOK || !strings.Contains(errOut, "✓ done") {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -171,31 +131,28 @@ func TestNoColorKeepsTheDisplayButDropsColour(t *testing.T) {
 var generatedAt = regexp.MustCompile(`"generated_at": "[^"]*"`)
 
 // TestMachineFormatsAreUnchangedOnAFakedTerminal is the guarantee of the
-// machine formats: whatever --progress says and however terminal-like stderr
-// looks, their stdout is byte-identical to a run with the display off, and
-// stderr carries no display output.
+// machine formats: however terminal-like stderr looks, their stdout is
+// byte-identical to a run without a terminal, and stderr carries no display
+// output.
 func TestMachineFormatsAreUnchangedOnAFakedTerminal(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	for _, format := range []string{"json", "ndjson", "plain"} {
-		for _, cmd := range [][]string{{"scan"}, {"sweep", "--dry-run"}} {
-			ref := append(append([]string{}, cmd...), "-f", format, "--progress=never")
-			refCode, refOut, refErr := runTTY(t, false, nil, ref...)
+		for _, cmd := range [][]string{{"sweep"}, {"sweep", "--dry-run"}} {
+			args := append(append([]string{}, cmd...), "-f", format)
+			refCode, refOut, refErr := runTTY(t, false, nil, args...)
 			if refCode != ExitOK || refOut == "" {
-				t.Fatalf("%v: reference run failed: code %d, out %q, stderr %q", ref, refCode, refOut, refErr)
+				t.Fatalf("%v: reference run failed: code %d, out %q, stderr %q", args, refCode, refOut, refErr)
 			}
-			for _, mode := range []string{"auto", "always"} {
-				args := append(append([]string{}, cmd...), "-f", format, "--progress="+mode)
-				code, out, errOut := runTTY(t, true, nil, args...)
-				if code != refCode {
-					t.Errorf("%v: code %d, want %d", args, code, refCode)
-				}
-				if got, want := generatedAt.ReplaceAllString(out, ""), generatedAt.ReplaceAllString(refOut, ""); got != want {
-					t.Errorf("%v: stdout differs from the run without progress\n got: %q\nwant: %q", args, got, want)
-				}
-				if errOut != refErr {
-					t.Errorf("%v: stderr differs from the run without progress\n got: %q\nwant: %q", args, errOut, refErr)
-				}
+			code, out, errOut := runTTY(t, true, nil, args...)
+			if code != refCode {
+				t.Errorf("%v: code %d, want %d", args, code, refCode)
+			}
+			if got, want := generatedAt.ReplaceAllString(out, ""), generatedAt.ReplaceAllString(refOut, ""); got != want {
+				t.Errorf("%v: stdout differs from the run without a terminal\n got: %q\nwant: %q", args, got, want)
+			}
+			if errOut != refErr {
+				t.Errorf("%v: stderr differs from the run without a terminal\n got: %q\nwant: %q", args, errOut, refErr)
 			}
 		}
 	}
@@ -206,7 +163,7 @@ func TestMachineFormatsAreUnchangedOnAFakedTerminal(t *testing.T) {
 func TestConfigMachineFormatAlsoDisablesTheDisplay(t *testing.T) {
 	f := newCleanupFixture(t, map[string]any{"output": map[string]any{"format": "ndjson"}})
 	f.mergedAndSquashed()
-	code, out, errOut := runTTY(t, true, nil, "scan", "--progress=always")
+	code, out, errOut := runTTY(t, true, nil, "sweep", "--dry-run")
 	if code != ExitOK || !strings.Contains(out, `"kind"`) {
 		t.Fatalf("code %d, stdout %q", code, out)
 	}
@@ -303,7 +260,7 @@ func TestErrorTextComesAfterTheSummaryAndTheTerminalIsRestored(t *testing.T) {
 	f.mergedAndSquashed()
 	// An unknown session makes undo fail after the flag handling; a failed
 	// run must not leave the display behind: no cursor left hidden.
-	code, _, errOut := runTTY(t, true, nil, "undo", "nonexistent", "--progress=always")
+	code, _, errOut := runTTY(t, true, nil, "undo", "nonexistent")
 	if code == ExitOK {
 		t.Fatal("expected an error")
 	}
@@ -324,7 +281,7 @@ func TestCancelledScanRestoresTheTerminal(t *testing.T) {
 	cancel()
 	var o, e bytes.Buffer
 	a := &app{io: IO{In: strings.NewReader(""), Out: &o, Err: &e}, stderrTTY: func() bool { return true }}
-	code := executeContext(ctx, a, []string{"scan", "--progress=always"})
+	code := executeContext(ctx, a, []string{"sweep", "--dry-run"})
 	if code != ExitError {
 		t.Fatalf("code %d, want %d", code, ExitError)
 	}
@@ -346,10 +303,10 @@ func TestCommandsLeaveNoGoroutinesBehind(t *testing.T) {
 	}
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
-	runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--dry-run", "--progress=always") // warm up shared, lazily started goroutines
+	runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--dry-run") // warm up shared, lazily started goroutines
 	before := runtime.NumGoroutine()
 	for range 3 {
-		if code, _, errOut := runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--dry-run", "--progress=always"); code != ExitOK {
+		if code, _, errOut := runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--dry-run"); code != ExitOK {
 			t.Fatalf("code %d, stderr %q", code, errOut)
 		}
 	}

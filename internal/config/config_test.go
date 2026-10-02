@@ -15,9 +15,6 @@ func TestDefaultsEnableEveryDetector(t *testing.T) {
 	if cfg.DetectorEnabled("no-such-detector") {
 		t.Error("unknown detector reported as enabled")
 	}
-	if cfg.Trash.Strategy != StrategyTrash || cfg.Trash.AllowDelete {
-		t.Error("defaults must use the OS trash and forbid permanent deletion")
-	}
 }
 
 func TestHomeOverride(t *testing.T) {

@@ -57,7 +57,7 @@ func TestRemoveWorktreeUndoRefusesForgedTargets(t *testing.T) {
 				en.Undo = map[string]string{"repo": fx.repo.Dir, "worktree": target, "branch": "feat", "head": applied.Undo["head"]}
 				en.Trash = nil
 				if withTrash {
-					en.Trash = &trash.Record{OriginalPath: target, StoredPath: target + ".stored", Strategy: config.StrategyQuarantine, Restorable: true}
+					en.Trash = &trash.Record{OriginalPath: target, StoredPath: target + ".stored", Strategy: trash.StrategyTrash, Restorable: true}
 					en.Status = session.StatusApplied
 				}
 				err := removeWorktree{}.Undo(context.Background(), fx.env, en)

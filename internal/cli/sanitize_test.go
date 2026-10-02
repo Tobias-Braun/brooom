@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
 )
@@ -26,7 +25,7 @@ func requireNoControl(t *testing.T, what, s string) {
 // command line ends up in the "not found" error.
 func TestErrorOutputSanitized(t *testing.T) {
 	sessionsHome(t)
-	code, _, errOut := run(t, "sessions", "no\x1b[31m\nFORGED")
+	code, _, errOut := run(t, "undo", "no\x1b[31m\nFORGED")
 	if code == ExitOK {
 		t.Fatal("want an error for an unknown session")
 	}
@@ -38,15 +37,14 @@ func TestErrorOutputSanitized(t *testing.T) {
 
 func TestSessionsRenderSanitized(t *testing.T) {
 	s := sessionsHome(t)
-	m := &session.Manifest{ID: "20260101-000000-aaaa", StartedAt: time.Now(), Command: "sweep\x1b[2J\nFORGED"}
-	m.Add(session.Entry{Action: "trash", Path: "/x/dir\x1b]0;pwn\x07/na\nme", Status: session.StatusApplied,
-		Error: "e\nFORGED", RecoveryHint: "h\nFORGED",
-		Trash: &trash.Record{Strategy: config.StrategyTrash, StoredPath: "/t/a\x1bb\nFORGED"}})
+	m := &session.Manifest{ID: "20260101-000000-aaaa", StartedAt: time.Now(), Command: "sweep", Root: "/x/repo\x1b]0;pwn\x07\nFORGED"}
+	m.Add(session.Entry{Action: "trash", Path: "/x/dir", Status: session.StatusApplied,
+		Trash: &trash.Record{Strategy: trash.StrategyTrash, StoredPath: "/t/a"}})
 	m.Finish(time.Now())
 	if err := s.Save(m); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"sessions"}, {"sessions", m.ID}} {
+	for _, args := range [][]string{{"sessions"}, {"sessions", "-f", "plain"}} {
 		code, out, _ := run(t, args...)
 		if code != ExitOK {
 			t.Fatalf("%v: code %d", args, code)
@@ -95,49 +93,26 @@ func TestEveryHumanOutputSanitized(t *testing.T) {
 		}
 
 		// A path argument that does not exist is echoed back in the error.
-		_, pathOut, pathErr := run(t, "scan", filepath.Join(work, hostile))
-		requireSanitized(t, "scan hostile path", pathOut+pathErr)
+		_, pathOut, pathErr := run(t, "sweep", "tidy", filepath.Join(work, hostile))
+		requireSanitized(t, "sweep hostile path", pathOut+pathErr)
 
 		// Validation problems name the config path, the field and the message.
-		writeFile(t, cfg, `{"version":1,"trash":{"strategy":"sh`+`\u001b[31m\nFORGED"},"output":{"format":"x\u001b\nFORGED"}}`)
-		code, out, errOut := run(t, "config", "validate")
+		writeFile(t, cfg, `{"version":1,"output":{"format":"x\u001b\nFORGED"},"scan":{"skip_dirs":["a/\u001b\nFORGED"]}}`)
+		code, out, errOut := run(t, "config", "show")
 		if code == ExitOK {
 			t.Fatal("want validation problems")
 		}
-		requireSanitized(t, "config validate", out+errOut)
-		code, out, errOut = run(t, "config", "validate", "--config", filepath.Join(work, hostile+".json"))
-		requireSanitized(t, "config validate missing file", out+errOut)
-		_ = code
+		requireSanitized(t, "config show", out+errOut)
+		_, out, errOut = run(t, "config", "show", "--config", filepath.Join(work, hostile+".json"))
+		requireSanitized(t, "config show missing file", out+errOut)
 	})
 
-	t.Run("undo and purge", func(t *testing.T) {
-		f := agedFixture(t)
-		id := "20260701-100000-\x1b[2J\nFORGED"
-		f.session(id, purgeClock.Add(-60*24*time.Hour), f.write(hostile+"/f.txt", "x"))
-		ageQuarantine(t, f, id, purgeClock.Add(-60*24*time.Hour))
-
-		for _, args := range [][]string{{"undo", id}, {"undo", id, "--yes"}, {"undo", id}, {"purge"}, {"purge", "--yes"}} {
-			_, out, errOut := runApp(t, "", false, purgeClock, args...)
-			requireSanitized(t, strings.Join(args, " "), out+errOut)
-		}
-	})
-
-	t.Run("clean", func(t *testing.T) {
+	t.Run("undo", func(t *testing.T) {
 		f := newUndoFixture(t)
-		// The trashed directory has a plain name: a step's shell command is
-		// printed verbatim on purpose so it stays copy-pasteable (its quoting
-		// is tracked in #129), so a hostile name there would trip the check.
-		// The refused finding, its id and the session id are covered.
-		dir, _ := junkDir(t, f.repo.Dir, "junk")
-		outside := t.TempDir()
-		bad := trashFinding(outside, filepath.Join(outside, hostile))
-		bad.ID = "id" + hostile
-		report := writeReportFile(t, trashFinding(f.repo.Dir, dir), bad)
-		for _, args := range [][]string{
-			{"clean", "--from", report},
-			{"clean", "--from", report, "--yes"},
-		} {
-			_, out, errOut := runApp(t, "", false, time.Time{}, append(args, quarantine...)...)
+		id := "20260701-100000-\x1b[2J\nFORGED"
+		f.session(id, time.Now(), f.write(hostile+"/f.txt", "x"))
+		for _, args := range [][]string{{"undo", id}, {"undo", id, "--yes"}, {"undo", id}, {"sessions"}} {
+			_, out, errOut := runApp(t, "", false, time.Time{}, args...)
 			requireSanitized(t, strings.Join(args, " "), out+errOut)
 		}
 	})

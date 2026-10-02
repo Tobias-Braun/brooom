@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/trash"
 )
@@ -53,7 +52,7 @@ func TestCheckRecordPaths(t *testing.T) {
 // whichever strategy the entry names.
 func TestTrashUndoRefusesForgedRecordPaths(t *testing.T) {
 	fx := newTrashFixture(t)
-	stub := &stubTrasher{strategy: config.StrategyTrash}
+	stub := &stubTrasher{}
 	fx.useStub(stub)
 	fx.mkdir("proj")
 	dest := fx.path("proj/stolen.txt")
@@ -69,7 +68,7 @@ func TestTrashUndoRefusesForgedRecordPaths(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := tt.rec
-			rec.Strategy, rec.OriginalPath, rec.Restorable = config.StrategyTrash, dest, true
+			rec.Strategy, rec.OriginalPath, rec.Restorable = trash.StrategyTrash, dest, true
 			e := session.Entry{Status: session.StatusApplied, Path: dest, Trash: &rec}
 			err := trashAction{}.Undo(context.Background(), fx.env, e)
 			if err == nil || !strings.Contains(err.Error(), "refusing to restore") {
@@ -84,10 +83,10 @@ func TestTrashUndoRefusesForgedRecordPaths(t *testing.T) {
 
 func TestRecordTrasherRefusesForgedRecordPaths(t *testing.T) {
 	fx := newTrashFixture(t)
-	stub := &stubTrasher{strategy: config.StrategyTrash}
+	stub := &stubTrasher{}
 	fx.useStub(stub)
 	path := fx.path("wt")
-	rec := trash.Record{Strategy: config.StrategyTrash, OriginalPath: path, StoredPath: "relative/files/wt"}
+	rec := trash.Record{Strategy: trash.StrategyTrash, OriginalPath: path, StoredPath: "relative/files/wt"}
 	if _, err := recordTrasher(fx.env, rec, path); err == nil || !strings.Contains(err.Error(), "refusing to restore") {
 		t.Fatalf("err = %v, want a refusal", err)
 	}

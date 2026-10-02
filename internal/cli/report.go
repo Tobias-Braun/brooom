@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -27,10 +26,6 @@ type scanOptions struct {
 	// keep drops the findings it rejects (a preset's confidence floors)
 	// before they are reported or planned; nil keeps everything.
 	keep func(findings.Finding) bool
-	// targetsOnly builds targets, guard and environment but runs no
-	// detector. `brooom git purge` uses it when only explicit dates are
-	// given: it needs the repositories in scope, not their bloat findings.
-	targetsOnly bool
 }
 
 // passes reports whether a finding passes the keep filter.
@@ -67,40 +62,9 @@ func (o scanOptions) filter(in []findings.Finding) []findings.Finding {
 	return out
 }
 
-func newScanCmd(a *app) *cobra.Command {
-	var force bool
-	cmd := &cobra.Command{
-		Use:   "scan [path]",
-		Short: "Scan for clutter and report findings (never modifies anything)",
-		Example: `  brooom scan
-  brooom scan ~/code --format json > findings.json
-  brooom scan --detector merged-branch,worktrees --format plain
-  brooom scan --force --format json > findings.json`,
-		Long: `Scan the current repository (or the repository or folder the path names;
-below a folder every repository and project is scanned) and report findings. Scanning never
-modifies anything; use 'brooom sweep' or 'brooom clean --from <file>' to act
-on findings. -d/--detector limits the scan to single detectors, including the
-ones no sweep preset runs (stale-branch, large-untracked).
-
-The plain format is a bare path list for pipes and omits informational
-findings, such as linked worktrees outside the scanned scope; use another
-format to see them.
-
---force only changes what is reported: findings blocked by an overridable risk
-flag then suggest their action, so the file can be given to 'brooom clean
---from'. Nothing is modified either way.`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a.setPath(args)
-			return a.runScan(cmd, scanOptions{force: force})
-		},
-	}
-	cmd.Flags().BoolVar(&force, "force", false, "report the actions --force would allow for findings with overridable risk flags (read-only)")
-	return cmd
-}
-
-// runScan validates the request (so a typo fails before a long scan), runs
-// the scan and prints the report in the requested format. Formats that
+// runScan is sweep with a machine format: it validates the request (so a
+// typo fails before a long scan), runs the scan and prints the report in the
+// requested format without acting. Formats that
 // implement streamingFormatter print findings while the scan runs. On
 // interruption the partial report is still rendered before the error is
 // returned.
@@ -125,14 +89,11 @@ func (a *app) runScan(cmd *cobra.Command, opts scanOptions) error {
 	if res == nil {
 		return err
 	}
-	a.logScanErrors(res.Report.Errors, !errorsInBand(req.format))
+	if !errorsInBand(req.format) {
+		a.logScanErrors(res.Report.Errors)
+	}
 	if werr := formatter.Write(a.io.Out, res.Report, renderOpts); werr != nil {
 		return werr
-	}
-	if !machineFormats[req.format] && !a.flags.quiet && res.Report.Totals.Actionable > 0 {
-		if hint := a.scanHint(cmd, res); hint != "" {
-			fmt.Fprintln(a.io.Out, hint)
-		}
 	}
 	if err == nil {
 		err = scanFailure(res.Report)
@@ -153,7 +114,7 @@ func (a *app) scanStreaming(ctx context.Context, req *scanRequest, sf streamingF
 		err = ferr
 	}
 	if res != nil {
-		a.logScanErrors(res.Report.Errors, true)
+		a.logScanErrors(res.Report.Errors)
 		if err == nil {
 			err = scanFailure(res.Report)
 		}

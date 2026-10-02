@@ -25,14 +25,13 @@ import (
 // trashFixture is a sandbox for the trash action: a scan root inside a temp
 // dir, the Brooom home and the user's home inside that root (so the guard
 // covers them and only the static refusals can stop a removal), and a
-// quarantine trasher. Nothing here touches the real home or OS trash.
+// dirTrasher. Nothing here touches the real home or OS trash.
 type trashFixture struct {
 	t        *testing.T
 	root     string
 	brooom   string
 	userHome string
 	env      *Env
-	strategy config.TrashStrategy
 }
 
 func newTrashFixture(t *testing.T) *trashFixture {
@@ -42,7 +41,6 @@ func newTrashFixture(t *testing.T) *trashFixture {
 		t: t, root: root,
 		brooom:   filepath.Join(root, "brooom-home"),
 		userHome: filepath.Join(root, "users", "me"),
-		strategy: config.StrategyQuarantine,
 	}
 	for _, d := range []string{fx.brooom, fx.userHome} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -64,12 +62,9 @@ func newTrashFixture(t *testing.T) *trashFixture {
 		t.Skipf("git not available: %v", err)
 	}
 	fx.env = &Env{
-		Guard: guard,
-		Git:   git,
-		Trasher: func(string) (trash.Trasher, error) {
-			return fx.trasher(fx.strategy)
-		},
-		TrasherFor: fx.trasher,
+		Guard:   guard,
+		Git:     git,
+		Trasher: testutil.DirTrasher{Dir: filepath.Join(fx.brooom, "trash")},
 	}
 	return fx
 }
@@ -80,10 +75,6 @@ func (fx *trashFixture) setOpen(fn func(context.Context, []string) (map[string]b
 	old := openFilesFn
 	openFilesFn = fn
 	fx.t.Cleanup(func() { openFilesFn = old })
-}
-
-func (fx *trashFixture) trasher(s config.TrashStrategy) (trash.Trasher, error) {
-	return trash.New(s, trash.Options{SessionID: "20260930-120000-test", QuarantineDir: filepath.Join(fx.brooom, "quarantine")})
 }
 
 func (fx *trashFixture) path(rel string) string {
@@ -179,10 +170,10 @@ func planAndApply(t *testing.T, fx *trashFixture, path string) session.Entry {
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if !strings.Contains(step.Description, "to quarantine") || !strings.Contains(step.Description, filepath.Base(path)) {
+	if !strings.Contains(step.Description, "to trash") || !strings.Contains(step.Description, filepath.Base(path)) {
 		t.Errorf("Description = %q", step.Description)
 	}
-	if !strings.HasPrefix(step.Command, displayVerb(config.StrategyQuarantine)) {
+	if !strings.HasPrefix(step.Command, displayVerb()) {
 		t.Errorf("Command = %q", step.Command)
 	}
 	en, err := trashAction{}.Apply(context.Background(), fx.env, step)
@@ -200,7 +191,7 @@ func checkAppliedEntry(t *testing.T, en session.Entry, isDir bool) {
 	if en.Trash.IsDir != isDir || en.SizeBytes != en.Trash.SizeBytes || en.At.IsZero() {
 		t.Errorf("entry record = %+v size=%d at=%v", en.Trash, en.SizeBytes, en.At)
 	}
-	if want := "restore from " + en.Trash.StoredPath; en.RecoveryHint != want {
+	if want := "open the Trash/Recycle Bin and use Put Back / Restore"; en.RecoveryHint != want {
 		t.Errorf("RecoveryHint = %q, want %q", en.RecoveryHint, want)
 	}
 }
@@ -230,10 +221,10 @@ func TestTrashPlanSkips(t *testing.T) {
 		{"brooom home", true, func(fx *trashFixture) findings.Finding { return trashFinding(fx.brooom) }, "Brooom home"},
 		{"brooom sessions", true, func(fx *trashFixture) findings.Finding {
 			return trashFinding(fx.mkdir("brooom-home/sessions"))
-		}, "session or quarantine"},
-		{"brooom quarantine file", true, func(fx *trashFixture) findings.Finding {
-			return trashFinding(fx.write("brooom-home/quarantine/s/1/a", "a"))
-		}, "session or quarantine"},
+		}, "session data"},
+		{"brooom session file", true, func(fx *trashFixture) findings.Finding {
+			return trashFinding(fx.write("brooom-home/sessions/s.json", "{}"))
+		}, "session data"},
 		{"ancestor of brooom home", true, func(fx *trashFixture) findings.Finding {
 			return trashFinding(fx.path("brooom-home"))
 		}, "Brooom home"},
@@ -308,8 +299,6 @@ func TestTrashPlanSkips(t *testing.T) {
 			f.RiskFlags = []findings.RiskFlag{findings.RiskFileOpen}
 			return f
 		}, "not overridable"},
-		{"delete strategy untracked", false, deleteUntracked, "refusing to permanently delete untracked files"},
-		{"delete strategy untracked with force", true, deleteUntracked, "refusing to permanently delete untracked files"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -319,29 +308,6 @@ func TestTrashPlanSkips(t *testing.T) {
 			_, err := trashAction{}.Plan(context.Background(), fx.env, f)
 			wantSkip(t, err, tt.reason)
 		})
-	}
-}
-
-// deleteUntracked prepares a finding flagged untracked with the delete
-// strategy selected.
-func deleteUntracked(fx *trashFixture) findings.Finding {
-	fx.strategy = config.StrategyDelete
-	f := trashFinding(fx.write("proj/big.bin", "data"))
-	f.Meta = map[string]string{"user_data_risk": "untracked"}
-	return f
-}
-
-func TestTrashDeleteUntrackedAllowedWithQuarantine(t *testing.T) {
-	fx := newTrashFixture(t)
-	fx.env.Force = true
-	f := deleteUntracked(fx)
-	fx.strategy = config.StrategyQuarantine
-	step, err := trashAction{}.Plan(context.Background(), fx.env, f)
-	if err != nil {
-		t.Fatalf("Plan with quarantine: %v", err)
-	}
-	if !strings.Contains(step.Description, "to quarantine") {
-		t.Errorf("Description = %q", step.Description)
 	}
 }
 
@@ -603,20 +569,22 @@ func TestTrashUnreadableDirectoryIsRefused(t *testing.T) {
 
 // stubTrasher is a scriptable trash.Trasher.
 type stubTrasher struct {
-	strategy   config.TrashStrategy
-	removeRec  trash.Record
-	removeErr  error
-	restoreErr error
-	removed    []string
-	removeCtx  []context.Context
-	restored   []trash.Record
+	// beforeRemove runs inside Remove, before it returns.
+	beforeRemove func()
+	removeRec    trash.Record
+	removeErr    error
+	restoreErr   error
+	removed      []string
+	removeCtx    []context.Context
+	restored     []trash.Record
 }
-
-func (s *stubTrasher) Strategy() config.TrashStrategy { return s.strategy }
 
 func (s *stubTrasher) Remove(ctx context.Context, path string) (trash.Record, error) {
 	s.removeCtx = append(s.removeCtx, ctx)
 	s.removed = append(s.removed, path)
+	if s.beforeRemove != nil {
+		s.beforeRemove()
+	}
 	return s.removeRec, s.removeErr
 }
 
@@ -626,8 +594,7 @@ func (s *stubTrasher) Restore(_ context.Context, r trash.Record) error {
 }
 
 func (fx *trashFixture) useStub(s *stubTrasher) {
-	fx.env.Trasher = func(string) (trash.Trasher, error) { return s, nil }
-	fx.env.TrasherFor = func(config.TrashStrategy) (trash.Trasher, error) { return s, nil }
+	fx.env.Trasher = s
 }
 
 func TestTrashApplyFailures(t *testing.T) {
@@ -635,7 +602,7 @@ func TestTrashApplyFailures(t *testing.T) {
 		fx := newTrashFixture(t)
 		p := fx.write("proj/a.log", "x")
 		boom := errors.New("disk on fire")
-		fx.useStub(&stubTrasher{strategy: config.StrategyQuarantine, removeErr: boom})
+		fx.useStub(&stubTrasher{removeErr: boom})
 		step, err := trashAction{}.Plan(context.Background(), fx.env, trashFinding(p))
 		if err != nil {
 			t.Fatal(err)
@@ -652,8 +619,7 @@ func TestTrashApplyFailures(t *testing.T) {
 		fx := newTrashFixture(t)
 		p := fx.write("proj/a.log", "x")
 		fx.useStub(&stubTrasher{
-			strategy:  config.StrategyQuarantine,
-			removeRec: trash.Record{Strategy: config.StrategyQuarantine, OriginalPath: p, StoredPath: "/q/1/a.log"},
+			removeRec: trash.Record{Strategy: trash.StrategyTrash, OriginalPath: p, StoredPath: "/q/1/a.log"},
 			removeErr: errors.New("source not fully removed"),
 		})
 		en, err := trashAction{}.Apply(context.Background(), fx.env, Step{Finding: trashFinding(p)})
@@ -666,7 +632,7 @@ func TestTrashApplyFailures(t *testing.T) {
 	})
 	t.Run("path vanished before apply", func(t *testing.T) {
 		fx := newTrashFixture(t)
-		stub := &stubTrasher{strategy: config.StrategyQuarantine}
+		stub := &stubTrasher{}
 		fx.useStub(stub)
 		en, err := trashAction{}.Apply(context.Background(), fx.env, Step{Finding: trashFinding(fx.path("proj/gone.log"))})
 		if err != nil || en.Status != session.StatusSkipped || en.Error != "already gone" {
@@ -679,13 +645,11 @@ func TestTrashApplyFailures(t *testing.T) {
 	t.Run("path vanished during remove", func(t *testing.T) {
 		fx := newTrashFixture(t)
 		p := fx.write("proj/a.log", "x")
-		stub := &stubTrasher{strategy: config.StrategyQuarantine}
-		// The path disappears after Apply's own stat but before Remove runs.
-		fx.env.Trasher = func(string) (trash.Trasher, error) {
-			_ = os.Remove(p)
-			stub.removeErr = fmt.Errorf("move %s: %w", p, fs.ErrNotExist)
-			return stub, nil
-		}
+		// The path disappears after Apply's own stat, while Remove runs.
+		fx.useStub(&stubTrasher{
+			beforeRemove: func() { _ = os.Remove(p) },
+			removeErr:    fmt.Errorf("move %s: %w", p, fs.ErrNotExist),
+		})
 		en, err := trashAction{}.Apply(context.Background(), fx.env, Step{Finding: trashFinding(p)})
 		if err != nil || en.Status != session.StatusSkipped {
 			t.Fatalf("entry = %+v err = %v", en, err)
@@ -693,7 +657,7 @@ func TestTrashApplyFailures(t *testing.T) {
 	})
 	t.Run("apply re-checks refusals", func(t *testing.T) {
 		fx := newTrashFixture(t)
-		stub := &stubTrasher{strategy: config.StrategyQuarantine}
+		stub := &stubTrasher{}
 		fx.useStub(stub)
 		for _, path := range []string{fx.root, fx.userHome, testutil.ResolvedTempDir(t)} {
 			en, err := trashAction{}.Apply(context.Background(), fx.env, Step{Finding: trashFinding(path)})
@@ -705,45 +669,15 @@ func TestTrashApplyFailures(t *testing.T) {
 			t.Errorf("Remove called for refused paths: %v", stub.removed)
 		}
 	})
-	t.Run("trasher factory error", func(t *testing.T) {
+	t.Run("no trasher", func(t *testing.T) {
 		fx := newTrashFixture(t)
 		p := fx.write("proj/a.log", "x")
-		fx.env.Trasher = func(string) (trash.Trasher, error) { return nil, errors.New("no such strategy") }
+		fx.env.Trasher = nil
 		_, err := trashAction{}.Plan(context.Background(), fx.env, trashFinding(p))
 		if err == nil || errors.Is(err, ErrSkipped) {
 			t.Fatalf("Plan err = %v, want a hard error", err)
 		}
 	})
-}
-
-// TestTrashApplyDeleteStrategy deletes ignored build output inside a
-// repository: permanent deletion is only allowed when git shows that nothing
-// untracked and unignored is lost.
-func TestTrashApplyDeleteStrategy(t *testing.T) {
-	fx, repo := forgedRepoFixture(t, false)
-	fx.strategy = config.StrategyDelete
-	p := filepath.Join(repo.Dir, "build", "out.bin")
-	step, err := trashAction{}.Plan(context.Background(), fx.env, trashFinding(filepath.Join(repo.Dir, "build")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(step.Description, "permanently delete build") || !strings.HasPrefix(step.Command, displayVerb(config.StrategyDelete)) {
-		t.Errorf("step = %+v", step)
-	}
-	en, err := trashAction{}.Apply(context.Background(), fx.env, step)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if en.Restorable || en.RecoveryHint != "not recoverable" || en.Status != session.StatusApplied {
-		t.Fatalf("entry = %+v", en)
-	}
-	if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("file still exists: %v", err)
-	}
-	// Undo of a permanent deletion passes ErrNotRestorable through.
-	if err := (trashAction{}).Undo(context.Background(), fx.env, en); !errors.Is(err, trash.ErrNotRestorable) {
-		t.Fatalf("Undo err = %v, want ErrNotRestorable", err)
-	}
 }
 
 func TestTrashUndoErrors(t *testing.T) {
@@ -783,20 +717,9 @@ func TestTrashUndoErrors(t *testing.T) {
 			t.Fatalf("err = %v, want ErrNotRestorable", err)
 		}
 	})
-	t.Run("recorded strategy wins over configured one", func(t *testing.T) {
-		fx := newTrashFixture(t)
-		en, p := applied(t, fx)
-		fx.strategy = config.StrategyDelete
-		if err := (trashAction{}).Undo(ctx, fx.env, en); err != nil {
-			t.Fatalf("Undo: %v", err)
-		}
-		if _, err := os.Lstat(p); err != nil {
-			t.Fatalf("not restored: %v", err)
-		}
-	})
 	t.Run("forged traversal", func(t *testing.T) {
 		fx := newTrashFixture(t)
-		stub := &stubTrasher{strategy: config.StrategyQuarantine}
+		stub := &stubTrasher{}
 		fx.useStub(stub)
 		outside := filepath.Join(testutil.ResolvedTempDir(t), "evil")
 		for _, orig := range []string{
@@ -807,7 +730,7 @@ func TestTrashUndoErrors(t *testing.T) {
 			"",
 		} {
 			en := session.Entry{Status: session.StatusApplied, Trash: &trash.Record{
-				Strategy: config.StrategyQuarantine, OriginalPath: orig, StoredPath: "/q/1/evil", Restorable: true,
+				Strategy: trash.StrategyTrash, OriginalPath: orig, StoredPath: "/q/1/evil", Restorable: true,
 			}}
 			if err := (trashAction{}).Undo(ctx, fx.env, en); err == nil {
 				t.Errorf("Undo(%q) succeeded, want refusal", orig)
@@ -819,7 +742,7 @@ func TestTrashUndoErrors(t *testing.T) {
 	})
 	t.Run("invalid entries", func(t *testing.T) {
 		fx := newTrashFixture(t)
-		rec := &trash.Record{Strategy: config.StrategyQuarantine, OriginalPath: fx.path("a"), Restorable: true}
+		rec := &trash.Record{Strategy: trash.StrategyTrash, OriginalPath: fx.path("a"), Restorable: true}
 		for name, en := range map[string]session.Entry{
 			"no record":       {Status: session.StatusApplied},
 			"failed status":   {Status: session.StatusFailed, Trash: rec},
@@ -829,17 +752,17 @@ func TestTrashUndoErrors(t *testing.T) {
 				t.Errorf("%s: Undo succeeded", name)
 			}
 		}
-		fx.env.TrasherFor = nil
+		fx.env.Trasher = nil
 		if err := (trashAction{}).Undo(ctx, fx.env, session.Entry{Status: session.StatusApplied, Trash: rec}); err == nil {
-			t.Error("Undo without TrasherFor succeeded")
+			t.Error("Undo without a trasher succeeded")
 		}
 	})
 	t.Run("restore uses the resolved destination", func(t *testing.T) {
 		fx := newTrashFixture(t)
-		stub := &stubTrasher{strategy: config.StrategyQuarantine}
+		stub := &stubTrasher{}
 		fx.useStub(stub)
 		en := session.Entry{Status: session.StatusApplied, Trash: &trash.Record{
-			Strategy: config.StrategyQuarantine, OriginalPath: fx.path("proj/x.log"), Restorable: true,
+			Strategy: trash.StrategyTrash, OriginalPath: fx.path("proj/x.log"), Restorable: true,
 		}}
 		if err := (trashAction{}).Undo(ctx, fx.env, en); err != nil {
 			t.Fatal(err)
@@ -851,28 +774,15 @@ func TestTrashUndoErrors(t *testing.T) {
 }
 
 func TestDescribeAndDisplayCommand(t *testing.T) {
-	t.Setenv(config.HomeEnv, filepath.Join(t.TempDir(), "h"))
-	tests := []struct {
-		strategy config.TrashStrategy
-		notes    []string
-		wantDesc string
-		wantCmd  string
-	}{
-		{config.StrategyTrash, nil, "move node_modules to trash", displayVerb(config.StrategyTrash)},
-		{config.StrategyQuarantine, nil, "move node_modules to quarantine", displayVerb(config.StrategyQuarantine)},
-		{config.StrategyDelete, nil, "permanently delete node_modules", displayVerb(config.StrategyDelete)},
-		{config.StrategyTrash, []string{"tracked files", "open-file check incomplete"}, "move node_modules to trash [tracked files; open-file check incomplete]", displayVerb(config.StrategyTrash)},
+	path := filepath.Join(t.TempDir(), "node_modules")
+	if got := describe(path, nil); got != "move node_modules to trash" {
+		t.Errorf("describe = %q", got)
 	}
-	for _, tt := range tests {
-		t.Run(string(tt.strategy)+strings.Join(tt.notes, ","), func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "node_modules")
-			if got := describe(tt.strategy, path, tt.notes); got != tt.wantDesc {
-				t.Errorf("describe = %q, want %q", got, tt.wantDesc)
-			}
-			if got := displayCommand(tt.strategy, path); !strings.HasPrefix(got, tt.wantCmd) || !strings.Contains(got, "node_modules") {
-				t.Errorf("displayCommand = %q", got)
-			}
-		})
+	if got := describe(path, []string{"tracked files", "open-file check incomplete"}); got != "move node_modules to trash [tracked files; open-file check incomplete]" {
+		t.Errorf("describe with notes = %q", got)
+	}
+	if got := displayCommand(path); !strings.HasPrefix(got, displayVerb()) || !strings.Contains(got, "node_modules") {
+		t.Errorf("displayCommand = %q", got)
 	}
 }
 
@@ -887,7 +797,7 @@ func TestTrashViaExecutor(t *testing.T) {
 	store := session.NewStore(dirs.Sessions)
 	var out strings.Builder
 	ex := NewExecutor(Options{
-		Apply: true, Yes: true, Env: fx.env, Store: store, SessionID: "20260930-120000-test",
+		Apply: true, Yes: true, Env: fx.env, Store: store,
 		Command: "brooom sweep", IO: IO{Out: &out, Err: &out},
 		StdinIsTTY: func() bool { return false },
 	})

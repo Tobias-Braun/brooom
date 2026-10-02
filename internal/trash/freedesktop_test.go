@@ -13,8 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/Tobias-Braun/brooom/internal/config"
 )
 
 // fdNow is a local-time instant so DeletionDate formatting is checked
@@ -28,7 +26,7 @@ func newTestTrasher(t *testing.T) (*freedesktop, string, string) {
 	data := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", data)
-	tr, err := newOSTrasher(Options{})
+	tr, err := newOSTrasher()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,13 +42,6 @@ func readFile(t *testing.T, p string) string {
 		t.Fatal(err)
 	}
 	return string(b)
-}
-
-func TestStrategyFD(t *testing.T) {
-	f, _, _ := newTestTrasher(t)
-	if f.Strategy() != config.StrategyTrash {
-		t.Errorf("strategy = %q", f.Strategy())
-	}
 }
 
 func TestEncodePathFD(t *testing.T) {
@@ -88,8 +79,8 @@ func TestHomeTrashDirFD(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err = %v", err)
 			}
-			if err != nil && !strings.Contains(err.Error(), "quarantine") {
-				t.Errorf("error does not suggest quarantine: %v", err)
+			if err != nil && !strings.Contains(err.Error(), "XDG_DATA_HOME") {
+				t.Errorf("error does not name XDG_DATA_HOME: %v", err)
 			}
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
@@ -101,7 +92,7 @@ func TestHomeTrashDirFD(t *testing.T) {
 func TestNewOSTrasherWithoutHomeFD(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("XDG_DATA_HOME", "")
-	if _, err := newOSTrasher(Options{}); err == nil {
+	if _, err := newOSTrasher(); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -130,7 +121,7 @@ func TestRemoveFileWritesTrashInfoFD(t *testing.T) {
 	if got := readFile(t, rec.InfoPath); got != want {
 		t.Errorf("info = %q, want %q", got, want)
 	}
-	if rec.Strategy != config.StrategyTrash || rec.OriginalPath != p || rec.SizeBytes != wantSize || rec.IsDir || !rec.Restorable || !rec.RemovedAt.Equal(fdNow) {
+	if rec.Strategy != StrategyTrash || rec.OriginalPath != p || rec.SizeBytes != wantSize || rec.IsDir || !rec.Restorable || !rec.RemovedAt.Equal(fdNow) {
 		t.Errorf("record: %+v", rec)
 	}
 	for _, d := range []string{trash, filepath.Join(trash, "files"), filepath.Join(trash, "info")} {
@@ -447,7 +438,7 @@ func TestXDGOverrideAndRelativeIgnoredFD(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", "relative/dir")
-	tr, err := newOSTrasher(Options{})
+	tr, err := newOSTrasher()
 	if err != nil {
 		t.Fatal(err)
 	}

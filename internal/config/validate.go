@@ -96,17 +96,12 @@ func (p *problemList) oneOf(field, v string, allowed []string) {
 // from internal/output to avoid an import cycle; a test pins the list to the
 // formats documented in docs/SPEC.md.
 var (
-	outputFormats  = []string{"table", "tree", "json", "ndjson", "plain", "summary"}
-	outputColors   = []string{"auto", "always", "never"}
-	trashStrategys = []string{string(StrategyTrash), string(StrategyQuarantine), string(StrategyDelete)}
-	mergeModes     = []string{string(MergeAncestor), string(MergeAncestorSquash)}
-	agentProviders = []string{"", "anthropic", "openai-compatible"}
+	outputFormats = []string{"table", "tree", "json", "ndjson", "plain", "summary"}
+	outputColors  = []string{"auto", "always", "never"}
+	mergeModes    = []string{string(MergeAncestor), string(MergeAncestorSquash)}
 )
 
-var (
-	envVarName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	kebabID    = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-)
+var kebabID = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // Validate checks cfg for invalid or dangerous values and returns a
 // *ValidationError listing every problem, or nil. Nothing is corrected or
@@ -119,10 +114,8 @@ func (c *Config) Validate() error {
 	validateThresholds(&p, "thresholds", c.Thresholds)
 	validateGit(&p, c.Git)
 	validateDetectors(&p, &c.Detectors)
-	validateTrash(&p, c.Trash)
 	validateOutput(&p, c.Output)
 	validateScan(&p, c.Scan)
-	validateAgent(&p, c.Agent)
 	// Legacy names still load (sweep says which preset runs instead); the
 	// error only advertises the current ones.
 	if !slices.Contains(LegacyPresetNames(), c.Sweep.Preset) {
@@ -197,7 +190,6 @@ func validateDetectors(p *problemList, d *Detectors) {
 	p.oneOf("detectors.merged-branch.mode", string(d.MergedBranch.Mode), mergeModes)
 	p.nonNeg("detectors.worktrees.min_age_days", int64(d.Worktrees.MinAgeDays))
 	validateGitBloat(p, d.GitBloat)
-	p.nonNeg("detectors.large-untracked.min_size_bytes", d.LargeUntracked.MinSizeBytes)
 	validateOptionalAge(p, "detectors.ai-artifacts.min_age_days", d.AIArtifacts.MinAgeDays)
 	validateCatalog(p, "detectors.ai-artifacts.extra", d.AIArtifacts.Extra)
 	validateOptionalAge(p, "detectors.log-and-runtime-files.min_age_days", d.Logs.MinAgeDays)
@@ -279,26 +271,6 @@ func validProjectLocation(loc string) error {
 	return nil
 }
 
-func validateTrash(p *problemList, t Trash) {
-	p.oneOf("trash.strategy", string(t.Strategy), trashStrategys)
-	if t.Strategy == StrategyDelete && !t.AllowDelete {
-		p.add("trash.strategy", "\"delete\" removes files permanently and requires trash.allow_delete: true")
-	}
-	for _, name := range sortedKeys(t.PerDetector) {
-		field := "trash.per_detector." + name
-		if !slices.Contains(DetectorNames(), name) {
-			p.add(field, "unknown detector; known detectors: %s", strings.Join(DetectorNames(), ", "))
-		}
-		s := t.PerDetector[name]
-		p.oneOf(field, string(s), trashStrategys)
-		if s == StrategyDelete && !t.AllowDelete {
-			p.add(field, "\"delete\" removes files permanently and requires trash.allow_delete: true")
-		}
-	}
-	// 0 means "never purge"; only negative values are meaningless.
-	p.nonNeg("trash.quarantine_retention_days", int64(t.QuarantineRetentionDays))
-}
-
 func validateOutput(p *problemList, o Output) {
 	p.oneOf("output.format", o.Format, outputFormats)
 	p.oneOf("output.color", o.Color, outputColors)
@@ -311,12 +283,5 @@ func validateScan(p *problemList, s Scan) {
 		if d == "" || d == "." || d == ".." || strings.ContainsAny(d, `/\`) {
 			p.add(fmt.Sprintf("scan.skip_dirs[%d]", i), "%q must be a plain directory name (no path separators, not \".\" or \"..\")", d)
 		}
-	}
-}
-
-func validateAgent(p *problemList, a Agent) {
-	p.oneOf("agent.provider", a.Provider, agentProviders)
-	if a.APIKeyEnv != "" && !envVarName.MatchString(a.APIKeyEnv) {
-		p.add("agent.api_key_env", "%q must be an environment variable name (the key itself is never stored)", a.APIKeyEnv)
 	}
 }

@@ -7,62 +7,35 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 )
 
-// TestDisplayCommandDialects pins the POSIX and PowerShell renderings and the
-// real quarantine destination (session directory plus numbered directory).
+// TestDisplayCommandDialects pins the POSIX and PowerShell renderings.
 func TestDisplayCommandDialects(t *testing.T) {
 	tests := []struct {
-		name     string
-		goos     string
-		strategy config.TrashStrategy
-		path     string
-		qdir     string
-		want     string
+		name, goos, path, want string
 	}{
-		{"posix delete", "linux", config.StrategyDelete, "/p/a b", "/h/quarantine", "rm -rf -- '/p/a b'"},
-		{"posix trash", "darwin", config.StrategyTrash, "/p/dist", "/h/quarantine", "trash /p/dist"},
-		{"posix quarantine", "linux", config.StrategyQuarantine, "/p/dist", "/h/quarantine",
-			"mv -- /p/dist '/h/quarantine/<session-id>/<n>/'"},
-		{"windows delete", "windows", config.StrategyDelete, `C:\p\a b`, `C:\h\quarantine`,
-			`Remove-Item -LiteralPath 'C:\p\a b' -Recurse -Force`},
-		{"windows quote", "windows", config.StrategyDelete, `C:\p\it's`, `C:\h\quarantine`,
-			`Remove-Item -LiteralPath 'C:\p\it''s' -Recurse -Force`},
-		{"windows quarantine", "windows", config.StrategyQuarantine, `C:\p\dist`, `C:\h\quarantine`,
-			`Move-Item -LiteralPath 'C:\p\dist' -Destination 'C:\h\quarantine\<session-id>\<n>\'`},
-		{"windows trash is labelled illustrative", "windows", config.StrategyTrash, `C:\p\dist`, `C:\h\quarantine`,
+		{"posix", "darwin", "/p/dist", "trash /p/dist"},
+		{"posix quote", "linux", "/p/a b", "trash '/p/a b'"},
+		{"windows is labelled illustrative", "windows", `C:\p\dist`,
 			`# illustrative, Brooom sends it to the Recycle Bin: Remove-Item -LiteralPath 'C:\p\dist' -Recurse`},
+		{"windows quote", "windows", `C:\p\it's`,
+			`# illustrative, Brooom sends it to the Recycle Bin: Remove-Item -LiteralPath 'C:\p\it''s' -Recurse`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := displayCommandFor(tt.goos, tt.strategy, tt.path, tt.qdir); got != tt.want {
+			if got := displayCommandFor(tt.goos, tt.path); got != tt.want {
 				t.Errorf("command = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-// TestDisplayCommandQuarantineNamesRealDestination: the old plan printed
-// `mv <path> <home>/quarantine`, but the item lands in
-// quarantine/<session>/<n>/.
-func TestDisplayCommandQuarantineNamesRealDestination(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "h")
-	t.Setenv(config.HomeEnv, home)
-	got := displayCommandFor("linux", config.StrategyQuarantine, "/p/x", quarantineDir())
-	if !strings.Contains(got, "<session-id>") || !strings.Contains(got, "<n>") {
-		t.Errorf("command %q does not show the session destination", got)
-	}
-}
-
 // TestDescribeCarriesNoSize: the size is printed once by the plan and the
 // prompts, so a description with a size would show it twice.
 func TestDescribeCarriesNoSize(t *testing.T) {
-	for _, s := range []config.TrashStrategy{config.StrategyTrash, config.StrategyQuarantine, config.StrategyDelete} {
-		if d := describe(s, "/p/node_modules", nil); strings.ContainsAny(d, "()") {
-			t.Errorf("describe(%s) = %q contains a size", s, d)
-		}
+	if d := describe("/p/node_modules", nil); strings.ContainsAny(d, "()") {
+		t.Errorf("describe = %q contains a size", d)
 	}
 }
 
@@ -99,24 +72,12 @@ func TestItemLineOmitsZeroSize(t *testing.T) {
 	}
 }
 
-// displayVerb is the leading word of the display command of a strategy on the
-// host OS, so tests asserting on plan commands hold on every platform (the
-// display follows the host shell: PowerShell on Windows, POSIX elsewhere).
-func displayVerb(strategy config.TrashStrategy) string {
+// displayVerb is the leading word of the display command on the host OS, so
+// tests asserting on plan commands hold on every platform (the display
+// follows the host shell: PowerShell on Windows, POSIX elsewhere).
+func displayVerb() string {
 	if runtime.GOOS == "windows" {
-		switch strategy {
-		case config.StrategyDelete:
-			return "Remove-Item "
-		case config.StrategyQuarantine:
-			return "Move-Item "
-		}
 		return "# illustrative"
-	}
-	switch strategy {
-	case config.StrategyDelete:
-		return "rm -rf "
-	case config.StrategyQuarantine:
-		return "mv "
 	}
 	return "trash "
 }

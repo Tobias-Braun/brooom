@@ -53,10 +53,6 @@ func init() {
 	Register(gitReflogExpire{})
 }
 
-// CheckDateSyntax is the static part of ValidateDate, for callers that must
-// reject a value before any repository is known.
-func CheckDateSyntax(date string) error { return checkDateSyntax(date) }
-
 // ValidateDate checks a git date for the expiry of prune and reflog expire.
 // Static rejections come first (empty, no letters or digits, a leading dash
 // that could be parsed as an option, control characters), then git itself is
@@ -155,11 +151,7 @@ func targetGitBloat(env *Env, f findings.Finding) config.GitBloat {
 // date returns the date of the operation: the arg when present (an empty arg
 // is an error, not a request for the default), else the configured value.
 //
-// The arg is only trustworthy from the callers that build the finding
-// themselves (`brooom git purge` with an explicit date, the detector with
-// the configured value). `brooom clean --from` strips it from findings read
-// from a file, so a forged {"expire": "now"} never reaches this point and the
-// configured expiry applies.
+// The arg is set by the detector, from the configuration of the run.
 func (b maintBase) date(env *Env, f findings.Finding) string {
 	if v, ok := f.SuggestedAction.Args[b.dateArg]; ok {
 		return v

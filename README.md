@@ -23,8 +23,8 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
 
 - **Agent artifacts** — run logs, JSONL transcripts, caches and scratch files
   from Claude Code, Cursor, Aider, Copilot and friends
-- **Git leftovers** — stale and already-merged branches (squash merges too),
-  orphaned worktrees, bloated histories
+- **Git leftovers** — already-merged branches (squash merges too), orphaned
+  worktrees, bloated histories
 - **Build artifacts** — `node_modules`, `dist`, `target`, `.venv` and co. in
   projects you stopped touching
 - **Logs and runtime junk** — debug logs, test caches, coverage output,
@@ -38,22 +38,18 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
   before it acts (`--dry-run` only shows the plan, `--yes` skips the question
   in scripts). Without an interactive terminal it refuses instead of guessing.
 - `sweep` never removes unmerged or uncommitted work.
-- Files go to your **OS trash** (or a quarantine folder); branches are
-  deleted with `git branch -d`; worktrees are moved to the trash and then deregistered from git.
+- Files go to your **OS trash**; branches are deleted with `git branch -d`;
+  worktrees are moved to the trash and then deregistered from git. Nothing is
+  deleted permanently until you run `br empty-trash`.
   Linked worktrees outside the scanned repository (such as `../repo-wt`) are
-  never touched; `br scan` lists them with a hint to pass the folder that
-  holds them as the path (not in `--format plain`, which stays a bare path
-  list).
+  never touched; pass the folder that holds them as the path to include them.
   On Windows the Recycle Bin cannot take paths longer than 259 characters
   (the shell API rejects `\\?\` paths) or items larger than the bin limit;
-  Brooom refuses those instead of letting Windows delete them permanently and
-  points to `--trash-strategy quarantine`.
-- The `delete` strategy (permanent removal) is refused outside a git
-  repository and whenever git cannot show right now that the path holds no
-  untracked, non-ignored file. Trashing a Windows junction is refused too
-  (a junction is a name-surrogate link, and its target is never followed).
-  Directories holding version control metadata (`.git`, `.hg`, `.jj`, `.svn`)
-  are never removed.
+  Brooom leaves those alone instead of letting Windows delete them
+  permanently.
+- Trashing a Windows junction is refused (a junction is a name-surrogate
+  link, and its target is never followed). Directories holding version
+  control metadata (`.git`, `.hg`, `.jj`, `.svn`) are never removed.
 - Every applied session is recorded and can be reverted with `br undo`.
 - Without flags Brooom only touches the repository you are in; paths outside
   the allowed scope are refused, symlinks are never followed out of it.
@@ -105,29 +101,13 @@ Coming soon: Homebrew, Scoop, winget, AUR and deb/rpm packages. See
 ## Privacy
 
 Brooom has no telemetry and never contacts the network on its own. The only
-network access in the whole tool is the opt-in update check:
-
-- `brooom update-check` sends one unauthenticated `GET` to
-  `https://api.github.com/repos/Tobias-Braun/brooom/releases/latest`
-  (headers `Accept` and `User-Agent: brooom/<version>` only, no token, no
-  query parameters, no data about you) and prints whether a newer release
-  exists and how to upgrade. Running the command is your consent. Brooom
-  never updates itself.
-- Optionally set `"update_check": true` in `~/.brooom/config.json` to let
-  Brooom check at most once per 24 hours in the background. The result is
-  cached in `~/.brooom/cache/update.json`, and a one-line hint goes to
-  stderr after a command when a newer version exists. It only runs in an
-  interactive terminal with the default table output, never with `--quiet`,
-  never fails a command, and waits at most 200 ms for the answer before
-  giving up (a slow or failed request is not retried for an hour).
-- Set `BROOOM_NO_UPDATE_CHECK=1` to disable the background check regardless
-  of the config. `BROOOM_UPDATE_URL` points the check at a mirror (mainly
-  used by tests).
+network call is `gh` asking GitHub for open pull requests while merged
+branches are checked; set `"git": {"use_gh": false}` in the config for a fully
+offline run.
 
 ## Usage
 
 ```sh
-br                      # scan the current repo and suggest what to sweep
 br sweep                # show everything worth cleaning, ask once, then clean
 br sweep after-agents   # merged worktrees and branches, agent leftovers
 br sweep tidy           # logs, OS junk, test caches, coverage output
@@ -137,8 +117,9 @@ br sweep --yes          # no question (scripts)
 br review               # decide one by one on dirty worktrees and unmerged branches
 br undo                 # show what the last session removed, ask, restore
                         # (a sweep of a folder prints `br undo <id> --path <folder>`)
+br sessions             # list past sessions: id, repository, items, reclaimed
 br empty-trash          # permanently delete what brooom put in the OS trash
-br purge                # delete quarantined sessions past their retention
+br config edit          # customize everything in one config file
 ```
 
 Every command, flag and example is listed in the [CLI reference](docs/cli.md)
@@ -151,20 +132,17 @@ bash completion installs per user with
 
 ### Live progress
 
-While `scan`, `sweep`, `clean`, `git purge` and `undo`
-run, stderr shows a live display: the phase (discover, scan, plan, apply), a
+While `sweep`, `review` and `undo` run, stderr shows a live display: the phase (discover, scan, plan, apply), a
 spinner and progress bar, finding counts per detector and per target, and the
 bytes reclaimed so far. When the command ends it collapses to one summary line;
 the results (table, tree, summary) stay on stdout, and the display steps aside
 for confirmation prompts.
 
-`--progress=auto|always|never` (default `auto`) controls it. `auto` draws only
-when stderr is a terminal, the format is `table`, `tree` or `summary`, and
-neither `--quiet`, `--verbose`, `CI` nor `TERM=dumb` is in effect. `NO_COLOR`
-and `--no-color` only remove the colours. The machine formats (`json`,
-`ndjson`, `plain`) never show it, whatever `--progress` says, so scripts and AI
-agents get exactly the same stdout as before; `--progress=never` turns it off
-explicitly.
+It draws only when stderr is a terminal, the format is `table`, `tree` or
+`summary`, and neither `--quiet`, `CI` nor `TERM=dumb` is in effect.
+`NO_COLOR` and `--no-color` only remove the colours. The machine formats
+(`json`, `ndjson`, `plain`) never show it, so scripts and AI agents get
+exactly the same stdout on a terminal and in a pipe.
 
 ### Sweep presets
 
@@ -173,8 +151,7 @@ explicitly.
 `e` opens a checklist of every item (all ticked) to untick what should stay;
 `--yes` skips the question and `--dry-run` stops after the plan. Afterwards it prints
 what it removed and how much disk that reclaimed (`2 worktrees deleted, 5
-merged branches removed. 4.2 GB reclaimed`), `--verbose` prints the full
-summary, and `brooom undo` restores. Without a preset, `sweep.preset` in the
+merged branches removed. 4.2 GB reclaimed`), and `brooom undo` restores. Without a preset, `sweep.preset` in the
 config decides, else `everything`.
 
 Sweep never removes unmerged or uncommitted work: dirty worktrees, branches
@@ -183,9 +160,8 @@ skipped, and sweep has no `--force`. `brooom review` walks through exactly
 that work, one item at a time: it shows the changed and untracked files, the
 commits that exist on no remote and the last activity, and asks `[d]elete /
 [k]eep / [q]uit`; deletions are one session for `brooom undo`, and q discards
-every choice. Large untracked files are in no preset; `brooom scan -d
-large-untracked` lists them. `.brooom.json` can
-still tighten what a preset selects, and `--detector` narrows it. The
+every choice. `.brooom.json` can still tighten what a preset selects, and
+`--detector` narrows it. The
 definitions live in `internal/presets`; `brooom sweep --help` prints them.
 
 | Preset                 | Detectors                                        | Min. confidence              | Notes                                                                                                                                             |
@@ -197,13 +173,30 @@ definitions live in `internal/presets`; `brooom sweep --help` prints them.
 The preset names of earlier releases (`safe`, `standard`, `aggressive`) still
 work and run `everything`, with a note saying so.
 
-Output formats: `table` (default), `tree`, `json`, `ndjson`, `plain`,
-`summary`.
+### Output formats
+
+`--format` (or `output.format` in the config) picks `table` (default),
+`tree`, `summary`, `json`, `ndjson` or `plain`. With `--dry-run`, or with a
+machine format (`json`, `ndjson`, `plain`), sweep prints the report in that
+format and changes nothing: `br sweep -f json > findings.json` is the
+read-only report for scripts. `--format plain` is a bare path list for
+pipes and omits informational findings.
+
+### Configuration
+
+One file, `~/.brooom/config.json` (`br config path` prints where it is,
+`--config` picks another one), customizes every detector, threshold, the
+default preset and the output. `br config init` writes the defaults,
+`br config show` prints the effective configuration and `br config edit`
+opens it and checks it afterwards. A repository's `.brooom.json` may only
+tighten the rules for that repository. See the
+[configuration reference](docs/config.md).
 
 ## Documentation
 
 - [Product specification](docs/SPEC.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Configuration](docs/config.md)
 - [Findings schema](docs/findings.md)
 - [Releasing](docs/releasing.md)
 - [Tool catalog](docs/catalog.md)

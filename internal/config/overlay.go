@@ -34,7 +34,6 @@ func (c *Config) setDetectorEnabled(name string, on bool) bool {
 		DetectorMergedBranch:   &d.MergedBranch.Enabled,
 		DetectorWorktrees:      &d.Worktrees.Enabled,
 		DetectorGitBloat:       &d.GitBloat.Enabled,
-		DetectorLargeUntracked: &d.LargeUntracked.Enabled,
 		DetectorAIArtifacts:    &d.AIArtifacts.Enabled,
 		DetectorLogs:           &d.Logs.Enabled,
 		DetectorBuildArtifacts: &d.BuildArtifacts.Enabled,
@@ -103,7 +102,6 @@ func (c *Config) tighten(t *ThresholdOverrides) error {
 			return err
 		}
 		c.Thresholds.MinSizeBytes = v
-		c.Detectors.LargeUntracked.MinSizeBytes = max(c.Detectors.LargeUntracked.MinSizeBytes, v)
 	}
 	if t.RecentDays != nil {
 		v, err := raised("thresholds.recent_days", int64(*t.RecentDays), int64(c.Thresholds.RecentDays))
@@ -236,20 +234,23 @@ func (c *Config) Clone() *Config { return c.clone() }
 func (c *Config) clone() *Config {
 	n := *c
 	n.LegacyRoots = slices.Clone(c.LegacyRoots)
+	n.LegacyTrash = slices.Clone(c.LegacyTrash)
+	n.LegacyAgent = slices.Clone(c.LegacyAgent)
+	n.LegacyUpdateCheck = slices.Clone(c.LegacyUpdateCheck)
+	n.Detectors.LegacyLargeUntracked = slices.Clone(c.Detectors.LegacyLargeUntracked)
 	n.Deprecated = slices.Clone(c.Deprecated)
 	n.Git.ProtectedBranches = slices.Clone(c.Git.ProtectedBranches)
 	n.Git.BaseBranches = slices.Clone(c.Git.BaseBranches)
 	n.Detectors.AIArtifacts.Tools = cloneMap(c.Detectors.AIArtifacts.Tools)
 	n.Detectors.AIArtifacts.Extra = cloneCatalog(c.Detectors.AIArtifacts.Extra)
 	n.Detectors.AIArtifacts.MinAgeDays = clonePtr(c.Detectors.AIArtifacts.MinAgeDays)
-	n.Detectors.AIArtifacts.LegacyUserLocations = clonePtr(c.Detectors.AIArtifacts.LegacyUserLocations)
+	n.Detectors.AIArtifacts.LegacyUserLocations = slices.Clone(c.Detectors.AIArtifacts.LegacyUserLocations)
 	n.Detectors.Logs.Categories = cloneMap(c.Detectors.Logs.Categories)
 	n.Detectors.Logs.Extra = cloneCatalog(c.Detectors.Logs.Extra)
 	n.Detectors.Logs.MinAgeDays = clonePtr(c.Detectors.Logs.MinAgeDays)
-	n.Detectors.Logs.LegacyUserLocations = clonePtr(c.Detectors.Logs.LegacyUserLocations)
+	n.Detectors.Logs.LegacyUserLocations = slices.Clone(c.Detectors.Logs.LegacyUserLocations)
 	n.Detectors.BuildArtifacts.Dirs = slices.Clone(c.Detectors.BuildArtifacts.Dirs)
 	n.Detectors.BuildArtifacts.ExtraDirs = slices.Clone(c.Detectors.BuildArtifacts.ExtraDirs)
-	n.Trash.PerDetector = cloneMap(c.Trash.PerDetector)
 	n.Scan.SkipDirs = slices.Clone(c.Scan.SkipDirs)
 	n.RepoExclude = slices.Clone(c.RepoExclude)
 	return &n

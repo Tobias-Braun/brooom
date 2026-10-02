@@ -31,9 +31,6 @@ func TestCheckTrackedInterruptIsNotForceAdvice(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || errors.Is(err, ErrSkipped) {
 		t.Fatalf("want a plain context error, got %v", err)
 	}
-	if err := proveNoUntracked(ctx, &Env{Git: cancelledGit{}}, repo.Dir); !errors.Is(err, context.Canceled) {
-		t.Fatalf("proveNoUntracked: %v", err)
-	}
 }
 
 func assertInterruptedSkips(t *testing.T, skips []Skip, want int) {

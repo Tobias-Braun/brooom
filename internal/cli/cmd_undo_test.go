@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/session"
 	"github.com/Tobias-Braun/brooom/internal/testutil"
@@ -17,8 +16,8 @@ import (
 )
 
 // undoFixture is a repository (the scope), an isolated Brooom home and a
-// helper that quarantines real files and records them like the trash action
-// does, so undo runs against genuine quarantine data.
+// helper that trashes real files into the test trash and records them like
+// the trash action does, so undo runs against genuine trash records.
 type undoFixture struct {
 	t     *testing.T
 	repo  *testutil.Repo
@@ -35,20 +34,17 @@ func newUndoFixture(t *testing.T) *undoFixture {
 	return &undoFixture{t: t, repo: repo, home: home, store: session.NewStore(filepath.Join(home, "sessions"))}
 }
 
-func (f *undoFixture) quarantineDir() string { return filepath.Join(f.home, "quarantine") }
+func (f *undoFixture) trashDir() string { return filepath.Join(f.home, "test-trash") }
 
 func (f *undoFixture) write(rel, content string) string {
 	return testutil.WriteFile(f.t, f.repo.Dir, rel, content)
 }
 
-// session quarantines the paths in order and saves the manifest.
+// session trashes the paths in order and saves the manifest.
 func (f *undoFixture) session(id string, started time.Time, paths ...string) *session.Manifest {
 	f.t.Helper()
-	tr, err := trash.New(config.StrategyQuarantine, trash.Options{SessionID: id, QuarantineDir: f.quarantineDir()})
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	m := &session.Manifest{ID: id, StartedAt: started, Command: "brooom sweep --apply"}
+	tr := testutil.DirTrasher{Dir: f.trashDir()}
+	m := &session.Manifest{ID: id, StartedAt: started, Command: "brooom sweep --yes", Root: f.repo.Dir}
 	for _, p := range paths {
 		rec, err := tr.Remove(context.Background(), p)
 		if err != nil {
@@ -127,7 +123,7 @@ func TestUndoDryRunListsReverseOrderAndChangesNothing(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("code=%d out=%s", code, out)
 	}
-	if !strings.Contains(out, "restore "+second+" from "+f.quarantineDir()) ||
+	if !strings.Contains(out, "restore "+second+" from "+f.trashDir()) ||
 		strings.Index(out, second) > strings.Index(out, first) ||
 		!strings.Contains(out, "dry run: nothing was restored; re-run 'brooom undo "+sid1+"' without --dry-run to restore") {
 		t.Fatalf("output:\n%s", out)
@@ -214,11 +210,11 @@ func TestUndoListsNonRestorableEntriesWithHints(t *testing.T) {
 	lost := f.write("lost.txt", "l")
 	rec := m.Entries[0].Trash
 	m.Add(session.Entry{Action: findings.ActionTrash, Path: lost, Status: session.StatusApplied, Restorable: true,
-		RecoveryHint: "look in the quarantine",
-		Trash:        &trash.Record{Strategy: config.StrategyQuarantine, OriginalPath: lost, Restorable: true, StoredPath: filepath.Join(filepath.Dir(rec.StoredPath), "9", "lost.txt")}})
+		RecoveryHint: "look in the trash",
+		Trash:        &trash.Record{Strategy: trash.StrategyTrash, OriginalPath: lost, Restorable: true, StoredPath: filepath.Join(filepath.Dir(rec.StoredPath), "9", "lost.txt")}})
 	m.Add(session.Entry{Action: findings.ActionGitGC, Path: f.repo.Dir, Status: session.StatusApplied, RecoveryHint: "gc is permanent"})
 	m.Add(session.Entry{Action: findings.ActionTrash, Path: "/x", Status: session.StatusApplied,
-		Trash: &trash.Record{Strategy: config.StrategyDelete, OriginalPath: "/x"}})
+		Trash: &trash.Record{Strategy: "delete", OriginalPath: "/x"}})
 	m.Add(session.Entry{Action: findings.ActionTrash, Path: "/y", Status: session.StatusFailed, Error: "locked"})
 	m.Add(session.Entry{Action: "future-action", Path: f.repo.Dir, Status: session.StatusApplied, Restorable: true})
 	if err := f.store.Save(m); err != nil {
@@ -229,7 +225,7 @@ func TestUndoListsNonRestorableEntriesWithHints(t *testing.T) {
 		t.Fatalf("non-restorable entries must not fail the run: code=%d\n%s", code, out)
 	}
 	for _, want := range []string{
-		"cannot restore " + lost + ": the stored copy", "recovery: look in the quarantine",
+		"cannot restore " + lost + ": the stored copy", "recovery: look in the trash",
 		"git maintenance cannot be undone", "recovery: gc is permanent",
 		"permanently deleted", "the entry was failed", "unknown action type \"future-action\"",
 		"1 restored, 0 conflicts, 0 failed, 5 not restorable",
@@ -331,15 +327,23 @@ func TestUndoWithPathRestoresFromAnywhere(t *testing.T) {
 	}
 }
 
-func TestUndoUsesRecordedStrategyNotConfig(t *testing.T) {
+// TestUndoOfLegacyQuarantineEntryNamesTheCopy: a session of an earlier
+// release moved a file to brooom's quarantine, which no longer exists; undo
+// leaves it alone and says where the copy lies.
+func TestUndoOfLegacyQuarantineEntryNamesTheCopy(t *testing.T) {
 	f := newUndoFixture(t)
-	p := f.write("a.txt", "a")
-	f.session(sid1, time.Now(), p)
-	// The config now selects another strategy; the entry says quarantine.
-	writeConfig(t, f.home, map[string]any{"trash": map[string]any{"strategy": "trash"}})
-	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--yes", "--trash-strategy", "trash")
-	if code != ExitOK || fileContent(t, p) != "a" {
-		t.Fatalf("code=%d out=%s", code, out)
+	p := filepath.Join(f.repo.Dir, "a.txt")
+	stored := testutil.WriteFile(t, f.home, "quarantine/"+sid1+"/1/a.txt", "a")
+	m := &session.Manifest{ID: sid1, StartedAt: time.Now(), Command: "brooom sweep"}
+	m.Add(session.Entry{Action: findings.ActionTrash, Path: p, Status: session.StatusApplied, Restorable: true,
+		Trash: &trash.Record{Strategy: "quarantine", OriginalPath: p, StoredPath: stored, Restorable: true}})
+	m.Finish(time.Now())
+	if err := f.store.Save(m); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--yes")
+	if code != ExitOK || exists(p) || !strings.Contains(out, "move "+stored+" back by hand") {
+		t.Fatalf("code=%d restored=%v out=%s", code, exists(p), out)
 	}
 }
 
@@ -353,13 +357,5 @@ func TestUndoMissingStoredCopy(t *testing.T) {
 	code, out, _ := runApp(t, "", false, time.Time{}, "undo", "--yes")
 	if code != ExitOK || !strings.Contains(out, "is gone") || !strings.Contains(out, "1 not restorable") {
 		t.Fatalf("code=%d out=%s", code, out)
-	}
-}
-
-func TestUndoInvalidStrategyFlagIsUsageError(t *testing.T) {
-	newUndoFixture(t)
-	code, _, _ := runApp(t, "", false, time.Time{}, "undo", "--trash-strategy", "bogus")
-	if code != ExitUsage {
-		t.Fatalf("code=%d", code)
 	}
 }

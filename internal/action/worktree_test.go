@@ -21,14 +21,13 @@ import (
 
 // wtFixture is a real repository with linked worktrees, a real guard that
 // covers the repository and the worktree directory, the real git runner and
-// a quarantine trasher in a temp dir.
+// a dirTrasher in a temp dir.
 type wtFixture struct {
 	t        *testing.T
 	repo     *testutil.Repo
 	env      *Env
 	git      *gitx.ExecRunner
-	quar     string
-	strategy config.TrashStrategy
+	trashDir string
 	roots    []string
 }
 
@@ -45,16 +44,10 @@ func newWTFixture(t *testing.T) *wtFixture {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "xdg"))
 	repo := testutil.NewRepo(t)
 	fx := &wtFixture{
-		t: t, repo: repo, git: git, quar: filepath.Join(home, "quarantine"),
-		strategy: config.StrategyQuarantine, roots: []string{repo.Dir},
+		t: t, repo: repo, git: git, trashDir: filepath.Join(home, "trash"),
+		roots: []string{repo.Dir},
 	}
-	fx.env = &Env{
-		Git: git,
-		Trasher: func(string) (trash.Trasher, error) {
-			return fx.trasher(fx.strategy)
-		},
-		TrasherFor: fx.trasher,
-	}
+	fx.env = &Env{Git: git, Trasher: testutil.DirTrasher{Dir: fx.trashDir}}
 	fx.rebuildGuard()
 	return fx
 }
@@ -66,10 +59,6 @@ func (fx *wtFixture) rebuildGuard() {
 		fx.t.Fatal(err)
 	}
 	fx.env.Guard = g
-}
-
-func (fx *wtFixture) trasher(s config.TrashStrategy) (trash.Trasher, error) {
-	return trash.New(s, trash.Options{SessionID: "20260930-120000-wt", QuarantineDir: fx.quar})
 }
 
 // add creates a linked worktree and allows its parent directory in the guard.
@@ -257,7 +246,7 @@ func TestRemoveWorktreeIgnoredContentReachesQuarantine(t *testing.T) {
 	if en.Status != session.StatusApplied || en.Trash == nil || !en.Restorable {
 		t.Fatalf("entry = %+v", en)
 	}
-	if en.Trash.Strategy != config.StrategyQuarantine {
+	if en.Trash.Strategy != trash.StrategyTrash {
 		t.Errorf("strategy = %s", en.Trash.Strategy)
 	}
 	if exists(path) || fx.registered(path) {
@@ -308,34 +297,6 @@ func TestRemoveWorktreeNestedRepositoryRefused(t *testing.T) {
 	if !exists(filepath.Join(nested, "data.txt")) || !fx.registered(path) {
 		t.Error("worktree with a nested repository was touched")
 	}
-}
-
-func TestRemoveWorktreeDeleteStrategy(t *testing.T) {
-	t.Run("ignored files are refused", func(t *testing.T) {
-		fx, path := ignoredFixture(t)
-		fx.strategy = config.StrategyDelete
-		for _, force := range []bool{false, true} {
-			fx.env.Force = force
-			_, err := fx.plan(removeWorktree{}, fx.removeFinding(path))
-			wantSkip(t, err, "refusing to permanently delete files ignored by git")
-		}
-		if !exists(filepath.Join(path, ".env")) {
-			t.Fatal(".env was touched")
-		}
-	})
-
-	t.Run("nothing to lose uses git worktree remove", func(t *testing.T) {
-		fx := newWTFixture(t)
-		fx.strategy = config.StrategyDelete
-		path := fx.add("wt", "feat")
-		en, err := fx.apply(removeWorktree{}, fx.removeFinding(path))
-		if err != nil || en.Status != session.StatusApplied || en.Trash != nil || !en.Restorable {
-			t.Fatalf("entry = %+v, err = %v", en, err)
-		}
-		if exists(path) || fx.registered(path) {
-			t.Error("worktree still present")
-		}
-	})
 }
 
 func TestRemoveWorktreeOnlyDropsOwnRegistration(t *testing.T) {
@@ -489,7 +450,7 @@ func (fx *wtFixture) wantTrashedEntry(en session.Entry, path string) {
 	if en.Status != session.StatusApplied || en.Trash == nil || !en.Restorable {
 		fx.t.Fatalf("entry = %+v", en)
 	}
-	if en.Trash.Strategy != config.StrategyQuarantine {
+	if en.Trash.Strategy != trash.StrategyTrash {
 		fx.t.Errorf("strategy = %s", en.Trash.Strategy)
 	}
 	wantContains(fx.t, en.RecoveryHint, "unstaged", "git worktree add")
@@ -533,21 +494,10 @@ func TestRemoveWorktreeDirty(t *testing.T) {
 		wantSkip(t, err, "worktree has uncommitted changes; decide with `brooom review` to trash it")
 	})
 
-	t.Run("delete strategy refused even with force", func(t *testing.T) {
-		fx, path := setup(t)
-		fx.env.Force = true
-		fx.strategy = config.StrategyDelete
-		_, err := fx.plan(removeWorktree{}, fx.removeFinding(path))
-		wantSkip(t, err, "refusing to permanently delete uncommitted work; use --trash-strategy trash or quarantine")
-		if !exists(path) {
-			t.Fatal("worktree was touched")
-		}
-	})
-
 	t.Run("no trasher with force", func(t *testing.T) {
 		fx, path := setup(t)
 		fx.env.Force = true
-		fx.env.Trasher = func(string) (trash.Trasher, error) { return nil, errors.New("boom") }
+		fx.env.Trasher = nil
 		if _, err := fx.plan(removeWorktree{}, fx.removeFinding(path)); err == nil || errors.Is(err, ErrSkipped) {
 			t.Fatalf("err = %v, want a hard failure", err)
 		}
@@ -618,24 +568,6 @@ func (r failingRunner) Run(ctx context.Context, dir string, args ...string) (str
 		}
 	}
 	return r.Runner.Run(ctx, dir, args...)
-}
-
-func TestRemoveWorktreeGitRefusalIsFailure(t *testing.T) {
-	fx := newWTFixture(t)
-	fx.strategy = config.StrategyDelete
-	path := fx.add("feat", "feat")
-	step, err := fx.plan(removeWorktree{}, fx.removeFinding(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	fx.env.Git = failingRunner{Runner: fx.git, fail: "remove"}
-	en, err := removeWorktree{}.Apply(context.Background(), fx.env, step)
-	if err == nil || !strings.Contains(err.Error(), "simulated remove failure") {
-		t.Fatalf("err = %v", err)
-	}
-	if en.Status != session.StatusFailed || !exists(path) {
-		t.Errorf("entry = %+v, exists = %v", en, exists(path))
-	}
 }
 
 func TestRemoveWorktreeRefusals(t *testing.T) {
@@ -807,7 +739,7 @@ func TestRemoveWorktreeUndoTrashedRefusals(t *testing.T) {
 	t.Run("restore failure rolls the registration back", func(t *testing.T) {
 		bad := en
 		rec := *en.Trash
-		rec.StoredPath = filepath.Join(fx.quar, "does-not-exist")
+		rec.StoredPath = filepath.Join(fx.trashDir, "does-not-exist")
 		bad.Trash = &rec
 		err := act.Undo(context.Background(), fx.env, bad)
 		if err == nil {
@@ -832,9 +764,7 @@ func TestRemoveWorktreeUndoTrashedRefusals(t *testing.T) {
 	t.Run("restore conflict is passed through", func(t *testing.T) {
 		// Occupy the path after the placeholder step by using a trasher whose
 		// Restore reports a conflict.
-		fx.env.TrasherFor = func(config.TrashStrategy) (trash.Trasher, error) {
-			return conflictTrasher{}, nil
-		}
+		fx.env.Trasher = conflictTrasher{}
 		err := act.Undo(context.Background(), fx.env, en)
 		if !errors.Is(err, trash.ErrRestoreConflict) {
 			t.Fatalf("err = %v", err)
@@ -847,7 +777,6 @@ func TestRemoveWorktreeUndoTrashedRefusals(t *testing.T) {
 
 type conflictTrasher struct{}
 
-func (conflictTrasher) Strategy() config.TrashStrategy { return config.StrategyQuarantine }
 func (conflictTrasher) Remove(context.Context, string) (trash.Record, error) {
 	return trash.Record{}, errors.New("unused")
 }

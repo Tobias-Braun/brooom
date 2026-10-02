@@ -23,7 +23,7 @@ func homeTrashDir(getenv func(string) string) (string, error) {
 	if h := getenv("HOME"); h != "" && filepath.IsAbs(h) {
 		return filepath.Join(h, ".local", "share", "Trash"), nil
 	}
-	return "", errors.New("cannot locate the trash: neither XDG_DATA_HOME nor HOME is set to an absolute path; use --trash-strategy quarantine")
+	return "", errors.New("cannot locate the trash: neither XDG_DATA_HOME nor HOME is set to an absolute path")
 }
 
 // deviceOf returns the device id of the filesystem holding path, without

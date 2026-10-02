@@ -38,6 +38,9 @@ type Manifest struct {
 	FinishedAt time.Time `json:"finished_at,omitzero"`
 	// Command is the command line that created the session (for display).
 	Command string `json:"command"`
+	// Root is the repository or folder the run worked on; empty in
+	// manifests of earlier releases.
+	Root string `json:"root,omitempty"`
 	// Workspaces records that a run of an earlier release used the removed
 	// --workspaces flag. It is only read, so `brooom undo` can say that such
 	// a session needs --path to reach the repositories it touched.

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/scope"
 	"github.com/Tobias-Braun/brooom/internal/session"
@@ -101,7 +100,7 @@ func TestPlanUndoReverseOrderAndKinds(t *testing.T) {
 	gc := fx.entry("gc")
 	gc.Action = findings.ActionGitGC
 	del := fx.entry("del")
-	del.Trash = &trash.Record{Strategy: config.StrategyDelete, OriginalPath: filepath.Join(fx.root, "del")}
+	del.Trash = &trash.Record{Strategy: "delete", OriginalPath: filepath.Join(fx.root, "del")}
 	unknown := fx.entry("unknown")
 	unknown.Action = "from-the-future"
 	plain := fx.entry("plain")
@@ -274,7 +273,7 @@ func TestPlanUndoScopeGuard(t *testing.T) {
 	out := fx.entry("out")
 	out.Path = filepath.Join(outside, "out")
 	trashed := session.Entry{Action: undoFakeType, Path: filepath.Join(outside, "t"), Status: session.StatusApplied, Restorable: true,
-		Trash: &trash.Record{Strategy: config.StrategyQuarantine, OriginalPath: filepath.Join(outside, "t")}}
+		Trash: &trash.Record{Strategy: trash.StrategyTrash, OriginalPath: filepath.Join(outside, "t")}}
 	wt := session.Entry{Action: undoFakeType, Path: filepath.Join(outside, "w"), Status: session.StatusApplied, Restorable: true,
 		Undo: map[string]string{"worktree": filepath.Join(fx.root, "wt"), "repo": outside}}
 	m := fx.manifest(inside, out, trashed, wt)
@@ -310,7 +309,7 @@ func TestPlanUndoTrashEntries(t *testing.T) {
 	orig := filepath.Join(fx.root, "orig")
 	mk := func(name, storedPath string) session.Entry {
 		return session.Entry{Action: findings.ActionTrash, Path: filepath.Join(fx.root, name), Status: session.StatusApplied,
-			Restorable: true, Trash: &trash.Record{Strategy: config.StrategyQuarantine, Restorable: true,
+			Restorable: true, Trash: &trash.Record{Strategy: trash.StrategyTrash, Restorable: true,
 				OriginalPath: filepath.Join(fx.root, name), StoredPath: storedPath}}
 	}
 	if err := os.MkdirAll(filepath.Dir(stored), 0o755); err != nil {

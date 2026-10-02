@@ -70,7 +70,7 @@ The `Release` workflow first verifies that the tagged commit is reachable from
 `origin/main` and fails before building anything otherwise. Pull requests that
 touch the release files (or `internal/trash/**`) additionally smoke-test the
 snapshot: the darwin arm64 and Intel binaries run `scripts/smoke-darwin.sh`
-(version, quarantine with undo, macOS Trash), and `scripts/test-install.ps1`
+(version, a dry run and a sweep into the macOS Trash), and `scripts/test-install.ps1`
 installs the Windows snapshot under Windows PowerShell and PowerShell 7. The
 CI `Test purego` jobs run the trash tests with `CGO_ENABLED=0` on both macOS
 architectures, as the shipped binary is built.
@@ -125,7 +125,7 @@ FluxCD.
   8080, with `/healthz` for probes. Each release pushes the tags `X.Y.Z`,
   `sha-<commit>` and `latest`, and then creates the git tag `site-vX.Y.Z`.
 - Site releases create no GitHub Release, so `/releases/latest` (read by the
-  install scripts and the update check) always points at the CLI, and the
+  install scripts) always points at the CLI, and the
   `site-v*` tags never trigger the CLI release workflow (`v*`).
 - The public origin is baked into the image at build time from the repository
   variable `SITE_URL` (Settings > Secrets and variables > Actions > Variables).
