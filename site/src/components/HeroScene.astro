@@ -1,0 +1,283 @@
+---
+import { staticPlan, transcript } from '../lib/hero-timeline';
+
+/**
+ * Hero scene: robots (AI agents) drop junk on a floor, the brooom sweeper
+ * clears it, and a terminal caption replays the matching `brooom sweep` run.
+ * The server renders the finished caption of a fixed plan, which is also the
+ * screen reader, reduced-motion and no-JavaScript view. The script animates
+ * canvas and caption from one clock; timing lives in src/lib/hero-timeline.ts.
+ */
+const lines = transcript(staticPlan());
+const tones = ['cmd', 'bold', 'ok'];
+---
+
+<figure class="scene" data-hero-scene>
+  <div class="stage">
+    <canvas aria-hidden="true"></canvas>
+    <button type="button" class="toggle" aria-pressed="false" hidden>
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+        <path class="pause" d="M4 2h3v12H4zM9 2h3v12H9z" fill="currentColor"></path>
+        <path class="play" d="M4 2l10 6-10 6z" fill="currentColor"></path>
+      </svg>
+      <span class="label">Pause animation</span>
+    </button>
+  </div>
+  <figcaption class="caption">
+    <span class="visually-hidden">
+      AI agents leave worktrees, branches, logs, caches and dependency folders behind, then brooom
+      sweeps them away:
+    </span>
+    <pre class="visually-hidden">{lines.join('\n')}</pre>
+    <div class="lines" aria-hidden="true">
+      {
+        lines.map((text, i) => (
+          <div class:list={['line', tones[i]]}><span>{text}</span><span class="cursor" hidden /></div>
+        ))
+      }
+    </div>
+  </figcaption>
+</figure>
+
+<script>
+  import { LOOP_S, captionAt, makePlan, sceneAt, staticPlan, staticScene, transcript, type Plan } from '../lib/hero-timeline';
+  import { paint, readPalette } from '../lib/hero-draw';
+
+  /** Below this container width the scene uses two robots and fewer items (matches the CSS container query). */
+  const COMPACT_PX = 640;
+
+  const root = document.querySelector<HTMLElement>('[data-hero-scene]');
+  const canvas = root?.querySelector('canvas');
+  const ctx = canvas?.getContext('2d');
+  if (root && canvas && ctx) {
+    const toggle = root.querySelector<HTMLButtonElement>('.toggle')!;
+    const rows = [...root.querySelectorAll('.line')].map((el) => [...el.children] as HTMLElement[]);
+    const motion = matchMedia('(prefers-reduced-motion: reduce)');
+    const palette = readPalette(root);
+    let [w, h, dpr, compact] = [0, 0, 1, false];
+    let plan: Plan = staticPlan();
+    let scene = staticScene(plan);
+    // Seconds of animation shown so far; it only advances while running, so a pause resumes where it stopped.
+    let elapsed = 0;
+    let last: number | null = null;
+    let loop = 0;
+    let raf = 0;
+    let inView = true;
+    let paused = false;
+
+    const show = (lines: string[], cursor = -1, opacity = 1) => {
+      rows.forEach(([text, caret], i) => {
+        const s = lines[i] ?? '';
+        if (text!.textContent !== s) text!.textContent = s;
+        caret!.hidden = i !== cursor;
+      });
+      root.style.setProperty('--caption-opacity', String(opacity));
+    };
+
+    const render = () => {
+      if (motion.matches) {
+        scene = staticScene(plan);
+        show(transcript(plan));
+      } else {
+        const t = elapsed % LOOP_S;
+        scene = sceneAt(t, plan);
+        const c = captionAt(t, plan);
+        show(c.lines, c.cursor, c.opacity);
+      }
+      if (w) paint(ctx, w, h, dpr, scene, palette);
+    };
+
+    const reroll = () => {
+      plan = motion.matches ? staticPlan() : makePlan(Math.random, compact);
+      render();
+    };
+
+    const frame = (now: number) => {
+      if (last !== null) elapsed += (now - last) / 1000;
+      last = now;
+      if (Math.floor(elapsed / LOOP_S) !== loop) {
+        loop = Math.floor(elapsed / LOOP_S);
+        plan = makePlan(Math.random, compact);
+      }
+      render();
+      raf = requestAnimationFrame(frame);
+    };
+
+    const sync = () => {
+      toggle.hidden = motion.matches;
+      const run = !motion.matches && inView && !document.hidden && !paused;
+      if (run && !raf) {
+        last = null;
+        raf = requestAnimationFrame(frame);
+      } else if (!run && raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+    };
+
+    new ResizeObserver(() => {
+      ({ width: w, height: h } = canvas.getBoundingClientRect());
+      dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      if (compact !== w <= COMPACT_PX) {
+        compact = w <= COMPACT_PX;
+        reroll();
+      } else render();
+    }).observe(canvas);
+    new IntersectionObserver((entries) => {
+      inView = entries.some((e) => e.isIntersecting);
+      sync();
+    }).observe(root);
+    document.addEventListener('visibilitychange', sync);
+    motion.addEventListener('change', () => {
+      reroll();
+      sync();
+    });
+    toggle.addEventListener('click', () => {
+      paused = !paused;
+      toggle.setAttribute('aria-pressed', String(paused));
+      sync();
+    });
+    reroll();
+    sync();
+  }
+</script>
+
+<style>
+  .scene {
+    margin: var(--space-5) 0 0;
+    container-type: inline-size;
+  }
+
+  .stage {
+    position: relative;
+    background: radial-gradient(ellipse at 50% 65%, rgb(139 92 246 / 0.16), transparent 70%);
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    aspect-ratio: 3 / 1;
+  }
+
+  @container (max-width: 640px) {
+    canvas {
+      aspect-ratio: 2 / 1;
+    }
+
+    .toggle .label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  }
+
+  /* Without JavaScript the canvas stays empty, so only the finished caption is shown. */
+  @media (scripting: none) {
+    .stage {
+      display: none;
+    }
+  }
+
+  .toggle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 var(--space-2);
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
+  .toggle[hidden] {
+    display: none;
+  }
+
+  .toggle:hover {
+    color: var(--text);
+  }
+
+  .toggle[aria-pressed='true'] .pause,
+  .toggle[aria-pressed='false'] .play {
+    display: none;
+  }
+
+  .caption {
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 0 40px rgb(96 165 250 / 0.12);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  /* Room for all three lines up front, so the page never shifts while the caption types. */
+  .lines {
+    min-height: calc(3 * 1.5em);
+    opacity: var(--caption-opacity, 1);
+  }
+
+  @container (max-width: 400px) {
+    .caption {
+      padding-inline: var(--space-3);
+    }
+
+    .lines {
+      min-height: calc(4 * 1.5em);
+    }
+  }
+
+  .line {
+    min-height: 1.5em;
+    white-space: pre-wrap;
+    color: var(--text);
+  }
+
+  .line.cmd,
+  .line.ok {
+    color: var(--neon);
+  }
+
+  .line.bold {
+    font-weight: 700;
+  }
+
+  .cursor {
+    display: inline-block;
+    width: 0.6em;
+    height: 1.1em;
+    margin-left: 1px;
+    vertical-align: text-bottom;
+    background: var(--neon);
+  }
+
+  .cursor[hidden] {
+    display: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cursor {
+      animation: blink 1.1s steps(1) infinite;
+    }
+  }
+
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+</style>
