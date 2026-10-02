@@ -63,10 +63,8 @@ caveats show how to add `br`):
 brew install --cask Tobias-Braun/tap/brooom
 ```
 
-Download an archive for your platform from the
-[GitHub releases](https://github.com/Tobias-Braun/brooom/releases) or use the
-install script (verifies the sha256 checksum, installs to `~/.local/bin`, never
-uses sudo):
+Or use the install script (verifies the sha256 checksum, installs to
+`~/.local/bin`, never uses sudo):
 
 ```sh
 # Linux and macOS
@@ -96,13 +94,7 @@ function, by an alias or by another binary, the installer leaves it alone and
 tells you why. `brooom` always works, and every `br` example below works with
 `brooom` too.
 
-With a Go toolchain (installs `brooom` only, without `br`):
-
-```sh
-go install github.com/Tobias-Braun/brooom/cmd/brooom@latest
-```
-
-Coming soon: Scoop, winget, AUR and deb/rpm packages. See
+Coming soon: winget, AUR and deb/rpm packages. See
 [releasing](docs/releasing.md) for the release process.
 
 ## Privacy

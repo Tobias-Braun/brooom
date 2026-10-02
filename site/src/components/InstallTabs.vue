@@ -78,19 +78,13 @@ function onKeydown(event: KeyboardEvent, current: number) {
     >
       <template v-for="(block, b) in tab.blocks" :key="b">
         <p v-if="block.type === 'text'" class="text">{{ block.text }}</p>
-        <div v-else-if="block.type === 'command'" class="command" data-copy-scope>
+        <div v-else class="command" data-copy-scope>
           <div class="command-head">
             <span class="os">{{ block.os ?? 'Any OS' }}</span>
             <CopyButton :text="block.command" :label="block.copyLabel" />
           </div>
           <pre tabindex="0"><code data-copy-source>{{ block.command }}</code></pre>
         </div>
-        <p v-else-if="block.type === 'link'" class="links">
-          <a :href="block.href">{{ block.label }}</a>
-        </p>
-        <ul v-else class="archives">
-          <li v-for="item in block.items" :key="item"><code>{{ item }}</code></li>
-        </ul>
       </template>
     </div>
   </div>
@@ -173,22 +167,5 @@ function onKeydown(event: KeyboardEvent, current: number) {
   color: var(--neon);
   font-family: var(--font-mono);
   font-size: 0.85rem;
-}
-
-.links a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-}
-
-.archives {
-  margin: 0;
-  padding-left: var(--space-4);
-  overflow-x: auto;
-}
-
-.archives li {
-  white-space: nowrap;
-  margin-bottom: var(--space-2);
 }
 </style>
