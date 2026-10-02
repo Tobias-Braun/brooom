@@ -7,7 +7,9 @@
  * - the archive names follow archives.name_template and format_overrides in
  *   .goreleaser.yaml (brooom_<version>_<os>_<arch>, zip on Windows) and the
  *   checksums file is checksum.name_template there;
- * - the go install path is the module in go.mod plus ./cmd/brooom.
+ * - the go install path is the module in go.mod plus ./cmd/brooom;
+ * - the Homebrew cask is homebrew_casks in .goreleaser.yaml, published to
+ *   the Tobias-Braun/homebrew-tap repository.
  *
  * Nothing else may be shown as a working command.
  */
@@ -88,7 +90,22 @@ export const installTabs: InstallTab[] = [
       },
     ],
   },
-  { id: 'homebrew', label: 'Homebrew', status: 'soon', blocks: soon('Homebrew') },
+  {
+    id: 'homebrew',
+    label: 'Homebrew',
+    status: 'available',
+    blocks: [
+      {
+        type: 'text',
+        text: 'On macOS, install the cask from the brooom tap. It installs brooom only; its caveats show how to add the short command br when nothing else uses it.',
+      },
+      {
+        type: 'command',
+        command: 'brew install --cask Tobias-Braun/tap/brooom',
+        copyLabel: 'Copy Homebrew install command',
+      },
+    ],
+  },
   { id: 'scoop', label: 'Scoop', status: 'soon', blocks: soon('Scoop') },
   { id: 'winget', label: 'winget', status: 'soon', blocks: soon('winget') },
   { id: 'aur', label: 'AUR', status: 'soon', blocks: soon('AUR') },

@@ -1,7 +1,8 @@
 # Publishes a GitHub release when a version tag is pushed (docs/releasing.md).
-# Package manager tokens are optional: while their integrations keep
-# skip_upload: true in .goreleaser.yaml the values are unused, and an unset
-# secret simply expands to an empty string.
+# HOMEBREW_TAP_GITHUB_TOKEN is required for stable releases, because the
+# Homebrew cask is published. The other package manager tokens are optional:
+# while their integrations keep skip_upload: true in .goreleaser.yaml the
+# values are unused, and an unset secret simply expands to an empty string.
 name: Release
 
 on:

@@ -15,13 +15,13 @@ describe('install tabs data', () => {
     ]);
   });
 
-  it('has unique ids and only the first three tabs available', () => {
+  it('has unique ids and only the first four tabs available', () => {
     expect(new Set(installTabs.map((t) => t.id)).size).toBe(installTabs.length);
     expect(installTabs.map((t) => t.status)).toEqual([
       'available',
       'available',
       'available',
-      'soon',
+      'available',
       'soon',
       'soon',
       'soon',
