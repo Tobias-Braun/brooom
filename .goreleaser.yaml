@@ -3,9 +3,9 @@
 # The archive name_template and the download logic in scripts/install.sh and
 # scripts/install.ps1 depend on each other: change them together.
 #
-# Only the GitHub release is published. Every package manager integration
-# below is prepared with skip_upload: true, so nothing is pushed anywhere
-# until a maintainer flips it to auto (docs/releasing.md).
+# The GitHub release and the Homebrew cask are published. Every other package
+# manager integration below is prepared with skip_upload: true, so nothing is
+# pushed there until a maintainer flips it to auto (docs/releasing.md).
 version: 2
 
 project_name: brooom
@@ -99,9 +99,9 @@ nfpms:
     # Only Linux binaries can be packaged; ids limits it to our build.
     ids: [brooom]
 
-# Package manager integrations. All are prepared but not enabled: with
-# skip_upload: true GoReleaser renders the manifests into dist/ and pushes
-# nothing. The commit author is the project identity for every commit the
+# Package manager integrations. Homebrew is enabled; the others are prepared
+# but not enabled: with skip_upload: true GoReleaser renders the manifests into
+# dist/ and pushes nothing. The commit author is the project identity for every commit the
 # pipeline creates in other repositories, and the message template carries no
 # trailers.
 homebrew_casks:
@@ -123,7 +123,14 @@ homebrew_casks:
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/brooom"]
           end
-    skip_upload: true
+    # install.sh adds br only when the name is free; a cask cannot check that,
+    # so it installs brooom alone and explains how to add br.
+    caveats: |
+      The short command br is not installed, because another tool (such as
+      broot) may already use it. If br is free on your system, add it with:
+        ln -s "$(brew --prefix)/bin/brooom" "$(brew --prefix)/bin/br"
+    # auto publishes stable releases and skips pre-releases.
+    skip_upload: auto
     commit_author:
       name: Tobias Braun
       email: mail@tobi-braun.com

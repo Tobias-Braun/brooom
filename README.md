@@ -56,6 +56,13 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
 
 ## Install
 
+On macOS with [Homebrew](https://brew.sh) (installs `brooom`; the cask's
+caveats show how to add `br`):
+
+```sh
+brew install --cask Tobias-Braun/tap/brooom
+```
+
 Download an archive for your platform from the
 [GitHub releases](https://github.com/Tobias-Braun/brooom/releases) or use the
 install script (verifies the sha256 checksum, installs to `~/.local/bin`, never
@@ -95,7 +102,7 @@ With a Go toolchain (installs `brooom` only, without `br`):
 go install github.com/Tobias-Braun/brooom/cmd/brooom@latest
 ```
 
-Coming soon: Homebrew, Scoop, winget, AUR and deb/rpm packages. See
+Coming soon: Scoop, winget, AUR and deb/rpm packages. See
 [releasing](docs/releasing.md) for the release process.
 
 ## Privacy

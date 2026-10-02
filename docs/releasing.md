@@ -1,9 +1,9 @@
 # Releasing Brooom
 
 Releases are built by [GoReleaser](https://goreleaser.com) from
-`.goreleaser.yaml` and published by `.github/workflows/release.yml`. Only the
-GitHub release is published today; every package manager integration is
-prepared but has `skip_upload: true`.
+`.goreleaser.yaml` and published by `.github/workflows/release.yml`. The
+GitHub release and the Homebrew cask are published today; every other package
+manager integration is prepared but has `skip_upload: true`.
 
 ## Cutting a release
 
@@ -21,9 +21,13 @@ prepared but has `skip_upload: true`.
    `buildinfo.Version`, `Commit` and `Date`, creates the archives,
    `checksums.txt` (sha256), the deb, rpm and apk packages, and publishes a
    GitHub release with the generated changelog. Tags with a pre-release suffix
-   (for example `v0.2.0-rc.1`) are marked as pre-releases.
+   (for example `v0.2.0-rc.1`) are marked as pre-releases. For stable tags it
+   then commits `Casks/brooom.rb` to `Tobias-Braun/homebrew-tap`.
 4. Check the release page and try the install script:
    `curl -fsSL https://raw.githubusercontent.com/Tobias-Braun/brooom/main/scripts/install.sh | sh`.
+5. Check that the tap received the cask commit, then run
+   `brew update && brew upgrade --cask brooom` (or
+   `brew install --cask Tobias-Braun/tap/brooom`) and `brooom version`.
 
 Archive names are `brooom_<version>_<os>_<arch>.tar.gz` (`.zip` on windows),
 without the leading `v`. `scripts/install.sh`, `scripts/install.ps1` and the
@@ -87,17 +91,23 @@ run. The cask therefore has a `hooks.post.install` that removes the attribute
 from the staged binary. Notarization (`notarize.macos`, needs Apple developer
 credentials) makes the hook unnecessary; drop it then.
 
+The cask installs `brooom` only. `install.sh` adds the short command `br` only
+when the name is free, which a cask cannot check, so the cask's `caveats`
+explain how to add the symlink instead.
+
 ## Enabling package managers
 
-Each integration is configured but disabled. To enable one, create the
-repository and secret listed below, then change its `skip_upload: true` to
-`auto` (which skips pre-releases) or `false` in `.goreleaser.yaml`. The
-workflow already passes the secrets as optional environment variables; an
-unset secret is harmless while uploads are skipped.
+Homebrew is enabled (`skip_upload: auto`); every other integration is
+configured but disabled. To enable one, create the repository and secret listed
+below, then change its `skip_upload: true` to `auto` (which skips
+pre-releases) or `false` in `.goreleaser.yaml`. The workflow already passes the
+secrets as environment variables; an unset secret is harmless while uploads
+are skipped, but a stable release fails at the Homebrew step without
+`HOMEBREW_TAP_GITHUB_TOKEN`.
 
-| Channel | Repository to create | Secret (repository secret in Tobias-Braun/brooom) | Token / key scope |
+| Channel | Repository | Secret (repository secret in Tobias-Braun/brooom) | Token / key scope |
 | --- | --- | --- | --- |
-| Homebrew | `Tobias-Braun/homebrew-tap` (public) | `HOMEBREW_TAP_GITHUB_TOKEN` | fine-grained PAT, contents: write on the tap |
+| Homebrew (enabled) | `Tobias-Braun/homebrew-tap` (public, exists) | `HOMEBREW_TAP_GITHUB_TOKEN` | fine-grained PAT, contents: write on the tap |
 | Scoop | `Tobias-Braun/scoop-bucket` (public) | `SCOOP_BUCKET_GITHUB_TOKEN` | fine-grained PAT, contents: write on the bucket |
 | winget | fork of `microsoft/winget-pkgs` as `Tobias-Braun/winget-pkgs` | `WINGET_GITHUB_TOKEN` | PAT that can push to the fork and open pull requests against `microsoft/winget-pkgs` |
 | AUR | package `brooom-bin` registered on aur.archlinux.org | `AUR_SSH_PRIVATE_KEY` | private key whose public half is on the AUR account |
@@ -105,8 +115,7 @@ unset secret is harmless while uploads are skipped.
 The deb, rpm and apk packages are already attached to the GitHub release; they
 are not pushed to a package repository.
 
-winget and AUR stay `skip_upload: true` even after the tap and bucket are
-enabled: they need separate accounts and manual review (the winget PR is
+winget and AUR stay `skip_upload: true` even after the bucket is enabled: they need separate accounts and manual review (the winget PR is
 reviewed by Microsoft, the first AUR push needs the package registered).
 
 ## Site releases
