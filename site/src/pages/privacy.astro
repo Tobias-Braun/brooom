@@ -1,0 +1,73 @@
+---
+import Legal from '../layouts/Legal.astro';
+import { withBase } from '../lib/url';
+---
+
+<Legal title="Privacy Policy">
+  <h2>1. Controller</h2>
+  <p>
+    The controller within the meaning of the General Data Protection Regulation (GDPR) is Tobias Braun. Contact:
+    see the <a href={withBase('imprint')}>Legal Notice</a>.
+  </p>
+
+  <h2>2. Server log files</h2>
+  <p>
+    This website is purely static. It sets no cookies, uses no external fonts and loads nothing from third
+    parties. When you access it, the server automatically records connection data in log files:
+  </p>
+  <ul>
+    <li>IP address of the requesting device</li>
+    <li>Date and time of access</li>
+    <li>Name and URL of the requested file</li>
+    <li>Browser and operating system used</li>
+    <li>Referrer URL (previously visited page)</li>
+  </ul>
+  <p>
+    This data is used only to keep the website running reliably. The legal basis is Art. 6 (1) (f) GDPR
+    (legitimate interest).
+  </p>
+
+  <h2>3. Hosting</h2>
+  <p>
+    This website runs on a virtual private server (VPS) that I operate and administer myself. Processing takes
+    place exclusively within the EU; no data is transmitted to the USA.
+  </p>
+
+  <h2>4. Analytics – Umami (self-hosted)</h2>
+  <p>
+    This website may use Umami for privacy-friendly reach measurement. Umami is open-source analytics software that
+    I run on my own infrastructure, so no data is transmitted to an external analytics provider or other third
+    parties. Umami sets no cookies and creates no cross-device user profiles. To count unique visitors, a daily,
+    salted hash is computed from IP address, user agent and website; the IP address itself is not stored. Only
+    aggregated, non-personal metrics are collected (e.g. page views, browser, operating system, screen size,
+    country of origin).
+  </p>
+  <p>
+    The legal basis is Art. 6 (1) (f) GDPR (legitimate interest in anonymous usage statistics to improve the
+    website). For more information, see <a href="https://umami.is/privacy">Umami's privacy policy</a>.
+  </p>
+
+  <h2>5. External links</h2>
+  <p>
+    This website links to external websites, such as GitHub. Their operators are solely responsible for their
+    content and privacy practices. By following an external link, you leave my area of responsibility.
+  </p>
+
+  <h2>6. Your rights</h2>
+  <p>Under the GDPR you have the right to:</p>
+  <ul>
+    <li>access your stored data (Art. 15),</li>
+    <li>rectify inaccurate data (Art. 16),</li>
+    <li>have your data erased (Art. 17),</li>
+    <li>restrict processing (Art. 18),</li>
+    <li>receive your data in a portable format (Art. 20),</li>
+    <li>object to processing (Art. 21).</li>
+  </ul>
+  <p>
+    To exercise these rights, contact me using the details in the <a href={withBase('imprint')}>Legal Notice</a>.
+    You also have the right to lodge a complaint with a data protection supervisory authority.
+  </p>
+
+  <h2>7. Status</h2>
+  <p>October 2026. This privacy policy may be updated as needed to comply with legal requirements.</p>
+</Legal>
