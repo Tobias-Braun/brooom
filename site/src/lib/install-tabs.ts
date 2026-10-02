@@ -56,7 +56,7 @@ export const installTabs: InstallTab[] = [
     blocks: [
       {
         type: 'text',
-        text: 'On macOS, install the cask from the brooom tap. It installs brooom only; its caveats show how to add the short command br when nothing else uses it.',
+        text: 'On macOS, install the cask from the brooom tap. It also adds the short command br when nothing else uses it, and tells you why when it skips it.',
       },
       {
         type: 'command',
