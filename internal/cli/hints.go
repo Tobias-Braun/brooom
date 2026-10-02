@@ -1,7 +1,5 @@
 package cli
 
-import ()
-
 // scopeFlags are the flags that decide where the invocation worked and which
 // config it used, spelled for undo, which takes the scope as --path; the
 // printed undo command has to repeat them to restore in the same scope.
