@@ -53,10 +53,13 @@ type sourcedDetector struct {
 	*fakeDetector
 	extra func(ctx context.Context, cfg *config.Config) ([]scope.Target, error)
 	calls atomic.Int64
+	// repos records the repositories of the last call.
+	repos []string
 }
 
-func (d *sourcedDetector) ExtraTargets(ctx context.Context, cfg *config.Config) ([]scope.Target, error) {
+func (d *sourcedDetector) ExtraTargets(ctx context.Context, cfg *config.Config, repos []string) ([]scope.Target, error) {
 	d.calls.Add(1)
+	d.repos = repos
 	return d.extra(ctx, cfg)
 }
 
@@ -104,6 +107,13 @@ func (r *recorder) record(env *detect.Env, t scope.Target) {
 	r.targets = append(r.targets, t)
 	r.envs = append(r.envs, env)
 	r.allowed = env.Guard.Allowed()
+}
+
+// reset forgets what was recorded, for a second run in the same test.
+func (r *recorder) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.targets, r.allowed, r.envs = nil, nil, nil
 }
 
 func (r *recorder) paths() []string {
@@ -157,15 +167,6 @@ func writeConfig(t *testing.T, home string, v any) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-// rootsConfig returns a config value with the given roots.
-func rootsConfig(paths ...string) map[string]any {
-	roots := make([]map[string]any, len(paths))
-	for i, p := range paths {
-		roots[i] = map[string]any{"path": p}
-	}
-	return map[string]any{"roots": roots}
 }
 
 // runCtx executes the CLI in-process and returns code, stdout and stderr.

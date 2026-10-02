@@ -271,7 +271,7 @@ func TestDevToolsUserLocationsPerOS(t *testing.T) {
 		t.Run(tt.goos, func(t *testing.T) {
 			e := env
 			e.GOOS = tt.goos
-			locs := devCatalog(t, tt.goos).UserLocations(e, CategoryLogs, CategoryCache, CategoryCrash)
+			locs := devCatalog(t, tt.goos).userLocations(e, CategoryLogs, CategoryCache, CategoryCrash)
 			got := bases(t, locs, root)
 			// One location per pattern; the crash report patterns share a base.
 			slices.Sort(got)
@@ -315,7 +315,7 @@ func TestDevToolsUserLocationMatching(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			e := env
 			e.GOOS = tt.goos
-			locs := devCatalog(t, tt.goos).UserLocations(e)
+			locs := devCatalog(t, tt.goos).userLocations(e)
 			got := false
 			for _, l := range locs {
 				if l.ToolID == tt.tool && l.Match(tt.abs, tt.isDir) {
@@ -336,7 +336,7 @@ func TestDevToolsUserLocationsAbsentOffPlatform(t *testing.T) {
 	for _, goos := range []string{"linux", "darwin"} {
 		e := env
 		e.GOOS = goos
-		for _, l := range devCatalog(t, goos).UserLocations(e) {
+		for _, l := range devCatalog(t, goos).userLocations(e) {
 			if strings.Contains(l.Base, "npm-cache") {
 				t.Errorf("%s: windows location %s leaked", goos, l.Base)
 			}
@@ -344,7 +344,7 @@ func TestDevToolsUserLocationsAbsentOffPlatform(t *testing.T) {
 	}
 	e := env
 	e.GOOS = "linux"
-	for _, l := range devCatalog(t, "linux").UserLocations(e) {
+	for _, l := range devCatalog(t, "linux").userLocations(e) {
 		if strings.Contains(l.Base, "Library") {
 			t.Errorf("linux: darwin location %s leaked", l.Base)
 		}

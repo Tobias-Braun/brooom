@@ -37,9 +37,6 @@ func registerCompletions(root *cobra.Command, a *app) {
 	_ = root.RegisterFlagCompletionFunc("detector", completeDetectors)
 	_ = root.RegisterFlagCompletionFunc("format", completeFormats)
 	_ = root.RegisterFlagCompletionFunc("progress", completeProgressModes)
-	_ = root.RegisterFlagCompletionFunc("root", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return a.completeRoots(cmd, toComplete, true)
-	})
 
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
@@ -59,13 +56,17 @@ func registerCompletions(root *cobra.Command, a *app) {
 // declare themselves (not inherited from the root).
 func registerLocalCompletions(c *cobra.Command) {
 	local := c.LocalNonPersistentFlags()
+	if local.Lookup("path") != nil {
+		_ = c.RegisterFlagCompletionFunc("path", completeDirs)
+	}
 	if local.Lookup("trash-strategy") != nil {
 		_ = c.RegisterFlagCompletionFunc("trash-strategy", completeTrashStrategies)
 	}
 }
 
 // registerSessionArgs completes session ids for `undo` and `sessions`, the
-// presets for `sweep` and the configured roots for `roots remove`.
+// preset and path of `sweep` and the path argument of the bare command, `scan`
+// and `git purge`.
 func registerSessionArgs(root *cobra.Command, a *app) {
 	sessionIDs := func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
@@ -80,15 +81,19 @@ func registerSessionArgs(root *cobra.Command, a *app) {
 	}
 	if c, _, err := root.Find([]string{"sweep"}); err == nil && c != root {
 		c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			if len(args) > 0 {
-				return nil, completionDirective
+			switch len(args) {
+			case 0:
+				return completePresets(cmd, args, toComplete)
+			case 1:
+				return completeDirs(cmd, args, toComplete)
 			}
-			return completePresets(cmd, args, toComplete)
+			return nil, completionDirective
 		}
 	}
-	if c, _, err := root.Find([]string{"roots", "remove"}); err == nil && c.Name() == "remove" {
-		c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return a.completeRoots(cmd, toComplete, false)
+	root.ValidArgsFunction = firstArgDirs
+	for _, path := range [][]string{{"scan"}, {"review"}, {"git", "purge"}} {
+		if c, _, err := root.Find(path); err == nil && c != root {
+			c.ValidArgsFunction = firstArgDirs
 		}
 	}
 }
@@ -198,23 +203,19 @@ func filterPrefix(names []string, prefix string, descriptions map[string]string)
 	return out
 }
 
-// completeRoots offers the roots stored in the config, already listed ones
-// excluded when completing a repeated argument. A config that cannot be
-// loaded yields nothing. Only a list-valued flag (--root) is split at commas;
-// a positional argument is one path, and a comma is a legal path character.
-func (a *app) completeRoots(_ *cobra.Command, toComplete string, listValued bool) ([]string, cobra.ShellCompDirective) {
-	prefix, current, chosen := "", toComplete, []string(nil)
-	if listValued {
-		prefix, current, chosen = splitCommaPrefix(toComplete)
+// completeDirs lets the shell complete directory names, for the path
+// argument and --path.
+func completeDirs(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	return nil, cobra.ShellCompDirectiveFilterDirs
+}
+
+// firstArgDirs completes a directory for the first positional argument and
+// nothing after it.
+func firstArgDirs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, completionDirective
 	}
-	var out []string
-	for _, r := range a.configuredRootStrings() {
-		if slices.Contains(chosen, r) || !strings.HasPrefix(r, current) {
-			continue
-		}
-		out = append(out, prefix+r)
-	}
-	return out, completionDirective
+	return completeDirs(cmd, args, toComplete)
 }
 
 // completeSessionIDs lists the recorded session ids, newest first, with the

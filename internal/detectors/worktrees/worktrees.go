@@ -154,7 +154,7 @@ type scan struct {
 // detector is disabled for the target. A bare repository (the anchor of a bare
 // plus linked worktrees layout) is fine: only its own entry is skipped.
 func newScan(ctx context.Context, env *detect.Env, target scope.Target) (*scan, error) {
-	cfg, err := env.Config.ForTarget(target.Scope.Path, target.Path)
+	cfg, err := env.Config.ForTarget(target.Path)
 	if err != nil {
 		return nil, err
 	}

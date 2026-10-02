@@ -428,7 +428,7 @@ func TestDirtyWorktrees(t *testing.T) {
 		wantReason string
 	}{
 		{"dirty and merged is blocked", false, false, findings.ActionNone,
-			"uncommitted changes; commit, stash or re-run with --force to trash the directory"},
+			"uncommitted changes; commit, stash or decide with `brooom review`"},
 		{"dirty and merged with --force is suggested for the trash", true, false, findings.ActionRemoveWorktree,
 			"forced: uncommitted changes will be moved to the trash, not deleted"},
 		{"dirty and locked with --force stays blocked", true, true, findings.ActionNone, ""},

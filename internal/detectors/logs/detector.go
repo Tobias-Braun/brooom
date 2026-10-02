@@ -44,12 +44,7 @@ func init() { detect.Register(New()) }
 
 // Detector reports log and runtime files. It holds no per-scan state, so one
 // instance serves concurrent targets.
-type Detector struct {
-	// PathEnv supplies home directory and environment variables for the
-	// expansion of user-level patterns; nil means the running machine. It is
-	// a field so tests can point the expansion at a temporary home.
-	PathEnv func() catalog.PathEnv
-}
+type Detector struct{}
 
 // New returns the detector with default dependencies.
 func New() *Detector { return &Detector{} }
@@ -64,13 +59,6 @@ func (*Detector) Description() string {
 
 // Category implements detect.Detector.
 func (*Detector) Category() detect.Category { return detect.CategoryLogs }
-
-func (d *Detector) pathEnv() catalog.PathEnv {
-	if d.PathEnv != nil {
-		return d.PathEnv()
-	}
-	return catalog.HostEnv()
-}
 
 // handled are the catalog categories of this detector. ai belongs to
 // ai-artifacts and build to build-artifacts; passing the list to every
@@ -99,7 +87,7 @@ func loadCatalog(cfg *config.Config) (*catalog.Catalog, error) {
 // entries are skipped.
 func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Target, emit func(findings.Finding)) error {
 	switch target.Kind {
-	case scope.TargetRepo, scope.TargetProject, scope.TargetUser:
+	case scope.TargetRepo, scope.TargetProject:
 	default:
 		return nil
 	}
@@ -145,16 +133,8 @@ func verified(cands []candidate) []candidate {
 	})
 }
 
-// effectiveConfig applies the per-root and per-repo overlay for project
-// targets. User-level targets have no overlay and use the global
-// configuration, exactly like the scan pipeline computes it.
+// effectiveConfig applies the repository's .brooom.json, exactly like the
+// scan pipeline computes it.
 func effectiveConfig(env *detect.Env, target scope.Target) (*config.Config, error) {
-	if target.Kind == scope.TargetUser {
-		return env.Config, nil
-	}
-	hint := ""
-	if target.Scope.Type == findings.ScopeRoot {
-		hint = target.Scope.Path
-	}
-	return env.Config.ForTarget(hint, target.Path)
+	return env.Config.ForTarget(target.Path)
 }

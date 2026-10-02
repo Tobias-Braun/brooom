@@ -37,8 +37,10 @@ func TestRegistration(t *testing.T) {
 	if d.Category() != detect.CategoryLogs {
 		t.Errorf("category = %q, want logs", d.Category())
 	}
-	if _, ok := d.(detect.TargetSource); !ok {
-		t.Error("detector does not implement detect.TargetSource")
+	// Global caches and logs belong to no repository and are not cleaned
+	// (#288), so the detector declares no user-level targets.
+	if _, ok := d.(detect.TargetSource); ok {
+		t.Error("detector must not declare user-level targets")
 	}
 }
 
@@ -213,24 +215,6 @@ func TestExcludes(t *testing.T) {
 		setup func(t *testing.T, root, proj string) *config.Config
 		want  []string
 	}{
-		{
-			name: "root exclude, relative to the root",
-			setup: func(t *testing.T, root, proj string) *config.Config {
-				cfg := cfgWith(extraTool("scratchy", 0, ".scratch-*"))
-				cfg.Roots = []config.Root{{Path: root, Exclude: []string{"proj/skipped"}}}
-				return cfg
-			},
-			want: []string{"kept/.scratch-a"},
-		},
-		{
-			name: "root exclude by name at any depth",
-			setup: func(t *testing.T, root, proj string) *config.Config {
-				cfg := cfgWith(extraTool("scratchy", 0, ".scratch-*"))
-				cfg.Roots = []config.Root{{Path: root, Exclude: []string{"skipped"}}}
-				return cfg
-			},
-			want: []string{"kept/.scratch-a"},
-		},
 		{
 			name: "repo exclude, relative to the target",
 			setup: func(t *testing.T, root, proj string) *config.Config {

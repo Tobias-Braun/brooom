@@ -222,7 +222,7 @@ func TestDeleteBranchDerivesVerificationLive(t *testing.T) {
 			fx.featureBranch("feat/wip")
 			fx.repo.Commit("late.txt", "x", "unpushed", testutil.BaseTime.Add(5*time.Hour))
 			_, err := fx.plan(fx.finding("feat/wip", "merged-branch", claim))
-			wantBranchSkip(t, err, "--force")
+			wantBranchSkip(t, err, "brooom review")
 			fx.env.Force = false
 			if !fx.branchExists("feat/wip") {
 				t.Fatal("branch was deleted")

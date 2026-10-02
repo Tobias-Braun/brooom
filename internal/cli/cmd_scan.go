@@ -20,9 +20,6 @@ type scanOptions struct {
 	// force is passed to the detectors as detect.Env.Force (--force of the
 	// commands that can apply).
 	force bool
-	// userLocations turns on user_locations of the selected ai/logs detector for this
-	// run only (`brooom ai --user`, `brooom logs --user`); the config file is never changed.
-	userLocations bool
 	// configOverlay adjusts the loaded configuration right after it was
 	// read and before any per-root or per-repo layer (ForTarget), so a
 	// .brooom.json still tightens on top of it. It receives a private copy.
@@ -73,14 +70,14 @@ func (o scanOptions) filter(in []findings.Finding) []findings.Finding {
 func newScanCmd(a *app) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "scan",
+		Use:   "scan [path]",
 		Short: "Scan for clutter and report findings (never modifies anything)",
 		Example: `  brooom scan
-  brooom scan --workspaces --format json > findings.json
+  brooom scan ~/code --format json > findings.json
   brooom scan --detector merged-branch,worktrees --format plain
   brooom scan --force --format json > findings.json`,
-		Long: `Scan the current repository (or, with --workspaces, every repository and
-project below the configured roots) and report findings. Scanning never
+		Long: `Scan the current repository (or the repository or folder the path names;
+below a folder every repository and project is scanned) and report findings. Scanning never
 modifies anything; use 'brooom sweep' or 'brooom clean --from <file>' to act
 on findings. -d/--detector limits the scan to single detectors, including the
 ones no sweep preset runs (stale-branch, large-untracked).
@@ -92,8 +89,9 @@ format to see them.
 --force only changes what is reported: findings blocked by an overridable risk
 flag then suggest their action, so the file can be given to 'brooom clean
 --from'. Nothing is modified either way.`,
-		Args: cobra.NoArgs,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			a.setPath(args)
 			return a.runScan(cmd, scanOptions{force: force})
 		},
 	}

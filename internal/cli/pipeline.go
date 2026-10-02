@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -67,9 +66,6 @@ func (a *app) scan(ctx context.Context, opts scanOptions, onFinding func(finding
 // newScanRequest validates flags and loads the configuration. Cheap usage
 // checks come first so a typo fails before the config is read.
 func (a *app) newScanRequest(opts scanOptions) (*scanRequest, error) {
-	if len(a.flags.roots) > 0 && !a.flags.workspaces {
-		return nil, usageError{errors.New("--root only narrows --workspaces; add --workspaces or drop --root")}
-	}
 	detectors, err := selectDetectors(a.flags.detectors, opts.detectors)
 	if err != nil {
 		return nil, err
@@ -89,23 +85,7 @@ func (a *app) newScanRequest(opts scanOptions) (*scanRequest, error) {
 	if opts.targetsOnly {
 		detectors = nil
 	}
-	if opts.userLocations {
-		applyUserLocations(cfg, opts.detectors)
-	}
 	return &scanRequest{opts: opts, cfg: cfg, cfgPath: path, format: format, detectors: detectors}, nil
-}
-
-// applyUserLocations turns on the user_locations switch of the detector the
-// command selected, for this run only. --user of `brooom logs` must not
-// enable the ai locations and vice versa, so the selection decides; an empty
-// selection keeps the historical ai-artifacts behaviour.
-func applyUserLocations(cfg *config.Config, selected []string) {
-	if len(selected) == 0 || slices.Contains(selected, config.DetectorAIArtifacts) {
-		cfg.Detectors.AIArtifacts.UserLocations = true
-	}
-	if slices.Contains(selected, config.DetectorLogs) {
-		cfg.Detectors.Logs.UserLocations = true
-	}
 }
 
 // loadConfig loads the config file named by --config, or the default one.
@@ -124,6 +104,7 @@ func (a *app) loadConfig() (*config.Config, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	a.noteDeprecatedConfig(cfg)
 	return cfg, path, nil
 }
 

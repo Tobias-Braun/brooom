@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -89,28 +90,31 @@ func TestScanFromSubdirectoryScansRepoRoot(t *testing.T) {
 	}
 }
 
-// TestScanFromLinkedWorktreeAcceptsMainWorktreeAsRepoOnly pins the guard shape
-// of a run from a linked worktree: the main worktree is accepted as the
-// repository git runs in (ResolveRepoMeta), but it is not a general location:
-// Resolve refuses it and everything below it.
-func TestScanFromLinkedWorktreeAcceptsMainWorktreeAsRepoOnly(t *testing.T) {
+// TestScanFromLinkedWorktreeCoversTheRepository pins the scope of a run from
+// a linked worktree: the whole repository, so the linked worktree and the main
+// worktree are both repo targets and allowed locations, and the main worktree
+// is still the repository metadata location the git detectors resolve.
+func TestScanFromLinkedWorktreeCoversTheRepository(t *testing.T) {
 	needGit(t)
 	isolate(t)
 	repo := testutil.NewRepo(t)
 	wt := repo.AddWorktree("agent-wt", "feat/agent")
 	t.Chdir(wt)
 
-	var meta, general, metaFile, generalFile error
+	// Both targets run concurrently, so the guard answers are recorded
+	// under a lock; they are the same for either target.
+	var mu sync.Mutex
+	var meta, general error
 	var resolvedMeta string
 	d := registerFake(t, detect.CategoryGit, nil)
 	rec := &recorder{}
 	d.fn = func(_ context.Context, env *detect.Env, tg scope.Target, emit func(findings.Finding)) error {
 		rec.record(env, tg)
-		file := filepath.Join(repo.Dir, "README.md")
-		resolvedMeta, meta = env.Guard.ResolveRepoMeta(repo.Dir)
-		_, general = env.Guard.Resolve(repo.Dir)
-		_, metaFile = env.Guard.ResolveRepoMeta(file)
-		_, generalFile = env.Guard.Resolve(file)
+		rm, merr := env.Guard.ResolveRepoMeta(repo.Dir)
+		_, gerr := env.Guard.Resolve(filepath.Join(repo.Dir, "README.md"))
+		mu.Lock()
+		resolvedMeta, meta, general = rm, merr, gerr
+		mu.Unlock()
 		emitAt(d, tg, emit, "")
 		return nil
 	}
@@ -119,19 +123,18 @@ func TestScanFromLinkedWorktreeAcceptsMainWorktreeAsRepoOnly(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	if meta != nil || resolvedMeta != repo.Dir {
-		t.Errorf("ResolveRepoMeta(main) = %q, %v; want %q", resolvedMeta, meta, repo.Dir)
+	if meta != nil || resolvedMeta != repo.Dir || general != nil {
+		t.Errorf("main worktree: meta %q, %v; general %v", resolvedMeta, meta, general)
 	}
-	for name, err := range map[string]error{"Resolve(main)": general, "ResolveRepoMeta(main/README.md)": metaFile, "Resolve(main/README.md)": generalFile} {
-		if !errors.Is(err, scope.ErrOutsideScope) {
-			t.Errorf("%s = %v, want ErrOutsideScope", name, err)
-		}
+	got := rec.paths()
+	sort.Strings(got)
+	want := []string{repo.Dir, wt}
+	sort.Strings(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("targets = %v, want the linked and the main worktree %v", got, want)
 	}
-	if got := rec.paths(); len(got) != 1 || got[0] != wt {
-		t.Errorf("targets = %v, want only the linked worktree %s", got, wt)
-	}
-	if !slices.Contains(rec.allowed, wt) || slices.Contains(rec.allowed, repo.Dir) {
-		t.Errorf("guard allows %v, want %s and not %s", rec.allowed, wt, repo.Dir)
+	if !slices.Contains(rec.allowed, wt) || !slices.Contains(rec.allowed, repo.Dir) {
+		t.Errorf("guard allows %v, want %s and %s", rec.allowed, wt, repo.Dir)
 	}
 }
 
@@ -153,9 +156,8 @@ func (r *countingRunner) Run(_ context.Context, _ string, args ...string) (strin
 func TestNormalRepoMakesNoWorktreeListCall(t *testing.T) {
 	needGit(t)
 	repo := testutil.NewRepo(t)
-	t.Chdir(repo.Dir)
 	runner := &countingRunner{}
-	ts, err := repoTargets(context.Background(), runner)
+	ts, err := repoTargets(context.Background(), runner, repo.Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +183,11 @@ func TestLinkedWorktreeListFailureIsScanError(t *testing.T) {
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			ts, err := repoTargets(context.Background(), c.runner())
+			cwd, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ts, err := repoTargets(context.Background(), c.runner(), cwd)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -227,7 +233,7 @@ func TestScanOutsideRepoIsUsageError(t *testing.T) {
 	if code != ExitUsage {
 		t.Fatalf("code = %d, want %d (stderr %q)", code, ExitUsage, errOut)
 	}
-	for _, want := range []string{"not inside a git repository", "--workspaces", "brooom roots add"} {
+	for _, want := range []string{"not inside a git repository", "pass a folder", "brooom sweep ~/code"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("stderr %q lacks %q", errOut, want)
 		}
@@ -237,17 +243,16 @@ func TestScanOutsideRepoIsUsageError(t *testing.T) {
 	}
 }
 
-func TestScanWorkspaces(t *testing.T) {
-	home := isolate(t)
+func TestScanPathWalksAFolder(t *testing.T) {
+	isolate(t)
 	root := testutil.ResolvedTempDir(t)
 	fakeRepoDir(t, root, "alpha")
 	fakeRepoDir(t, root, "beta")
 	projectDir(t, root, "gamma")
-	writeConfig(t, home, rootsConfig(root))
-	t.Chdir(testutil.ResolvedTempDir(t)) // outside any repo: --workspaces must not care
+	t.Chdir(testutil.ResolvedTempDir(t)) // outside any repo: the path decides
 	d, rec := recordingFake(t, detect.CategoryFiles)
 
-	code, out, errOut := runScanCmd(t, "scan", "--workspaces", "-d", d.name)
+	code, out, errOut := runScanCmd(t, "scan", root, "-d", d.name)
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -272,97 +277,87 @@ func TestScanWorkspaces(t *testing.T) {
 	if !strings.Contains(out, d.name) {
 		t.Errorf("output = %q", out)
 	}
+
+	// The bare command takes the same path.
+	rec.reset()
+	if code, _, errOut := runScanCmd(t, root, "-d", d.name); code != ExitOK || len(rec.paths()) != 3 {
+		t.Fatalf("bare command: code %d, targets %v, stderr %q", code, rec.paths(), errOut)
+	}
 }
 
-func TestScanWorkspacesWithoutRoots(t *testing.T) {
+// TestScanPathInsideARepoScansThatRepo: a path in a repository is the same
+// as running from there, not a walk below the folder.
+func TestScanPathInsideARepoScansThatRepo(t *testing.T) {
+	needGit(t)
 	isolate(t)
-	d, _ := recordingFake(t, detect.CategoryFiles)
-	code, _, errOut := runScanCmd(t, "scan", "-w", "-d", d.name)
-	if code != ExitUsage || !strings.Contains(errOut, "brooom roots add") {
+	repo := testutil.NewRepo(t)
+	sub := filepath.Join(repo.Dir, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(testutil.ResolvedTempDir(t))
+	d, rec := recordingFake(t, detect.CategoryFiles)
+	if code, _, errOut := runScanCmd(t, "scan", sub, "-d", d.name); code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	root, _ := filepath.EvalSymlinks(repo.Dir)
+	if got := rec.paths(); len(got) != 1 || got[0] != root {
+		t.Errorf("targets = %v, want the repository %s", got, root)
 	}
 }
 
-func TestScanWorkspacesMissingRoot(t *testing.T) {
-	home := isolate(t)
-	good := testutil.ResolvedTempDir(t)
-	fakeRepoDir(t, good, "alpha")
+func TestScanPathErrors(t *testing.T) {
+	isolate(t)
+	d, rec := recordingFake(t, detect.CategoryFiles)
 	missing := filepath.Join(testutil.ResolvedTempDir(t), "does-not-exist")
-	d, rec := recordingFake(t, detect.CategoryFiles)
-
-	writeConfig(t, home, rootsConfig(missing, good))
-	code, out, errOut := runScanCmd(t, "scan", "-w", "-d", d.name)
-	if code != ExitOK {
-		t.Fatalf("code %d, stderr %q", code, errOut)
+	fsRoot := "/"
+	if runtime.GOOS == "windows" {
+		fsRoot = `C:\`
 	}
-	if got := rec.paths(); len(got) != 1 || got[0] != filepath.Join(good, "alpha") {
-		t.Errorf("targets = %v", got)
-	}
-	if !strings.Contains(out, missing) {
-		t.Errorf("the scan error naming %s must be rendered:\n%s", missing, out)
-	}
-
-	writeConfig(t, home, rootsConfig(missing))
-	code, _, errOut = runScanCmd(t, "scan", "-w", "-d", d.name)
-	if code != ExitUsage || !strings.Contains(errOut, "brooom roots add") || !strings.Contains(errOut, missing) {
-		t.Fatalf("only missing roots: code %d, stderr %q", code, errOut)
-	}
-}
-
-func TestScanWorkspacesRootSubset(t *testing.T) {
-	home := isolate(t)
-	rootA, rootB := testutil.ResolvedTempDir(t), testutil.ResolvedTempDir(t)
-	fakeRepoDir(t, rootA, "a1")
-	fakeRepoDir(t, rootB, "b1")
-	writeConfig(t, home, rootsConfig(rootA, rootB))
-	d, rec := recordingFake(t, detect.CategoryFiles)
-
-	if code, _, errOut := runScanCmd(t, "scan", "-w", "--root", rootB, "-d", d.name); code != ExitOK {
-		t.Fatalf("code %d, stderr %q", code, errOut)
-	}
-	if got := rec.paths(); len(got) != 1 || got[0] != filepath.Join(rootB, "b1") {
-		t.Errorf("targets = %v, want only root B's repo", got)
-	}
-	if !slices.Equal(rec.allowed, []string{rootB}) {
-		t.Errorf("guard allows %v, want [%s]", rec.allowed, rootB)
-	}
-
-	unknown := testutil.ResolvedTempDir(t)
-	code, _, errOut := runScanCmd(t, "scan", "-w", "--root", unknown, "-d", d.name)
-	if code != ExitUsage {
-		t.Fatalf("unknown root: code %d, stderr %q", code, errOut)
-	}
-	for _, want := range []string{"not a configured root", rootA, rootB, "brooom roots add"} {
-		if !strings.Contains(errOut, want) {
-			t.Errorf("stderr %q lacks %q", errOut, want)
+	dir := testutil.ResolvedTempDir(t)
+	testutil.WriteFile(t, dir, "f", "x")
+	file := filepath.Join(dir, "f")
+	for _, tc := range []struct{ path, want string }{
+		{missing, missing},
+		{fsRoot, "filesystem root"},
+		{file, "not a directory"},
+	} {
+		code, _, errOut := runScanCmd(t, "scan", tc.path, "-d", d.name)
+		if code != ExitUsage || !strings.Contains(errOut, tc.want) {
+			t.Errorf("%s: code %d, stderr %q", tc.path, code, errOut)
 		}
 	}
+	if len(rec.paths()) != 0 {
+		t.Errorf("a rejected path was scanned: %v", rec.paths())
+	}
 }
 
-func TestScanRootMatchesThroughSymlink(t *testing.T) {
-	home := isolate(t)
+func TestScanPathThroughSymlink(t *testing.T) {
+	isolate(t)
 	root := testutil.ResolvedTempDir(t)
 	fakeRepoDir(t, root, "a1")
 	link := filepath.Join(testutil.ResolvedTempDir(t), "link")
 	if err := os.Symlink(root, link); err != nil {
 		t.Skip("symlinks unavailable:", err)
 	}
-	writeConfig(t, home, rootsConfig(root))
 	d, rec := recordingFake(t, detect.CategoryFiles)
-	if code, _, errOut := runScanCmd(t, "scan", "-w", "--root", link, "-d", d.name); code != ExitOK {
+	if code, _, errOut := runScanCmd(t, "scan", link, "-d", d.name); code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	if len(rec.paths()) != 1 {
-		t.Errorf("targets = %v", rec.paths())
+	if !slices.Equal(rec.allowed, []string{root}) || len(rec.paths()) != 1 {
+		t.Errorf("allowed %v, targets %v; want the resolved folder", rec.allowed, rec.paths())
 	}
 }
 
-func TestScanRootWithoutWorkspacesIsUsageError(t *testing.T) {
+// TestRemovedScopeFlags: --workspaces and --root are gone with the root
+// registry.
+func TestRemovedScopeFlags(t *testing.T) {
 	isolate(t)
-	d, _ := recordingFake(t, detect.CategoryFiles)
-	code, _, errOut := runScanCmd(t, "scan", "--root", t.TempDir(), "-d", d.name)
-	if code != ExitUsage || !strings.Contains(errOut, "--workspaces") {
-		t.Fatalf("code %d, stderr %q", code, errOut)
+	for _, flag := range []string{"--workspaces", "-w", "--root=/x"} {
+		code, _, errOut := runScanCmd(t, "scan", flag)
+		if code != ExitUsage || !strings.Contains(errOut, "unknown") {
+			t.Errorf("%s: code %d, stderr %q", flag, code, errOut)
+		}
 	}
 }
 
@@ -484,7 +479,7 @@ func namesRun(t *testing.T, root string) []string {
 	}
 	build := &fakeDetector{name: config.DetectorBuildArtifacts, cat: detect.CategoryArtifacts, fn: fn("build")}
 	logs := &fakeDetector{name: config.DetectorLogs, cat: detect.CategoryLogs, fn: fn("logs")}
-	a := &app{io: IO{Out: &strings.Builder{}, Err: &strings.Builder{}}, flags: globalFlags{workspaces: true}}
+	a := &app{io: IO{Out: &strings.Builder{}, Err: &strings.Builder{}}, flags: globalFlags{path: root}}
 	req := requestWith(t, a, build, logs)
 	if _, err := a.execute(context.Background(), req, nil); err != nil {
 		t.Fatal(err)
@@ -499,21 +494,14 @@ func TestDetectorTogglesFromConfig(t *testing.T) {
 		setup func(t *testing.T, root string) map[string]any
 		want  []string
 	}{
-		{"all enabled by default", func(t *testing.T, root string) map[string]any { return rootsConfig(root) },
+		{"all enabled by default", func(t *testing.T, root string) map[string]any { return map[string]any{} },
 			[]string{"build@one", "build@two", "logs@one", "logs@two"}},
 		{"disabled globally", func(t *testing.T, root string) map[string]any {
-			cfg := rootsConfig(root)
-			cfg["detectors"] = map[string]any{"build-artifacts": map[string]any{"enabled": false}}
-			return cfg
+			return map[string]any{"detectors": map[string]any{"build-artifacts": map[string]any{"enabled": false}}}
 		}, []string{"logs@one", "logs@two"}},
-		{"disabled for the root", func(t *testing.T, root string) map[string]any {
-			cfg := rootsConfig(root)
-			cfg["roots"] = []map[string]any{{"path": root, "detectors": map[string]bool{"log-and-runtime-files": false}}}
-			return cfg
-		}, []string{"build@one", "build@two"}},
 		{"disabled by one repo's .brooom.json", func(t *testing.T, root string) map[string]any {
 			testutil.WriteFile(t, filepath.Join(root, "two"), config.RepoConfigFileName, `{"disable":["build-artifacts"]}`)
-			return rootsConfig(root)
+			return map[string]any{}
 		}, []string{"build@one", "logs@one", "logs@two"}},
 	}
 	for _, tt := range tests {
@@ -567,15 +555,14 @@ func TestAppliesFunc(t *testing.T) {
 }
 
 func TestGitDetectorSkippedOnProjectTarget(t *testing.T) {
-	home := isolate(t)
+	isolate(t)
 	root := testutil.ResolvedTempDir(t)
 	fakeRepoDir(t, root, "repo")
 	projectDir(t, root, "proj")
-	writeConfig(t, home, rootsConfig(root))
 	git, gitRec := recordingFake(t, detect.CategoryGit)
 	files, filesRec := recordingFake(t, detect.CategoryFiles)
 
-	code, _, errOut := runScanCmd(t, "scan", "-w", "-d", git.name+","+files.name)
+	code, _, errOut := runScanCmd(t, "scan", root, "-d", git.name+","+files.name)
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -588,15 +575,14 @@ func TestGitDetectorSkippedOnProjectTarget(t *testing.T) {
 }
 
 func TestBrokenRepoConfigSkipsOnlyThatTarget(t *testing.T) {
-	home := isolate(t)
+	isolate(t)
 	root := testutil.ResolvedTempDir(t)
 	good := fakeRepoDir(t, root, "good")
 	bad := fakeRepoDir(t, root, "bad")
 	testutil.WriteFile(t, bad, config.RepoConfigFileName, `{"disable":["no-such-detector"]}`)
-	writeConfig(t, home, rootsConfig(root))
 	d, rec := recordingFake(t, detect.CategoryFiles)
 
-	code, out, errOut := runScanCmd(t, "scan", "-w", "-d", d.name)
+	code, out, errOut := runScanCmd(t, "scan", root, "-d", d.name)
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
@@ -652,6 +638,11 @@ func TestExtraTargetsFromTargetSource(t *testing.T) {
 	}
 	if src.calls.Load() != 1 {
 		t.Errorf("ExtraTargets calls = %d, want 1", src.calls.Load())
+	}
+	// The source learns the repositories of the scan, so it can declare
+	// their data only.
+	if len(src.repos) != 1 || src.repos[0] == "" {
+		t.Errorf("ExtraTargets got repositories %v, want the scanned one", src.repos)
 	}
 	users := 0
 	for _, tg := range scanned {

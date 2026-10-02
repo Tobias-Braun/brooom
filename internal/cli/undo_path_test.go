@@ -10,20 +10,17 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/testutil"
 )
 
-// workspaceSession applies `clean --from -w` on a repository below a
-// configured root (quarantine strategy, isolated home) and returns the removed
-// file, the arguments of the printed undo command and the fixture.
-func workspaceSession(t *testing.T) (removed string, undoArgs []string, f *cleanupFixture) {
+// pathSession applies `clean --from --path <repo>` from outside the
+// repository's working directory (quarantine strategy, isolated home) and returns the removed file,
+// the arguments of the printed undo command and the fixture.
+func pathSession(t *testing.T) (removed string, undoArgs []string, f *cleanupFixture) {
 	t.Helper()
 	f = newCleanupFixture(t, nil)
-	cfg := rootsConfig(f.repo.Dir)
-	cfg["git"] = map[string]any{"use_gh": false}
-	writeConfig(t, f.home, cfg)
 	dir, file := junkDir(t, f.repo.Dir, "node_modules")
 	path := writeReportFile(t, trashFinding(f.repo.Dir, dir))
-	code, out, errOut := clean(t, "", "--from", path, "-w", "--yes")
+	code, out, errOut := clean(t, "", "--from", path, "--path", f.repo.Dir, "--yes")
 	if code != ExitOK || exists(file) {
-		t.Fatalf("workspace apply: code %d, file kept %v\n%s\n%s", code, exists(file), out, errOut)
+		t.Fatalf("apply: code %d, file kept %v\n%s\n%s", code, exists(file), out, errOut)
 	}
 	for _, line := range strings.Split(out, "\n") {
 		if rest, ok := strings.CutPrefix(line, "undo: brooom "); ok {
@@ -33,19 +30,15 @@ func workspaceSession(t *testing.T) (removed string, undoArgs []string, f *clean
 	if len(undoArgs) == 0 {
 		t.Fatalf("no undo hint in output:\n%s", out)
 	}
-	ms := f.sessions()
-	if len(ms) != 1 || !ms[0].Workspaces {
-		t.Fatalf("the manifest must record the workspaces scope: %+v", ms)
-	}
 	return file, undoArgs, f
 }
 
-// TestUndoHintReproducesWorkspaceScope runs exactly the printed undo command
-// from a directory outside any repository (#192).
-func TestUndoHintReproducesWorkspaceScope(t *testing.T) {
-	removed, undoArgs, f := workspaceSession(t)
-	if undoArgs[0] != "undo" || undoArgs[1] != f.sessions()[0].ID || !slices.Contains(undoArgs, "--workspaces") {
-		t.Fatalf("undo hint %v lacks the id or --workspaces", undoArgs)
+// TestUndoHintReproducesPathScope runs exactly the printed undo command from a
+// directory outside any repository (#192).
+func TestUndoHintReproducesPathScope(t *testing.T) {
+	removed, undoArgs, f := pathSession(t)
+	if undoArgs[0] != "undo" || undoArgs[1] != f.sessions()[0].ID || !slices.Contains(undoArgs, "--path") {
+		t.Fatalf("undo hint %v lacks the id or --path", undoArgs)
 	}
 	t.Chdir(testutil.ResolvedTempDir(t))
 	code, out, errOut := brooom(t, "", append(undoArgs, "--yes")...)
@@ -54,29 +47,10 @@ func TestUndoHintReproducesWorkspaceScope(t *testing.T) {
 	}
 }
 
-// TestUndoOfWorkspaceSessionNeedsNoFlag covers the manifest-derived scope: a
-// plain `brooom undo`, with or without the id, works from anywhere for a
-// session applied with --workspaces.
-func TestUndoOfWorkspaceSessionNeedsNoFlag(t *testing.T) {
-	for _, withID := range []bool{false, true} {
-		removed, _, f := workspaceSession(t)
-		t.Chdir(testutil.ResolvedTempDir(t))
-		args := []string{"undo", "--yes"}
-		if withID {
-			args = []string{"undo", f.sessions()[0].ID, "--yes"}
-		}
-		code, out, errOut := brooom(t, "", args...)
-		if code != ExitOK || !exists(removed) || !strings.Contains(out, "1 restored") {
-			t.Fatalf("%v: code %d\n%s\n%s", args, code, out, errOut)
-		}
-	}
-}
-
-// TestUndoOfWorkspaceSessionStaysInsideConfiguredRoots keeps the safety check
-// in place: the recorded workspaces flag widens the scope to the configured
-// roots only, so a forged entry elsewhere is still refused.
-func TestUndoOfWorkspaceSessionStaysInsideConfiguredRoots(t *testing.T) {
-	_, _, f := workspaceSession(t)
+// TestUndoStaysInsideThePath keeps the safety check in place: --path only
+// widens the scope to that folder, so a forged entry elsewhere is refused.
+func TestUndoStaysInsideThePath(t *testing.T) {
+	_, _, f := pathSession(t)
 	m := f.sessions()[0]
 	forged := testutil.ResolvedTempDir(t) + "/planted"
 	m.Entries[0].Trash.OriginalPath = forged
@@ -85,9 +59,26 @@ func TestUndoOfWorkspaceSessionStaysInsideConfiguredRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(testutil.ResolvedTempDir(t))
-	code, out, _ := brooom(t, "", "undo", "--yes")
+	code, out, _ := brooom(t, "", "undo", "--path", f.repo.Dir, "--yes")
 	if code != ExitOK || exists(forged) || !strings.Contains(out, "1 skipped (outside scope") {
 		t.Fatalf("code %d, forged path restored %v\n%s", code, exists(forged), out)
+	}
+}
+
+// TestUndoOfOldWorkspaceSessionExplainsPath: a session of an earlier release
+// recorded --workspaces; undo can no longer derive that scope and says how to
+// pass it.
+func TestUndoOfOldWorkspaceSessionExplainsPath(t *testing.T) {
+	f := newUndoFixture(t)
+	p := f.write("a.txt", "a")
+	m := f.session(sid1, testutil.BaseTime, p)
+	m.Workspaces = true
+	if err := f.store.Save(m); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut := runApp(t, "", false, testutil.BaseTime, "undo", "--dry-run")
+	if code != ExitOK || !strings.Contains(errOut, "pass --path <folder>") {
+		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 }
 
@@ -104,21 +95,20 @@ func TestUndoScopeRefusalIsNotCountedAsNotRestorable(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, out, _ := runApp(t, "", false, testutil.BaseTime, "undo", "--yes")
-	want := "summary: 0 restored, 0 conflicts, 0 failed, 0 not restorable, 0 already restored, 1 skipped (outside scope; re-run with -w)"
+	want := "summary: 0 restored, 0 conflicts, 0 failed, 0 not restorable, 0 already restored, 1 skipped (outside scope; re-run with --path)"
 	if code != ExitOK || !strings.Contains(out, want) || strings.Contains(out, "cannot restore") {
 		t.Fatalf("code %d, want summary %q:\n%s", code, want, out)
 	}
 }
 
-// TestUndoHintKeepsRootAndConfigFlags checks every scope flag of the original
+// TestUndoHintKeepsPathAndConfigFlags checks every scope flag of the original
 // invocation, quoted for the host shell.
-func TestUndoHintKeepsRootAndConfigFlags(t *testing.T) {
+func TestUndoHintKeepsPathAndConfigFlags(t *testing.T) {
 	a := &app{goos: "linux"}
-	a.flags.workspaces = true
-	a.flags.roots = []string{"/ws/a b"}
+	a.flags.path = "/ws/a b"
 	a.flags.configPath = "/cfg/brooom.json"
 	got := strings.Join(a.scopeFlags(), " ")
-	want := "--config /cfg/brooom.json --workspaces --root '/ws/a b'"
+	want := "--config /cfg/brooom.json --path '/ws/a b'"
 	if got != want {
 		t.Fatalf("scope flags %q, want %q", got, want)
 	}
@@ -134,7 +124,7 @@ func TestUndoHintOmitsScopeForRepoSessions(t *testing.T) {
 		t.Fatalf("code %d\n%s", code, out)
 	}
 	ms := f.sessions()
-	if ms[0].Workspaces || !strings.Contains(out, "undo: brooom undo "+ms[0].ID+"\n") {
-		t.Fatalf("workspaces=%v\n%s", ms[0].Workspaces, out)
+	if !strings.Contains(out, "undo: brooom undo "+ms[0].ID+"\n") {
+		t.Fatalf("hint:\n%s", out)
 	}
 }

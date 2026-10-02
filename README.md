@@ -41,9 +41,9 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
 - Files go to your **OS trash** (or a quarantine folder); branches are
   deleted with `git branch -d`; worktrees are moved to the trash and then deregistered from git.
   Linked worktrees outside the scanned repository (such as `../repo-wt`) are
-  never touched; `br scan` lists them with a hint to run
-  `br roots add <parent>` or use `--workspaces` (not in `--format plain`,
-  which stays a bare path list).
+  never touched; `br scan` lists them with a hint to pass the folder that
+  holds them as the path (not in `--format plain`, which stays a bare path
+  list).
   On Windows the Recycle Bin cannot take paths longer than 259 characters
   (the shell API rejects `\\?\` paths) or items larger than the bin limit;
   Brooom refuses those instead of letting Windows delete them permanently and
@@ -131,10 +131,13 @@ br                      # scan the current repo and suggest what to sweep
 br sweep                # show everything worth cleaning, ask once, then clean
 br sweep after-agents   # merged worktrees and branches, agent leftovers
 br sweep tidy           # logs, OS junk, test caches, coverage output
+br sweep tidy ~/code    # every repository below ~/code
 br sweep --dry-run      # only show what it would do
 br sweep --yes          # no question (scripts)
-br scan -d stale-branch # findings no preset acts on, for your review
+br review               # decide one by one on dirty worktrees and unmerged branches
 br undo                 # show what the last session removed, ask, restore
+                        # (a sweep of a folder prints `br undo <id> --path <folder>`)
+br empty-trash          # permanently delete what brooom put in the OS trash
 br purge                # delete quarantined sessions past their retention
 ```
 
@@ -166,8 +169,9 @@ explicitly.
 ### Sweep presets
 
 `brooom sweep [preset]` scans with a fixed detector set, shows the plan, asks
-`Proceed? [y/N]` once and then cleans. Only an explicit yes acts; `--yes`
-skips the question and `--dry-run` stops after the plan. Afterwards it prints
+`Proceed? [y/N/e to choose]` once and then cleans. Only an explicit yes acts;
+`e` opens a checklist of every item (all ticked) to untick what should stay;
+`--yes` skips the question and `--dry-run` stops after the plan. Afterwards it prints
 what it removed and how much disk that reclaimed (`2 worktrees deleted, 5
 merged branches removed. 4.2 GB reclaimed`), `--verbose` prints the full
 summary, and `brooom undo` restores. Without a preset, `sweep.preset` in the
@@ -175,8 +179,12 @@ config decides, else `everything`.
 
 Sweep never removes unmerged or uncommitted work: dirty worktrees, branches
 that are not merged and other findings with blocking risk flags are listed as
-skipped, and sweep has no `--force`. Stale branches and large untracked files
-are in no preset; `brooom scan -d stale-branch` lists them. `.brooom.json` can
+skipped, and sweep has no `--force`. `brooom review` walks through exactly
+that work, one item at a time: it shows the changed and untracked files, the
+commits that exist on no remote and the last activity, and asks `[d]elete /
+[k]eep / [q]uit`; deletions are one session for `brooom undo`, and q discards
+every choice. Large untracked files are in no preset; `brooom scan -d
+large-untracked` lists them. `.brooom.json` can
 still tighten what a preset selects, and `--detector` narrows it. The
 definitions live in `internal/presets`; `brooom sweep --help` prints them.
 

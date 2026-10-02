@@ -13,6 +13,7 @@ import (
 
 	"github.com/Tobias-Braun/brooom/internal/action"
 	"github.com/Tobias-Braun/brooom/internal/buildinfo"
+	"github.com/Tobias-Braun/brooom/internal/cli/checklist"
 	"github.com/Tobias-Braun/brooom/internal/config"
 	"github.com/Tobias-Braun/brooom/internal/findings"
 	"github.com/Tobias-Braun/brooom/internal/gitx"
@@ -232,6 +233,7 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 		Quiet:      a.flags.quiet,
 		Brief:      in.brief,
 		Yes:        af.yes,
+		Select:     a.planSelector(),
 		Force:      af.force,
 		IO:         action.IO{In: a.io.In, Out: a.io.Out, Err: a.io.Err},
 		StdinIsTTY: a.canPrompt, // as in undo, so a test can stand in for a terminal
@@ -239,12 +241,43 @@ func (a *app) runExecutor(ctx context.Context, cmd *cobra.Command, in execInput,
 		Env:        buildActionEnv(in, af, resolver),
 		Progress:   a.reporter(),
 		Command:    a.commandLine(),
-		Workspaces: a.flags.workspaces,
 		UndoFlags:  a.scopeFlags(),
 		SessionID:  id,
 		RerunHint:  a.rerunHint(cmd),
 	})
 	return exec.Run(ctx, in.findings)
+}
+
+// planSelector returns the checklist behind the "e" answer of the question,
+// or nil when there is no terminal to show it on (then "e" is not offered).
+func (a *app) planSelector() func(*action.Plan) (bool, error) {
+	choose := a.choose
+	if choose == nil {
+		if _, ok := stdoutTTY(a.io.Out); !ok || !a.canPrompt() {
+			return nil
+		}
+		choose = checklist.Run
+	}
+	return func(p *action.Plan) (bool, error) {
+		var items []checklist.Item
+		for _, g := range p.Groups {
+			for _, it := range g.Items {
+				items = append(items, checklist.Item{Group: g.Header(), Label: it.Line(), Checked: it.Confirmed})
+			}
+		}
+		checked, ok, err := choose(a.io.In, a.io.Out, items)
+		if err != nil || !ok {
+			return false, err
+		}
+		i := 0
+		for gi := range p.Groups {
+			for ii := range p.Groups[gi].Items {
+				p.Groups[gi].Items[ii].Confirmed = checked[i]
+				i++
+			}
+		}
+		return true, nil
+	}
 }
 
 // buildActionEnv assembles the action environment: the same guard and

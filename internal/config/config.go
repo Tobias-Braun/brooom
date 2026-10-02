@@ -10,6 +10,8 @@
 // (fields ending in Bytes) so the JSON stays unambiguous across platforms.
 package config
 
+import "encoding/json"
+
 // CurrentVersion is the version of the config file format.
 const CurrentVersion = 1
 
@@ -17,8 +19,10 @@ const CurrentVersion = 1
 type Config struct {
 	// Version of the file format; files with a newer version are rejected.
 	Version int `json:"version"`
-	// Roots are the workspace roots scanned with --workspaces.
-	Roots []Root `json:"roots"`
+	// LegacyRoots holds the "roots" key of earlier releases (a registry of
+	// workspace roots for --workspaces). It is read so old config files keep
+	// loading, never used and never written; Deprecated names it.
+	LegacyRoots json.RawMessage `json:"roots,omitempty"`
 	// Thresholds are the global defaults for age and size filters.
 	Thresholds Thresholds `json:"thresholds"`
 	// Git holds settings shared by all git detectors and actions.
@@ -38,38 +42,18 @@ type Config struct {
 	// UpdateCheck enables `brooom update-check` to contact GitHub. Opt-in.
 	UpdateCheck bool `json:"update_check"`
 
-	// The fields below are never read from or written to a file; ForTarget
-	// fills them on the effective configuration.
+	// The fields below are never read from or written to a file.
 	//
 	// Exclude contract for detectors: skip every directory that matches one
-	// of RootExclude (patterns relative to RootPath) or one of RepoExclude
-	// (patterns relative to the target directory), using scope.Excluded. This
-	// package only validates and carries the patterns.
+	// of RepoExclude (patterns relative to the target directory), using
+	// scope.Excluded. This package only validates and carries the patterns.
 
-	// RootPath is the resolved path of the configured root selected by
-	// ForTarget, or "" when no configured root contains the target.
-	RootPath string `json:"-"`
-	// RootExclude holds the selected root's exclude globs, relative to
-	// RootPath.
-	RootExclude []string `json:"-"`
 	// RepoExclude holds the exclude globs of the target's .brooom.json,
-	// relative to the target directory.
+	// relative to the target directory. ForTarget fills it.
 	RepoExclude []string `json:"-"`
-}
-
-// Root is a configured workspace root.
-type Root struct {
-	// Path of the root; "~" is expanded. Stored as given, resolved on use.
-	Path string `json:"path"`
-	// Exclude lists glob patterns (relative to the root, forward slashes)
-	// of directories that discovery and detectors skip.
-	Exclude []string `json:"exclude,omitempty"`
-	// Thresholds override the global thresholds for this root. Nil fields
-	// inherit the global value.
-	Thresholds *ThresholdOverrides `json:"thresholds,omitempty"`
-	// Detectors enables or disables detectors for this root by name, e.g.
-	// {"build-artifacts": false}.
-	Detectors map[string]bool `json:"detectors,omitempty"`
+	// Deprecated lists the keys of earlier releases the file still sets,
+	// with what replaced them; Parse fills it and the CLI prints it once.
+	Deprecated []string `json:"-"`
 }
 
 // Thresholds are age and size filters shared by the file detectors.
@@ -99,8 +83,8 @@ func (t Thresholds) AgeFloor() int {
 	return 0
 }
 
-// ThresholdOverrides is Thresholds with optional fields, used for per-root
-// and per-repo overrides.
+// ThresholdOverrides is Thresholds with optional fields, used for the
+// per-repo overrides of .brooom.json.
 type ThresholdOverrides struct {
 	MinAgeDays   *int   `json:"min_age_days,omitempty"`
 	MinSizeBytes *int64 `json:"min_size_bytes,omitempty"`
@@ -207,9 +191,11 @@ type LargeUntracked struct {
 // AIArtifacts configures the ai-artifacts detector.
 type AIArtifacts struct {
 	Enabled bool `json:"enabled"`
-	// UserLocations enables scanning the user-level well-known locations
-	// from the catalog (e.g. ~/.cache/<tool>); off by default.
-	UserLocations bool `json:"user_locations"`
+	// LegacyUserLocations is the user_locations switch of earlier releases.
+	// The data of the scanned repositories below the home directory is always
+	// included now and other user-level locations never are, so the key is
+	// read (old files keep loading) but has no effect; Deprecated names it.
+	LegacyUserLocations *bool `json:"user_locations,omitempty"`
 	// Tools enables or disables catalog tools by id, e.g. {"cursor": false}.
 	// Tools not listed are enabled.
 	Tools map[string]bool `json:"tools,omitempty"`
@@ -224,10 +210,9 @@ type AIArtifacts struct {
 // Logs configures the log-and-runtime-files detector.
 type Logs struct {
 	Enabled bool `json:"enabled"`
-	// UserLocations enables scanning the user-level well-known locations
-	// from the catalog (pip, poetry, uv, npm and Go caches, npm _logs); off
-	// by default.
-	UserLocations bool `json:"user_locations"`
+	// LegacyUserLocations is the user_locations switch of earlier releases
+	// (global pip, npm, uv and Go caches); read, never used, see Deprecated.
+	LegacyUserLocations *bool `json:"user_locations,omitempty"`
 	// Categories enables or disables entry categories by id (e.g.
 	// {"os-junk": false}). Categories not listed are enabled.
 	Categories map[string]bool `json:"categories,omitempty"`

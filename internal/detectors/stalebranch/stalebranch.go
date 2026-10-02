@@ -120,11 +120,7 @@ func (d *Detector) Detect(ctx context.Context, env *detect.Env, target scope.Tar
 // newScan resolves configuration, repository, guarded main worktree path,
 // base branch and pull request state for one target.
 func (d *Detector) newScan(ctx context.Context, env *detect.Env, target scope.Target) (*scan, error) {
-	hint := ""
-	if target.Scope.Type == findings.ScopeRoot {
-		hint = target.Scope.Path
-	}
-	cfg, err := env.Config.ForTarget(hint, target.Path)
+	cfg, err := env.Config.ForTarget(target.Path)
 	if err != nil {
 		return nil, fmt.Errorf("stale-branch: config for %s: %w", target.Path, err)
 	}

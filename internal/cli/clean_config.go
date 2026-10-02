@@ -44,7 +44,7 @@ func (sc *cleanScope) checkConfig(f findings.Finding, resolved string) string {
 	if reason := disabledReason(cfg, f.Detector); reason != "" {
 		return reason
 	}
-	if excludedBelow(cfg.RepoExclude, target, resolved) || excludedBelow(cfg.RootExclude, cfg.RootPath, resolved) {
+	if excludedBelow(cfg.RepoExclude, target, resolved) {
 		return "path is excluded by the configuration (exclude)"
 	}
 	return ""
@@ -79,7 +79,7 @@ func (sc *cleanScope) targetConfig(target string) (*config.Config, error) {
 	if cfg, ok := sc.targetCfgs[target]; ok {
 		return cfg, nil
 	}
-	cfg, err := sc.cfg.ForTarget("", target)
+	cfg, err := sc.cfg.ForTarget(target)
 	if err != nil {
 		return nil, err
 	}

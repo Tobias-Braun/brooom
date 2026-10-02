@@ -29,17 +29,18 @@ skips the question.
 Nothing is ever overwritten: an entry whose original location exists again is
 reported as a conflict and stays as it was. Entries are only restored inside
 the current scope, because manifests are files that can be edited. The scope
-is the repository you are in; for a session that was applied with --workspaces
-it is the configured roots (--root narrows them). Entries outside the scope
-are reported as skipped, not as lost: run undo from the repository they belong
-to or with --workspaces.
+is the repository you are in, or the folder --path names (the undo command
+printed after a sweep of a folder carries it). Entries outside the scope are
+reported as skipped, not as lost: run undo from the repository they belong to
+or with --path.
 
 Exit status: 0 when every restorable entry was restored, 1 when one conflicted
 or failed, 2 when confirmation is needed but stdin is not a terminal (pass
 --yes).`,
 		Example: `  brooom undo
   brooom undo 20260929-224501-3f9a
-  brooom undo --dry-run`,
+  brooom undo --dry-run
+  brooom undo --path ~/code`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runUndo(cmd, args, af)
@@ -47,6 +48,7 @@ or failed, 2 when confirmation is needed but stdin is not a terminal (pass
 	}
 	addApplyFlags(cmd, &af)
 	addForceFlag(cmd, &af)
+	addPathFlag(cmd, a)
 	return cmd
 }
 
@@ -77,12 +79,12 @@ func (a *app) runUndo(cmd *cobra.Command, args []string, af applyFlags) error {
 	if err != nil {
 		return err
 	}
-	a.adoptSessionScope(m)
+	a.noteWorkspaceSession(m)
 	req, err := a.newScanRequest(scanOptions{})
 	if err != nil {
 		return err
 	}
-	env, err := a.undoEnv(ctx, req, m, af, newTrasherResolver(req.cfg, strategy, dirs, m.ID, a.io.Err))
+	env, err := a.undoEnv(ctx, req, af, newTrasherResolver(req.cfg, strategy, dirs, m.ID, a.io.Err))
 	if err != nil {
 		return err
 	}
@@ -98,15 +100,14 @@ func (a *app) runUndo(cmd *cobra.Command, args []string, af applyFlags) error {
 	return mapUndoError(res, err, af.apply())
 }
 
-// adoptSessionScope makes undo of a session recorded with --workspaces resolve
-// the workspace scope without the flag, so the printed `brooom undo <id>` works
-// from any directory. Only the fact is taken from the manifest: the guard is
-// still built from the configured roots (all of them, since a recorded --root
-// may have been removed since), never from paths the manifest names, and every
-// entry is checked against it. An explicit --root on this invocation is kept.
-func (a *app) adoptSessionScope(m *session.Manifest) {
-	if m.Workspaces {
-		a.flags.workspaces = true
+// noteWorkspaceSession explains why entries of a session recorded with the
+// removed --workspaces flag are reported outside the scope: the scope is the
+// repository undo runs in unless --path names the folder that run covered.
+// The manifest never widens the scope itself, because manifests are files that
+// can be edited.
+func (a *app) noteWorkspaceSession(m *session.Manifest) {
+	if m.Workspaces && a.flags.path == "" && !a.flags.quiet {
+		fmt.Fprintln(a.io.Err, "note: this session covered several repositories; pass --path <folder> to restore entries outside the current repository")
 	}
 }
 
@@ -156,27 +157,17 @@ func knownSessions(store *session.Store) string {
 }
 
 // undoEnv builds the action environment for undo. The guard is the scope of
-// the invocation (the repository around the working directory, or the
-// workspace roots), the same resolution scan uses, including its usage error
-// outside a repository. When entries fall outside it, the user-level
-// locations of the detectors are allowed too, so sessions of `brooom ai
-// --user` can be undone from any repository.
-func (a *app) undoEnv(ctx context.Context, req *scanRequest, m *session.Manifest, af applyFlags, r *trasherResolver) (*action.Env, error) {
+// the invocation (the repository around the working directory, or --path),
+// the same resolution scan uses, including its usage error
+// outside a repository. The user-level locations of its repositories (their
+// agent data below the home directory) are allowed too, as in a scan.
+func (a *app) undoEnv(ctx context.Context, req *scanRequest, af applyFlags, r *trasherResolver) (*action.Env, error) {
 	runner, _ := newGitRunner()
 	ts, err := a.buildTargets(ctx, req, runner)
 	if err != nil {
 		return nil, err
 	}
-	env, err := a.envForAllowed(req.cfg, runner, ts, af, r)
-	if err != nil {
-		return nil, err
-	}
-	if !anyOutsideScope(action.PlanUndo(m, env)) {
-		return env, nil
-	}
-	withUser := *req.cfg
-	withUser.Detectors.AIArtifacts.UserLocations = true
-	ts.addExtraTargets(ctx, &withUser, detect.All())
+	ts.addExtraTargets(ctx, req.cfg, detect.All())
 	return a.envForAllowed(req.cfg, runner, ts, af, r)
 }
 
@@ -186,13 +177,4 @@ func (a *app) envForAllowed(cfg *config.Config, runner gitx.Runner, ts *targetSe
 		return nil, fmt.Errorf("build scope: %w", err)
 	}
 	return newActionEnv(cfg, runner, guard, af, r), nil
-}
-
-func anyOutsideScope(steps []action.UndoStep) bool {
-	for _, s := range steps {
-		if s.OutsideScope {
-			return true
-		}
-	}
-	return false
 }

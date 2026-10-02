@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,19 +16,20 @@ import (
 func newSweepCmd(a *app) *cobra.Command {
 	var af applyFlags
 	cmd := &cobra.Command{
-		Use:   "sweep [preset]",
+		Use:   "sweep [preset] [path]",
 		Short: "Scan, show what to clean, ask once, then clean",
 		Example: `  brooom sweep
   brooom sweep after-agents
-  brooom sweep tidy --dry-run
+  brooom sweep tidy ~/code --dry-run
   brooom sweep everything --yes`,
 		Long: sweepLong(),
-		Args: cobra.MaximumNArgs(1),
+		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := ""
-			if len(args) == 1 {
-				name = args[0]
+			name, path, err := splitSweepArgs(args)
+			if err != nil {
+				return err
 			}
+			a.flags.path = path
 			p, err := a.resolvePreset(name)
 			if err != nil {
 				return err
@@ -52,9 +54,14 @@ func newSweepCmd(a *app) *cobra.Command {
 // presets and their detectors cannot drift from what sweep does.
 func sweepLong() string {
 	var b strings.Builder
-	b.WriteString(`Scan the repository, show what would be cleaned, ask once and then clean.
-Answer y to clean everything listed; anything else changes nothing. --yes
-skips the question (for scripts), --dry-run only shows the plan.
+	b.WriteString(`Scan the repository (or the repository or folder the path names; below a
+folder every repository and project is swept), show what would be cleaned, ask
+once and then clean.
+Answer y to clean everything listed; anything else changes nothing. On a
+terminal, e opens a list of every item to untick what should stay (space
+toggles, a toggles a group, enter cleans the checked items, q changes
+nothing). --yes skips the question (for scripts), --dry-run only shows the
+plan.
 
 Presets:
 `)
@@ -75,6 +82,33 @@ use 'brooom scan -d stale-branch' or '-d large-untracked' to list them.
 
 Removed files go to the trash and everything is recorded for 'brooom undo'.`, config.DefaultPreset)
 	return b.String()
+}
+
+// splitSweepArgs reads `[preset] [path]`. With two arguments the first is the
+// preset. A single argument is a preset when it names one (legacy names
+// included) and a path otherwise, so `brooom sweep ~/code` works; `./tidy`
+// sweeps a folder named tidy.
+func splitSweepArgs(args []string) (preset, path string, err error) {
+	switch len(args) {
+	case 0:
+		return "", "", nil
+	case 2:
+		if _, _, err := presets.Resolve(args[0]); err != nil {
+			return "", "", usageError{err}
+		}
+		return args[0], args[1], nil
+	}
+	if _, _, err := presets.Resolve(args[0]); err == nil {
+		return args[0], "", nil
+	}
+	if looksLikePath(args[0]) {
+		return "", args[0], nil
+	}
+	if fi, err := os.Stat(args[0]); err == nil && fi.IsDir() {
+		return "", args[0], nil
+	}
+	_, _, err = presets.Resolve(args[0])
+	return "", "", usageError{err}
 }
 
 // resolvePreset picks the preset: the positional argument, else sweep.preset

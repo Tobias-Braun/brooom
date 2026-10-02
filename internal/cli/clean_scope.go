@@ -11,31 +11,30 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/scope"
 )
 
-// cleanTargetSources lists the detectors asked for user-level locations when
-// `clean --user` is given. It is a variable only so tests can inject fake
+// cleanTargetSources lists the detectors asked for the user-level locations
+// of the scanned repositories. It is a variable only so tests can inject fake
 // detect.TargetSource implementations without touching the real home.
 var cleanTargetSources = detect.All
 
 // cleanScope is the scope of one `clean --from` invocation. It is built from
-// the current working directory or the configured roots, exactly like a scan,
-// and never from the findings file.
+// the current working directory or --path, exactly like a scan, and never
+// from the findings file.
 //
 // Three guards exist on purpose. project allows only the repository (or the
-// selected roots); it decides the fate of every finding that claims a
-// repository or root scope. user allows only the user-level tool locations
-// and is used for findings claiming the user scope, so a finding cannot pick
-// the more permissive location by lying about its scope. guard is the union
-// and is what the actions get.
+// walked folder); it decides the fate of every finding that claims a
+// repository or root scope. user allows only the user-level locations of
+// those repositories (their agent data below the home directory) and is used
+// for findings claiming the user scope, so a finding cannot pick the more
+// permissive location by lying about its scope. guard is the union and is
+// what the actions get.
 type cleanScope struct {
 	cfg     *config.Config
 	git     gitx.Runner
 	gitErr  error
 	guard   *scope.Guard
 	project *scope.Guard
-	// user is nil unless --user was given and a user location exists.
+	// user is nil when the repositories have no user-level location.
 	user *scope.Guard
-	// userEnabled records --user, also when no user location exists.
-	userEnabled bool
 	// repos are the repository directories of this scope: git findings must
 	// refer to one of them.
 	repos []string
@@ -46,24 +45,21 @@ type cleanScope struct {
 }
 
 // newCleanScope resolves the scope like the scan command: the repository
-// around the working directory, or with --workspaces the configured roots
-// narrowed by --root. Outside a repository without --workspaces it fails
-// with scope.ErrNotInRepo and the same explanation the scan gives.
-func (a *app) newCleanScope(ctx context.Context, cfg *config.Config, user bool) (*cleanScope, error) {
-	if user {
-		cfg.Detectors.AIArtifacts.UserLocations = true
-	}
+// around the working directory, or what --path names. Outside a repository
+// without --path it fails with scope.ErrNotInRepo and the same explanation
+// the scan gives.
+func (a *app) newCleanScope(ctx context.Context, cfg *config.Config) (*cleanScope, error) {
 	runner, gitErr := newGitRunner()
 	ts, err := a.buildTargets(ctx, &scanRequest{cfg: cfg}, runner)
 	if err != nil {
 		return nil, err
 	}
-	sc := &cleanScope{cfg: cfg, git: runner, gitErr: gitErr, userEnabled: user}
+	sc := &cleanScope{cfg: cfg, git: runner, gitErr: gitErr}
 	if sc.project, err = ts.newGuard(); err != nil {
 		return nil, fmt.Errorf("build scope: %w", err)
 	}
-	sc.repos = repoDirs(ts, a.flags.workspaces)
-	userAllowed := sc.userLocations(ctx, cfg)
+	sc.repos = repoDirs(ts)
+	userAllowed := userLocations(ctx, cfg, sc.repos)
 	if err := sc.buildGuards(ts, userAllowed); err != nil {
 		return nil, err
 	}
@@ -71,15 +67,15 @@ func (a *app) newCleanScope(ctx context.Context, cfg *config.Config, user bool) 
 	return sc, nil
 }
 
-// userLocations asks the target-source detectors for their user locations,
-// only with --user. Missing locations are dropped and other problems are
-// ignored: a location that cannot be allowed simply stays out of the guard,
-// which makes findings there refused.
-func (sc *cleanScope) userLocations(ctx context.Context, cfg *config.Config) []string {
-	if !sc.userEnabled {
-		return nil
-	}
+// userLocations asks the target-source detectors for the user-level
+// locations of the repositories. Missing locations are dropped and other
+// problems are ignored: a location that cannot be allowed simply stays out of
+// the guard, which makes findings there refused.
+func userLocations(ctx context.Context, cfg *config.Config, repos []string) []string {
 	us := &targetSet{}
+	for _, r := range repos {
+		us.targets = append(us.targets, repoTarget(r))
+	}
 	us.addExtraTargets(ctx, cfg, cleanTargetSources())
 	return us.allowed
 }
@@ -101,10 +97,11 @@ func (sc *cleanScope) buildGuards(ts *targetSet, user []string) error {
 
 // repoDirs returns the repositories of the scope. In repository mode every
 // allowed location is one (the repository and, for a linked worktree, its
-// main worktree as a metadata location); with --workspaces the discovered repository targets are.
-func repoDirs(ts *targetSet, workspaces bool) []string {
+// main worktree); below a walked folder the discovered repository targets
+// are.
+func repoDirs(ts *targetSet) []string {
 	var out []string
-	if !workspaces {
+	if !ts.discovered {
 		out = append(out, ts.allowed...)
 		out = append(out, ts.repoMeta...)
 	}

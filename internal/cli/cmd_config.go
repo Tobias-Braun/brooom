@@ -205,7 +205,7 @@ func (a *app) runConfigValidate() error {
 	} else if cfg, err = config.Load(path); err != nil {
 		return a.reportProblems(path, err)
 	}
-	a.warnMissingRoots(cfg)
+	a.noteDeprecatedConfig(cfg)
 	note, err := a.validateRepoConfig(cfg)
 	if err != nil {
 		return err
@@ -214,18 +214,17 @@ func (a *app) runConfigValidate() error {
 	return err
 }
 
-// warnMissingRoots prints a warning for every configured root that does not
-// exist. It stays a warning because a root on an unmounted volume or a
-// not yet cloned workspace is legitimate; --workspaces reports and skips it.
-func (a *app) warnMissingRoots(cfg *config.Config) {
-	for i, r := range cfg.Roots {
-		p, err := config.ExpandPath(r.Path)
-		if err != nil {
-			continue
-		}
-		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
-			fmt.Fprintf(a.io.Err, "warning: roots[%d].path: %s does not exist (--workspaces will skip it)\n", i, output.Sanitize(p))
-		}
+// noteDeprecatedConfig prints one note per key of an earlier release that
+// the config file still sets (config.Config.Deprecated), once per run and not
+// with --quiet. Such keys load but have no effect, so the note is the only
+// way to learn that the setting is gone.
+func (a *app) noteDeprecatedConfig(cfg *config.Config) {
+	if a.deprecationNoted || a.flags.quiet {
+		return
+	}
+	a.deprecationNoted = true
+	for _, d := range cfg.Deprecated {
+		fmt.Fprintf(a.io.Err, "note: config: %s\n", output.Sanitize(d))
 	}
 }
 
@@ -240,7 +239,7 @@ func (a *app) validateRepoConfig(cfg *config.Config) (string, error) {
 	if !ok {
 		return "", nil
 	}
-	if _, err := cfg.ForTarget("", root); err != nil {
+	if _, err := cfg.ForTarget(root); err != nil {
 		return "", listError{fmt.Sprintf("repository config %s is invalid: %s\nnote: this depends on the current directory; brooom checked the repository at %s",
 			output.Sanitize(file), output.Sanitize(err.Error()), output.Sanitize(root))}
 	}

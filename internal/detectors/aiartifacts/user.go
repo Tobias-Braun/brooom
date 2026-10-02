@@ -18,13 +18,14 @@ import (
 const userWalkDepth = 8
 
 // ExtraTargets implements detect.TargetSource. It declares one user target
-// per existing ai location, and only when the configuration enables user
-// locations (from the config file, or overridden for the run by
-// `brooom ai --user`). The pipeline allows exactly the returned base paths in
-// the guard, never a parent such as the home directory or ~/.claude, which is
-// why a sibling like ~/.claude/settings.json stays refused.
-func (d *Detector) ExtraTargets(_ context.Context, cfg *config.Config) ([]scope.Target, error) {
-	if !cfg.Detectors.AIArtifacts.UserLocations {
+// per existing repository-keyed ai location of the scanned repositories (for
+// Claude Code: ~/.claude/projects/<encoded repository> and the directories of
+// its worktrees). The pipeline allows exactly the returned base paths in the
+// guard, never a parent such as ~/.claude/projects, which holds the data of
+// every other repository, or ~/.claude, whose settings.json stays refused.
+// User-level locations that belong to no repository are not scanned.
+func (d *Detector) ExtraTargets(_ context.Context, cfg *config.Config, repos []string) ([]scope.Target, error) {
+	if len(repos) == 0 {
 		return nil, nil
 	}
 	cat, err := loadCatalog(cfg)
@@ -33,7 +34,7 @@ func (d *Detector) ExtraTargets(_ context.Context, cfg *config.Config) ([]scope.
 	}
 	var out []scope.Target
 	seen := map[string]bool{}
-	for _, loc := range cat.UserLocations(d.pathEnv(), catalog.CategoryAI) {
+	for _, loc := range cat.RepoLocations(d.pathEnv(), repos, catalog.CategoryAI) {
 		key := loc.ToolID + "\x00" + loc.Base
 		if seen[key] {
 			continue
@@ -64,8 +65,8 @@ func (r *run) userCandidates(ctx context.Context) ([]candidate, error) {
 	env := r.d.pathEnv()
 	r.protected = r.cat.UserProtection(env).Protected
 	var out []candidate
-	for _, loc := range r.cat.UserLocations(env, catalog.CategoryAI) {
-		if loc.ToolID != r.target.Tool || !sameDir(loc.Base, r.target.Path) {
+	for _, loc := range r.cat.RepoLocationsAt(env, r.target.Path, catalog.CategoryAI) {
+		if loc.ToolID != r.target.Tool {
 			continue
 		}
 		found, err := r.enumerate(ctx, loc)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -49,11 +48,8 @@ type candidate struct {
 	pattern  string
 }
 
-// candidates collects the matches for the target kind.
+// candidates collects the matches of the target.
 func (r *run) candidates(ctx context.Context) ([]candidate, error) {
-	if r.target.Kind == scope.TargetUser {
-		return r.userCandidates(ctx)
-	}
 	return r.projectCandidates(ctx)
 }
 
@@ -156,15 +152,9 @@ func matchedPattern(e catalog.Entry, rel string, fold bool) string {
 	return e.Patterns[0]
 }
 
-// excluded applies the two exclude lists of the effective configuration: the
-// selected root's (relative to the root) and the repository's (relative to
-// the target).
+// excluded applies the exclude list of the repository's .brooom.json
+// (relative to the target).
 func (r *run) excluded(e walk.Entry) bool {
-	if r.cfg.RootPath != "" && len(r.cfg.RootExclude) > 0 {
-		if rel, err := filepath.Rel(r.cfg.RootPath, e.Path); err == nil && scope.Excluded(r.cfg.RootExclude, filepath.ToSlash(rel)) {
-			return true
-		}
-	}
 	return scope.Excluded(r.cfg.RepoExclude, e.Rel)
 }
 
@@ -186,20 +176,4 @@ func (r *run) toolName(id string) string {
 		return n
 	}
 	return id
-}
-
-// sameDir compares two directory paths, resolving symlinks and honouring the
-// case folding of the OS.
-func sameDir(a, b string) bool {
-	norm := func(p string) string {
-		if resolved, err := filepath.EvalSymlinks(p); err == nil {
-			p = resolved
-		}
-		p = filepath.Clean(p)
-		if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-			p = strings.ToLower(p)
-		}
-		return p
-	}
-	return norm(a) == norm(b)
 }

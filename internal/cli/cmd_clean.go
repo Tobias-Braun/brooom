@@ -22,9 +22,6 @@ const stdinSource = "-"
 type cleanOptions struct {
 	from string
 	ids  []string
-	// user enables the user-level tool locations (`brooom ai --user`). It is
-	// never inferred from the file: a findings file cannot widen the scope.
-	user bool
 	// detectors are the validated --detector names; empty selects all.
 	detectors []string
 }
@@ -44,9 +41,10 @@ func newCleanCmd(a *app) *cobra.Command {
 what gets cleaned. Every finding is re-validated before anything is done.
 
 The file is untrusted input. The scope comes from this invocation (the current
-repository, or the configured roots with --workspaces), never from the file:
+repository, or the folder --path names), never from the file:
 findings outside it are refused and make the command exit with 1. User-level
-locations are only accepted with --user. The action in the file only selects
+locations are only accepted where they belong to a repository of the scope
+(for example its Claude Code transcripts). The action in the file only selects
 which action to run; risk flags, sizes and ages in the file are never trusted,
 and each finding is checked again against the live state before it is applied.
 
@@ -76,9 +74,9 @@ Windows PowerShell 5.1, which writes UTF-16.`,
 	}
 	cmd.Flags().StringVar(&opts.from, "from", "", "findings file ('-' for stdin)")
 	cmd.Flags().StringSliceVar(&opts.ids, "id", nil, "only act on these finding IDs (repeatable, comma-separated)")
-	cmd.Flags().BoolVar(&opts.user, "user", false, "also accept findings in user-level tool locations")
 	addApplyFlags(cmd, &af)
 	addForceFlag(cmd, &af)
+	addPathFlag(cmd, a)
 	return cmd
 }
 
@@ -117,9 +115,6 @@ func (a *app) runClean(cmd *cobra.Command, opts cleanOptions, af applyFlags) err
 // checkCleanUsage validates the flags before the file is read (usage errors,
 // exit 2). --detector is checked against the registry exactly like scan does.
 func (a *app) checkCleanUsage(opts cleanOptions, af applyFlags) (cleanOptions, config.TrashStrategy, error) {
-	if len(a.flags.roots) > 0 && !a.flags.workspaces {
-		return opts, "", usageError{fmt.Errorf("--root only narrows --workspaces; add --workspaces or drop --root")}
-	}
 	if opts.from == "" {
 		return opts, "", usageError{fmt.Errorf("--from is required: give a findings file, or '-' for stdin")}
 	}
@@ -147,7 +142,7 @@ func (a *app) prepareClean(ctx context.Context, opts cleanOptions) (*cleanScope,
 	if err != nil {
 		return nil, verdict{}, err
 	}
-	sc, err := a.newCleanScope(ctx, cfg, opts.user)
+	sc, err := a.newCleanScope(ctx, cfg)
 	if err != nil {
 		return nil, verdict{}, err
 	}

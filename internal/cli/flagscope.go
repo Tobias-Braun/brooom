@@ -14,7 +14,7 @@ import (
 // --root and -d mean anything and all of them read --format. `undo` builds a
 // scope too but has no detectors and no report, see scopeOnlyCommands.
 var scopeCommands = map[string]bool{
-	"brooom": true, "brooom scan": true, "brooom sweep": true,
+	"brooom": true, "brooom scan": true, "brooom sweep": true, "brooom review": true,
 	"brooom clean": true, "brooom git purge": true,
 }
 
@@ -93,11 +93,11 @@ func rejectIgnoredScanFlags(cmd *cobra.Command) error {
 // Empty input must never fall back to "everything": a script with
 // `--id "$SELECTED" --yes` and an unset variable would otherwise act
 // on all findings.
-var listSelectorFlags = []string{"id", "root", "detector"}
+var listSelectorFlags = []string{"id", "detector", "path"}
 
 // rejectEmptySelectors returns a usage error when a selector flag was given
-// but names nothing (`--id ""`, `--root ","`) or contains an empty element
-// (`a,,b`). pflag splits values at commas, so `--id ""` arrives as an empty
+// but names nothing (`--id ""`, `--detector ","`, `--path ""`) or contains an empty element
+// (`a,,b`), or a single-valued selector is blank. pflag splits values at commas, so `--id ""` arrives as an empty
 // slice that is only distinguishable from an omitted flag by Changed.
 func rejectEmptySelectors(cmd *cobra.Command) error {
 	for _, name := range listSelectorFlags {
@@ -107,6 +107,11 @@ func rejectEmptySelectors(cmd *cobra.Command) error {
 		}
 		sv, ok := f.Value.(pflag.SliceValue)
 		if !ok {
+			// A single-valued selector (--path): blank means "not given",
+			// which would silently fall back to the working directory.
+			if strings.TrimSpace(f.Value.String()) == "" {
+				return usageError{fmt.Errorf("--%s needs a non-empty value", name)}
+			}
 			continue
 		}
 		values := sv.GetSlice()

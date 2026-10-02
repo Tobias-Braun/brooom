@@ -43,10 +43,15 @@ func (a *app) scanHint(cmd *cobra.Command, res *scanResult) string {
 		return "nothing was changed; no sweep preset acts on these findings (see `brooom help sweep`)"
 	}
 	parts := []string{"brooom", "sweep"}
-	if p.Name != configured.Name {
+	if p.Name != configured.Name || a.flags.path != "" {
+		// A lone path would be read as a preset if it were spelled like one,
+		// so the preset is spelled out whenever a path follows.
 		parts = append(parts, p.Name)
 	}
-	parts = append(parts, a.scopeFlags()...)
+	if a.flags.path != "" {
+		parts = append(parts, a.quote(a.flags.path))
+	}
+	parts = append(parts, a.configFlag()...)
 	parts = append(parts, a.presetDetectorFlag(p)...)
 	hint := "nothing was changed; run `" + strings.Join(parts, " ") + "` to review and clean these"
 	if covered < len(reported) {
@@ -72,21 +77,24 @@ func fromStdin(cmd *cobra.Command) bool {
 	return f != nil && f.Value.String() == stdinSource
 }
 
-// scopeFlags are the flags that decide where the invocation scans and which
-// config it uses; a follow-up command has to repeat them to see the same
+// scopeFlags are the flags that decide where the invocation worked and which
+// config it used, spelled for the commands that take the scope as --path
+// (undo, clean); a follow-up command has to repeat them to see the same
 // findings.
 func (a *app) scopeFlags() []string {
-	var out []string
-	if a.flags.configPath != "" {
-		out = append(out, "--config", a.quote(a.flags.configPath))
-	}
-	if a.flags.workspaces {
-		out = append(out, "--workspaces")
-	}
-	for _, r := range a.flags.roots {
-		out = append(out, "--root", a.quote(r))
+	out := a.configFlag()
+	if a.flags.path != "" {
+		out = append(out, "--path", a.quote(a.flags.path))
 	}
 	return out
+}
+
+// configFlag repeats --config when the invocation named a config file.
+func (a *app) configFlag() []string {
+	if a.flags.configPath == "" {
+		return nil
+	}
+	return []string{"--config", a.quote(a.flags.configPath)}
 }
 
 // presetDetectorFlag renders the --detector names of this invocation that the

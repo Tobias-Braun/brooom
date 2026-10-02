@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -85,12 +84,9 @@ func TestEveryHumanOutputSanitized(t *testing.T) {
 		t.Skip("control characters are not valid in Windows file names")
 	}
 
-	t.Run("roots and config", func(t *testing.T) {
-		cfg, work, _ := rootsEnv(t)
-		hostileRoot := filepath.Join(work, hostile)
-		body, _ := json.Marshal(map[string]any{"version": 1, "roots": []map[string]string{{"path": hostileRoot}}})
-		writeFile(t, cfg, string(body))
-		for _, args := range [][]string{{"roots", "list"}, {"roots", "list", "-f", "plain"}, {"config", "path"}, {"config", "show", "-f", "table"}} {
+	t.Run("config and path", func(t *testing.T) {
+		cfg, work, _ := configEnv(t)
+		for _, args := range [][]string{{"config", "path"}, {"config", "show", "-f", "table"}} {
 			code, out, errOut := run(t, args...)
 			if code != ExitOK {
 				t.Fatalf("%v: code %d, stderr %q", args, code, errOut)
@@ -98,22 +94,12 @@ func TestEveryHumanOutputSanitized(t *testing.T) {
 			requireSanitized(t, strings.Join(args, " "), out+errOut)
 		}
 
-		// Adding, re-adding and removing echo the path back.
-		dir := mkdir(t, work, hostile+"2")
-		for _, args := range [][]string{{"roots", "add", dir}, {"roots", "add", dir}, {"roots", "remove", dir}, {"roots", "remove", "no" + hostile}} {
-			_, out, errOut := run(t, args...)
-			requireSanitized(t, strings.Join(args, " "), out+errOut)
-		}
-
-		// The home warning names the directory.
-		homeDir := mkdir(t, work, "home"+hostile)
-		t.Setenv("HOME", homeDir)
-		t.Setenv("USERPROFILE", homeDir)
-		_, out, errOut := run(t, "roots", "add", homeDir)
-		requireSanitized(t, "roots add home", out+errOut)
+		// A path argument that does not exist is echoed back in the error.
+		_, pathOut, pathErr := run(t, "scan", filepath.Join(work, hostile))
+		requireSanitized(t, "scan hostile path", pathOut+pathErr)
 
 		// Validation problems name the config path, the field and the message.
-		writeFile(t, cfg, `{"version":1,"trash":{"strategy":"sh`+`\u001b[31m\nFORGED"},"roots":[{"path":"rel\u001b\nFORGED"}]}`)
+		writeFile(t, cfg, `{"version":1,"trash":{"strategy":"sh`+`\u001b[31m\nFORGED"},"output":{"format":"x\u001b\nFORGED"}}`)
 		code, out, errOut := run(t, "config", "validate")
 		if code == ExitOK {
 			t.Fatal("want validation problems")

@@ -115,7 +115,7 @@ func TestUserLocationsPerOS(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// ~/Library/... is a darwin-only location; the fixture's
 			// "library path on any OS" entry proves it is skipped elsewhere.
-			locs := userCatalog(t, tt.goos).UserLocations(m.env(tt.goos, tt.withXDG))
+			locs := userCatalog(t, tt.goos).userLocations(m.env(tt.goos, tt.withXDG))
 			want := append([]string(nil), tt.want...)
 			if tt.goos != "darwin" {
 				want = removeItem(want, "tool:home/Library/Caches/lib-only")
@@ -142,7 +142,7 @@ func TestUserLocationBaseAndRel(t *testing.T) {
 	m := newUserMachine(t)
 	byTool := func(goos, pattern string) UserLocation {
 		t.Helper()
-		for _, l := range userCatalog(t, goos).UserLocations(m.env(goos, true)) {
+		for _, l := range userCatalog(t, goos).userLocations(m.env(goos, true)) {
 			if strings.HasSuffix(filepath.ToSlash(l.Pattern), pattern) {
 				return l
 			}
@@ -167,7 +167,7 @@ func TestUserLocationBaseAndRel(t *testing.T) {
 func TestUserLocationMatch(t *testing.T) {
 	m := newUserMachine(t)
 	locOf := func(goos, suffix string) UserLocation {
-		for _, l := range userCatalog(t, goos).UserLocations(m.env(goos, true)) {
+		for _, l := range userCatalog(t, goos).userLocations(m.env(goos, true)) {
 			if strings.HasSuffix(filepath.ToSlash(l.Pattern), suffix) {
 				return l
 			}
@@ -230,14 +230,14 @@ func TestUserLocationsSkipsMissingAndUnreadable(t *testing.T) {
 	home := t.TempDir()
 	c := userCatalog(t, "linux")
 	env := PathEnv{GOOS: "linux", Home: home, Getenv: func(string) string { return "" }}
-	if got := c.UserLocations(env); len(got) != 0 {
+	if got := c.userLocations(env); len(got) != 0 {
 		t.Fatalf("nothing exists yet, got %v", got)
 	}
 	dir := filepath.Join(home, ".other", "cache")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.UserLocations(env); len(got) != 1 || got[0].ToolID != "other" {
+	if got := c.userLocations(env); len(got) != 1 || got[0].ToolID != "other" {
 		t.Fatalf("got %+v", got)
 	}
 	if err := os.Chmod(dir, 0); err != nil {
@@ -248,17 +248,17 @@ func TestUserLocationsSkipsMissingAndUnreadable(t *testing.T) {
 		_ = f.Close()
 		t.Skip("directory permissions are not enforced here (running as root or on Windows)")
 	}
-	if got := c.UserLocations(env); len(got) != 0 {
+	if got := c.userLocations(env); len(got) != 0 {
 		t.Fatalf("unreadable location must be skipped, got %+v", got)
 	}
 }
 
 func TestUserLocationsNoHomeAndNilGetenv(t *testing.T) {
 	c := userCatalog(t, "linux")
-	if got := c.UserLocations(PathEnv{GOOS: "linux"}); len(got) != 0 {
+	if got := c.userLocations(PathEnv{GOOS: "linux"}); len(got) != 0 {
 		t.Fatalf("no home: got %v", got)
 	}
-	if got := c.UserLocations(PathEnv{GOOS: "windows", Home: t.TempDir()}); len(got) != 0 {
+	if got := c.userLocations(PathEnv{GOOS: "windows", Home: t.TempDir()}); len(got) != 0 {
 		t.Fatalf("undefined windows variables must be skipped silently: %v", got)
 	}
 }
@@ -271,7 +271,7 @@ func TestUserLocationsRelativeXDGFallsBack(t *testing.T) {
 		}
 		return ""
 	}}
-	got := bases(t, userCatalog(t, "linux").UserLocations(env, CategoryLogs), filepath.Dir(m.home))
+	got := bases(t, userCatalog(t, "linux").userLocations(env, CategoryLogs), filepath.Dir(m.home))
 	if !containsStr(got, "tool:home/.cache/tool/logs") {
 		t.Fatalf("relative XDG value must fall back to ~/.cache: %v", got)
 	}
@@ -289,7 +289,7 @@ func containsStr(list []string, s string) bool {
 func TestUserLocationsCategoryFilter(t *testing.T) {
 	m := newUserMachine(t)
 	c := userCatalog(t, "linux")
-	got := bases(t, c.UserLocations(m.env("linux", true), CategoryCache), filepath.Dir(m.home))
+	got := bases(t, c.userLocations(m.env("linux", true), CategoryCache), filepath.Dir(m.home))
 	if len(got) != 1 || got[0] != "other:home/.other/cache" {
 		t.Fatalf("got %v", got)
 	}
@@ -355,7 +355,7 @@ func TestSeedDataUserProtection(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := PathEnv{GOOS: "linux", Home: home, Getenv: func(string) string { return "" }}
-	locs := c.UserLocations(env, CategoryAI)
+	locs := c.userLocations(env, CategoryAI)
 	if len(locs) != 1 || locs[0].Base != filepath.Join(home, ".claude", "todos") {
 		t.Fatalf("locs = %+v", locs)
 	}

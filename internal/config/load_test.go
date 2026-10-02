@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -18,16 +17,6 @@ func writeTemp(t *testing.T, name, content string) string {
 		t.Fatal(err)
 	}
 	return p
-}
-
-// jsonStr returns s as a JSON string literal (portable for Windows paths).
-func jsonStr(t *testing.T, s string) string {
-	t.Helper()
-	b, err := json.Marshal(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
 }
 
 func TestLoadMissingFileReturnsDefaults(t *testing.T) {
@@ -49,7 +38,6 @@ func TestLoadDirectoryIsError(t *testing.T) {
 }
 
 func TestLoadAccepts(t *testing.T) {
-	root := t.TempDir()
 	tests := []struct {
 		name, content string
 		check         func(*testing.T, *Config)
@@ -71,12 +59,16 @@ func TestLoadAccepts(t *testing.T) {
 				t.Error("version must default to current")
 			}
 		}},
-		{"root kept as written", `{"roots":[{"path":"~/dev"}]}`, func(t *testing.T, c *Config) {
-			if c.Roots[0].Path != "~/dev" {
-				t.Errorf("root rewritten to %q", c.Roots[0].Path)
+		{"legacy roots load with a note", `{"roots":[{"path":"~/dev","exclude":["x"],"thresholds":{"min_age_days":3}}]}`, func(t *testing.T, c *Config) {
+			if len(c.Deprecated) != 1 || !strings.Contains(c.Deprecated[0], "roots") || c.LegacyRoots != nil {
+				t.Errorf("deprecated %q, legacy %s", c.Deprecated, c.LegacyRoots)
 			}
 		}},
-		{"absolute root", `{"roots":[{"path":` + jsonStr(t, root) + `}]}`, nil},
+		{"no note without legacy keys", `{"version":1}`, func(t *testing.T, c *Config) {
+			if len(c.Deprecated) != 0 {
+				t.Errorf("deprecated %q", c.Deprecated)
+			}
+		}},
 	}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("USERPROFILE", os.Getenv("HOME"))
@@ -102,7 +94,7 @@ func TestLoadRejects(t *testing.T) {
 		{"unknown key with suggestion", `{"detectors":{"merged-branch":{"mdoe":"ancestor"}}}`,
 			`config.json: unknown key "detectors.merged-branch.mdoe" (did you mean "mode"?)`},
 		{"unknown top-level key", `{"bogus": 1}`, `unknown key "bogus"`},
-		{"wrong type in array element", `{"roots":[{"path":"/a"},{"path":5}]}`, `config.json: roots[1].path: expected string, got number`},
+		{"wrong type in array element", `{"git":{"protected_branches":["a",5]}}`, `config.json: git.protected_branches[1]: expected string, got number`},
 		{"wrong type object", `{"git": []}`, "git: expected object, got array"},
 		{"wrong type bool", `{"update_check": "yes"}`, "update_check: expected bool, got string"},
 		{"fractional int", `{"thresholds":{"min_age_days":1.5}}`, "thresholds.min_age_days: expected integer, got 1.5"},
@@ -116,7 +108,7 @@ func TestLoadRejects(t *testing.T) {
 		{"version negative", `{"version": -1}`, "invalid"},
 		{"duplicate top-level key", `{"update_check": true, "update_check": false}`, `duplicate key "update_check"`},
 		{"duplicate nested key", `{"thresholds":{"min_age_days":1,"min_age_days":2}}`, `duplicate key "thresholds.min_age_days"`},
-		{"duplicate key in array element", `{"roots":[{"path":"/a"},{"path":"/b","path":"/c"}]}`, `duplicate key "roots[1].path"`},
+		{"duplicate key in array element", `{"detectors":{"ai-artifacts":{"extra":[{"id":"a"},{"id":"b","id":"c"}]}}}`, `duplicate key "detectors.ai-artifacts.extra[1].id"`},
 		{"validation failure", `{"output":{"format":"xml"}}`, "output.format"},
 	}
 	for _, tt := range tests {
@@ -168,8 +160,8 @@ func TestLoadNullYieldsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Roots == nil || len(cfg.Roots) != 0 || len(cfg.Scan.SkipDirs) != 0 {
-		t.Errorf("null must yield empty: %#v", cfg.Roots)
+	if len(cfg.Scan.SkipDirs) != 0 || len(cfg.Deprecated) != 0 {
+		t.Errorf("null must yield empty: %#v, deprecated %q", cfg.Scan.SkipDirs, cfg.Deprecated)
 	}
 	// null for a list that must not be empty is caught by validation.
 	_, err = Load(writeTemp(t, "config.json", `{"git":{"protected_branches":null}}`))
@@ -223,5 +215,25 @@ func TestEnsureDirsPermissions(t *testing.T) {
 	fi, _ := os.Stat(d.Sessions)
 	if fi.Mode().Perm() != 0o700 {
 		t.Errorf("sessions mode %v, want 0700", fi.Mode().Perm())
+	}
+}
+
+// TestLegacyUserLocationsLoadWithANote: user_locations of earlier releases
+// still load; true says it is ignored, false (what `config init` wrote) says
+// nothing, and neither is written back.
+func TestLegacyUserLocationsLoadWithANote(t *testing.T) {
+	cfg, err := Load(writeTemp(t, "config.json", `{"detectors":{"ai-artifacts":{"user_locations":true},"log-and-runtime-files":{"user_locations":false}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Deprecated) != 1 || !strings.Contains(cfg.Deprecated[0], "detectors.ai-artifacts.user_locations") {
+		t.Errorf("deprecated %q", cfg.Deprecated)
+	}
+	if cfg.Detectors.AIArtifacts.LegacyUserLocations != nil || cfg.Detectors.Logs.LegacyUserLocations != nil {
+		t.Error("legacy switches must be dropped after the note")
+	}
+	full, err := Marshal(cfg, true)
+	if err != nil || strings.Contains(string(full), "user_locations") {
+		t.Errorf("user_locations written back: %v\n%s", err, full)
 	}
 }

@@ -35,7 +35,7 @@ func TestRemoveWorktreeHiddenEdits(t *testing.T) {
 		t.Run(name+"/trash strategy needs force", func(t *testing.T) {
 			fx, path := setup(t)
 			_, err := fx.plan(removeWorktree{}, fx.removeFinding(path))
-			wantSkip(t, err, "worktree has uncommitted changes; re-run with --force to trash it")
+			wantSkip(t, err, "worktree has uncommitted changes; decide with `brooom review` to trash it")
 		})
 	}
 }

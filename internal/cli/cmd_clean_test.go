@@ -467,7 +467,7 @@ func TestCleanExitCodes(t *testing.T) {
 		{"missing --from", nil, ExitUsage},
 		{"acting needs confirmation", []string{"--from", path}, ExitUsage},
 		{"bad trash strategy", []string{"--from", path, "--trash-strategy", "nope"}, ExitUsage},
-		{"root without workspaces", []string{"--from", path, "--root", f.repo.Dir}, ExitUsage},
+		{"missing path", []string{"--from", path, "--path", filepath.Join(f.repo.Dir, "nope"), "--dry-run"}, ExitUsage},
 		{"unknown flag", []string{"--from", path, "--bogus"}, ExitUsage},
 	}
 	for _, tt := range tests {
@@ -483,29 +483,28 @@ func TestCleanExitCodes(t *testing.T) {
 	}
 }
 
-func TestCleanOutsideRepoNeedsWorkspaces(t *testing.T) {
+func TestCleanOutsideRepoNeedsPath(t *testing.T) {
 	isolate(t)
 	t.Chdir(testutil.ResolvedTempDir(t))
 	code, _, errOut := clean(t, "", "--from", writeRaw(t, mustJSON(t, findings.NewReport("t", testutil.BaseTime, nil, nil, nil))))
-	if code != ExitUsage || !strings.Contains(errOut, scope.ErrNotInRepo.Error()) || !strings.Contains(errOut, "--workspaces") {
+	if code != ExitUsage || !strings.Contains(errOut, scope.ErrNotInRepo.Error()) || !strings.Contains(errOut, "pass a folder") {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 }
 
-func TestCleanWorkspacesScopeComesFromRoots(t *testing.T) {
+func TestCleanScopeComesFromPath(t *testing.T) {
 	needGit(t)
-	home := isolate(t)
+	isolate(t)
 	// Real repositories: the trash action asks git which files are tracked.
 	repoA, repoB := testutil.NewRepo(t).Dir, testutil.NewRepo(t).Dir
-	rootA, rootB := repoA, repoB
-	writeConfig(t, home, rootsConfig(rootA, rootB))
 	t.Chdir(testutil.ResolvedTempDir(t))
 	dirA, fileA := junkDir(t, repoA, "junk")
 	dirB, fileB := junkDir(t, repoB, "junk")
 	path := writeReportFile(t, trashFinding(repoA, dirA), trashFinding(repoB, dirB))
 
-	// --root narrows the scope: the finding below the other root is refused.
-	code, out, _ := clean(t, "", "--from", path, "--workspaces", "--root", rootA, "--yes")
+	// --path decides the scope: the finding in the other repository is
+	// refused, whatever the file says.
+	code, out, _ := clean(t, "", "--from", path, "--path", repoA, "--yes")
 	if code != ExitError || !strings.Contains(out, "refused findings (1)") {
 		t.Fatalf("narrowed run: code %d\n%s", code, out)
 	}
@@ -540,17 +539,14 @@ func TestCleanUserScopeFindings(t *testing.T) {
 	lying := trashFinding(base, repoDir)
 	lying.Scope = findings.Scope{Type: findings.ScopeUser, Path: base}
 
-	t.Run("refused without --user", func(t *testing.T) {
-		code, out, _ := clean(t, "", "--from", writeReportFile(t, userFinding), "--yes")
-		if code != ExitError || !strings.Contains(out, "user location not enabled for this run (pass --user)") {
-			t.Fatalf("code %d\n%s", code, out)
-		}
-		if !exists(cacheFile) {
-			t.Error("user location was touched")
+	t.Run("the removed --user flag", func(t *testing.T) {
+		code, _, errOut := clean(t, "", "--from", writeReportFile(t, userFinding), "--user", "--dry-run")
+		if code != ExitUsage || !strings.Contains(errOut, "--user") {
+			t.Fatalf("code %d, stderr %q", code, errOut)
 		}
 	})
-	t.Run("accepted with --user", func(t *testing.T) {
-		code, out, errOut := clean(t, "", "--from", writeReportFile(t, userFinding), "--user", "--dry-run")
+	t.Run("accepted in a location of the repository", func(t *testing.T) {
+		code, out, errOut := clean(t, "", "--from", writeReportFile(t, userFinding), "--dry-run")
 		if code != ExitOK || !strings.Contains(out, "cache") || !strings.Contains(out, "dry run") {
 			t.Fatalf("code %d\nstdout %q\nstderr %q", code, out, errOut)
 		}
@@ -559,7 +555,7 @@ func TestCleanUserScopeFindings(t *testing.T) {
 		}
 	})
 	t.Run("outside the user base is still refused", func(t *testing.T) {
-		code, out, _ := clean(t, "", "--from", writeReportFile(t, lying), "--user", "--yes")
+		code, out, _ := clean(t, "", "--from", writeReportFile(t, lying), "--yes")
 		if code != ExitError || !strings.Contains(out, "refused findings (1)") || !exists(repoFile) {
 			t.Fatalf("code %d, file exists %v\n%s", code, exists(repoFile), out)
 		}
@@ -568,7 +564,7 @@ func TestCleanUserScopeFindings(t *testing.T) {
 		other := testutil.ResolvedTempDir(t)
 		fd := trashFinding(base, other)
 		fd.Scope.Type = findings.ScopeUser
-		code, _, _ := clean(t, "", "--from", writeReportFile(t, fd), "--user")
+		code, _, _ := clean(t, "", "--from", writeReportFile(t, fd), "--yes")
 		if code != ExitError {
 			t.Fatalf("code %d, want 1", code)
 		}
