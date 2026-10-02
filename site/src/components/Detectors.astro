@@ -1,0 +1,86 @@
+---
+import { detectors } from '../lib/detectors';
+import { presetsRunning } from '../lib/presets';
+
+const families = ['Git', 'Files'] as const;
+---
+
+<section class="section" id="detectors" aria-labelledby="detectors-title">
+  <div class="wrap">
+    <h2 id="detectors-title">Detectors</h2>
+    <p class="section-intro">
+      Seven read-only detectors find the clutter; presets pick which of them run, and
+      <code>--detector</code> narrows a preset further. Detectors only report, nothing changes until
+      you say yes.
+    </p>
+    {
+      families.map((family) => (
+        <>
+          <h3 class="family">{family}</h3>
+          <div class="grid">
+            {detectors
+              .filter((d) => d.family === family)
+              .map((d) => {
+                const runBy = presetsRunning(d.name);
+                return (
+                  <article class="card" id={`detector-${d.name}`}>
+                    <h4>
+                      <code>{d.name}</code>
+                    </h4>
+                    <p>{d.body}</p>
+                    <p class="run-by">
+                      {runBy.length > 0 ? (
+                        <>Run by {runBy.map((p, i) => (<>{i > 0 && ', '}<code>{p}</code></>))}</>
+                      ) : (
+                        <>No preset runs it; <code>br review</code> does</>
+                      )}
+                    </p>
+                  </article>
+                );
+              })}
+          </div>
+        </>
+      ))
+    }
+  </div>
+</section>
+
+<style>
+  .family {
+    margin-top: var(--space-5);
+    color: var(--neon);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .family:first-of-type {
+    margin-top: 0;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    gap: var(--space-4);
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+  }
+
+  h4 {
+    margin: 0 0 var(--space-2);
+    font-size: 1.05rem;
+  }
+
+  .card p {
+    color: var(--text-muted);
+  }
+
+  .card .run-by {
+    margin: auto 0 0;
+    font-size: 0.9rem;
+  }
+</style>

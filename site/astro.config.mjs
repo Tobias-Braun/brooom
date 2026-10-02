@@ -53,7 +53,7 @@ export default defineConfig({
   site: siteURL,
   base: '/',
   output: 'static',
-  // Vue powers only the three interactive islands (terminal demo, install
-  // tabs, copy buttons); every other section is static HTML.
+  // Vue powers only the interactive islands (preset tabs, terminal demo,
+  // install tabs, copy buttons); every other section is static HTML.
   integrations: [vue(), pruneUnusedScripts()],
 });

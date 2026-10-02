@@ -263,14 +263,14 @@ Both must be pure clients of the same core and API the CLI uses.
 Astro site with Vue islands (`/site`, published as a container image to
 ghcr.io and deployed by the maintainer's infrastructure). Astro
 renders the static content; Vue components only for the interactive parts
-(animated terminal demo of `brooom sweep`, install command tabs per package
-manager, copy-to-clipboard). Theme: Brooom as a fast broom that sweeps your
+(preset tabs, animated terminal demo of `brooom sweep`, install command
+tabs per package manager, copy-to-clipboard). Theme: Brooom as a fast broom that sweeps your
 workspace clean super fast so your agent fleet can run again. Dark
 background, violet-to-blue gradients, slightly neon accents, developer
-audience. Content: one-line pitch, animated terminal demo, install commands
-with tabs, feature grid (safe by default, git-aware, agent-artifact-aware,
-fast, cross-platform), a "what it finds" section, config example, GitHub
-link. Minimal JS payload — hydrate only the islands that need it
+audience. Content: one-line pitch, one tab per sweep preset (its command and
+exactly what it sweeps), animated terminal demo, install commands with tabs,
+feature grid (safe by default, git-aware, agent-artifact-aware, fast,
+cross-platform), one card per detector, config example, GitHub link. Minimal JS payload — hydrate only the islands that need it
 (`client:visible` / `client:idle`).
 
 ## v1 scope, in order

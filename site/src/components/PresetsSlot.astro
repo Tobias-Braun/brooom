@@ -1,0 +1,26 @@
+---
+import PresetTabs from './PresetTabs.vue';
+---
+
+<section class="section" id="presets" aria-labelledby="presets-title">
+  <div class="wrap">
+    <h2 id="presets-title">Pick a preset, sweep</h2>
+    <p class="section-intro">
+      A preset decides what <code>br sweep</code> cleans. It shows the plan and asks once before it
+      acts. Every preset skips unmerged and uncommitted work, dirty worktrees and worktrees whose
+      upstream is gone; <code>br review</code> decides on those one by one.
+    </p>
+    <PresetTabs client:visible />
+    <noscript>
+      <style is:inline>
+        #presets [role='tablist'] {
+          display: none;
+        }
+        #presets [role='tabpanel'][hidden] {
+          display: block;
+          margin-top: var(--space-5);
+        }
+      </style>
+    </noscript>
+  </div>
+</section>
