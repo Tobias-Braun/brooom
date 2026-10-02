@@ -65,7 +65,7 @@ go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --s
 ```
 
 The snapshot writes archives, `checksums.txt`, packages and the rendered
-Homebrew, Scoop, winget and AUR manifests to `dist/` (git-ignored) and uploads
+Homebrew, winget and AUR manifests to `dist/` (git-ignored) and uploads
 nothing. `scripts/test-install.sh` tests the install script against a local
 fake release. Pull requests touching the release files run the same checks in
 `.github/workflows/release-check.yml`.
@@ -108,14 +108,13 @@ are skipped, but a stable release fails at the Homebrew step without
 | Channel | Repository | Secret (repository secret in Tobias-Braun/brooom) | Token / key scope |
 | --- | --- | --- | --- |
 | Homebrew (enabled) | `Tobias-Braun/homebrew-tap` (public, exists) | `HOMEBREW_TAP_GITHUB_TOKEN` | fine-grained PAT, contents: write on the tap |
-| Scoop | `Tobias-Braun/scoop-bucket` (public) | `SCOOP_BUCKET_GITHUB_TOKEN` | fine-grained PAT, contents: write on the bucket |
 | winget | fork of `microsoft/winget-pkgs` as `Tobias-Braun/winget-pkgs` | `WINGET_GITHUB_TOKEN` | PAT that can push to the fork and open pull requests against `microsoft/winget-pkgs` |
 | AUR | package `brooom-bin` registered on aur.archlinux.org | `AUR_SSH_PRIVATE_KEY` | private key whose public half is on the AUR account |
 
 The deb, rpm and apk packages are already attached to the GitHub release; they
 are not pushed to a package repository.
 
-winget and AUR stay `skip_upload: true` even after the bucket is enabled: they need separate accounts and manual review (the winget PR is
+winget and AUR stay `skip_upload: true` for now: they need separate accounts and manual review (the winget PR is
 reviewed by Microsoft, the first AUR push needs the package registered).
 
 ## Site releases
@@ -179,7 +178,7 @@ One-time setup: after the first release, make the `brooom-site` package public
 All commits for this project use `Tobias Braun <mail@tobi-braun.com>`: the
 maintainer's own commits, the commits and pull request of the release pipeline
 issue, and every commit the release pipeline creates in other repositories
-(Homebrew tap, Scoop bucket, winget fork, AUR). Each publisher sets it as
+(Homebrew tap, winget fork, AUR). Each publisher sets it as
 `commit_author`, and the `commit_msg_template` values add no trailers. No bot
 or AI identity and no `Co-Authored-By` trailer is used.
 

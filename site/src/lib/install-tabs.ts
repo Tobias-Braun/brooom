@@ -4,25 +4,17 @@
  * real commands. Everything shown here exists in the repository today:
  *
  * - the install scripts are scripts/install.sh and scripts/install.ps1;
- * - the archive names follow archives.name_template and format_overrides in
- *   .goreleaser.yaml (brooom_<version>_<os>_<arch>, zip on Windows) and the
- *   checksums file is checksum.name_template there;
- * - the go install path is the module in go.mod plus ./cmd/brooom;
  * - the Homebrew cask is homebrew_casks in .goreleaser.yaml, published to
  *   the Tobias-Braun/homebrew-tap repository.
  *
  * Nothing else may be shown as a working command.
  */
-import { REPO_URL } from './url';
-
 export type TabStatus = 'available' | 'soon';
 
 /** One piece of panel content, rendered in order. */
 export type Block =
   | { type: 'text'; text: string }
-  | { type: 'command'; os?: string; command: string; copyLabel: string }
-  | { type: 'link'; href: string; label: string }
-  | { type: 'list'; items: string[] };
+  | { type: 'command'; os?: string; command: string; copyLabel: string };
 
 export interface InstallTab {
   id: string;
@@ -58,39 +50,6 @@ export const installTabs: InstallTab[] = [
     ],
   },
   {
-    id: 'release',
-    label: 'GitHub release',
-    status: 'available',
-    blocks: [
-      {
-        type: 'text',
-        text: 'Download the archive for your platform from the latest release, then verify it against the published checksums.txt (sha256) before unpacking.',
-      },
-      { type: 'link', href: `${REPO_URL}/releases/latest`, label: 'Latest release on GitHub' },
-      {
-        type: 'list',
-        items: [
-          'Windows: brooom_<version>_windows_amd64.zip, brooom_<version>_windows_arm64.zip',
-          'macOS: brooom_<version>_darwin_amd64.tar.gz, brooom_<version>_darwin_arm64.tar.gz',
-          'Linux: brooom_<version>_linux_amd64.tar.gz, brooom_<version>_linux_arm64.tar.gz',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'go',
-    label: 'go install',
-    status: 'available',
-    blocks: [
-      { type: 'text', text: 'With Go installed, build and install the latest version from source. This installs brooom only, without the br short command:' },
-      {
-        type: 'command',
-        command: 'go install github.com/Tobias-Braun/brooom/cmd/brooom@latest',
-        copyLabel: 'Copy go install command',
-      },
-    ],
-  },
-  {
     id: 'homebrew',
     label: 'Homebrew',
     status: 'available',
@@ -106,7 +65,6 @@ export const installTabs: InstallTab[] = [
       },
     ],
   },
-  { id: 'scoop', label: 'Scoop', status: 'soon', blocks: soon('Scoop') },
   { id: 'winget', label: 'winget', status: 'soon', blocks: soon('winget') },
   { id: 'aur', label: 'AUR', status: 'soon', blocks: soon('AUR') },
   { id: 'packages', label: 'deb / rpm', status: 'soon', blocks: soon('deb and rpm package') },

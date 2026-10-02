@@ -136,22 +136,6 @@ homebrew_casks:
       email: mail@tobi-braun.com
     commit_msg_template: "brew: update {{ .ProjectName }} to {{ .Tag }}"
 
-scoops:
-  - name: brooom
-    ids: [brooom]
-    repository:
-      owner: Tobias-Braun
-      name: scoop-bucket
-      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
-    homepage: https://github.com/Tobias-Braun/brooom
-    description: Sweep disk clutter left behind by AI-assisted development.
-    license: MIT
-    skip_upload: true
-    commit_author:
-      name: Tobias Braun
-      email: mail@tobi-braun.com
-    commit_msg_template: "scoop: update {{ .ProjectName }} to {{ .Tag }}"
-
 winget:
   - name: brooom
     ids: [brooom]

@@ -1,12 +1,12 @@
 ---
 import InstallTabs from './InstallTabs.vue';
+import { installTabs } from '../lib/install-tabs';
 import { REPO_URL } from '../lib/url';
 
 /**
  * Slot of the tabbed install island (#43). The island renders its first tab
  * on the server. Without JavaScript the other tabs cannot be reached, so the
- * noscript block repeats the honest static fallback: no release yet, and
- * building from source is what works today.
+ * noscript block repeats the commands of every available tab.
  */
 ---
 
@@ -16,16 +16,22 @@ import { REPO_URL } from '../lib/url';
     <InstallTabs client:idle />
     <noscript>
       <div class="card fallback">
-        <p>
-          Brooom is under active development towards the first major release and has no
-          release yet. With Go installed you can build it from source today:
-        </p>
-        <div class="code-block">
-          <pre tabindex="0"><code>go install github.com/Tobias-Braun/brooom/cmd/brooom@latest</code></pre>
-        </div>
+        {
+          installTabs
+            .filter((t) => t.status === 'available')
+            .flatMap((t) => t.blocks)
+            .map((block) =>
+              block.type === 'text' ? (
+                <p>{block.text}</p>
+              ) : (
+                <div class="code-block">
+                  <pre tabindex="0"><code>{block.command}</code></pre>
+                </div>
+              ),
+            )
+        }
         <p class="links">
           <a href={REPO_URL}>Source on GitHub</a>
-          <a href={`${REPO_URL}/releases`}>Releases</a>
         </p>
       </div>
     </noscript>

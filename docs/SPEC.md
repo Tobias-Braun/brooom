@@ -76,8 +76,8 @@ cleanup safe, fast and reviewable.
 - Release track with GoReleaser + GitHub Actions: tagged releases build
   binaries for all platform/arch combinations, produce checksums and a
   changelog, and publish GitHub releases. Package manager publishing
-  (Homebrew tap, Scoop, winget, AUR, .deb/.rpm, `go install`, curl|sh install
-  script) is prepared but not enabled yet.
+  (Homebrew tap, winget, AUR, .deb/.rpm, curl|sh install script) is
+  prepared but not enabled yet.
 - A version command. Brooom never contacts the network on its own; the only
   network call is the optional `gh` lookup of open pull requests.
 
