@@ -74,14 +74,18 @@ jobs:
         run: docker build --tag "$IMAGE:pr" site
       - name: Serve it and probe
         run: |
-          docker run --detach --name site --publish 8080:8080 "$IMAGE:pr"
+          docker run --detach --name site --publish 8080:8080 --read-only --tmpfs /tmp \
+            --env SITE_URL=https://example.test/ "$IMAGE:pr"
           trap 'docker logs site; docker rm --force site' EXIT
           for _ in $(seq 1 20); do
             curl --fail --silent http://localhost:8080/healthz && break
             sleep 1
           done
           curl --fail --silent --show-error http://localhost:8080/healthz
-          curl --fail --silent --show-error http://localhost:8080/ | grep -q '<title>'
+          page=$(curl --fail --silent --show-error http://localhost:8080/)
+          grep -q '<title>' <<< "$page"
+          grep -q '<link rel="canonical" href="https://example.test/"' <<< "$page"
+          ! grep -q 'site-url.invalid' <<< "$page"
 
   release:
     name: Release
@@ -117,9 +121,6 @@ jobs:
           fi
           echo "Releasing site $next (previous: ${last:-none})"
           echo "version=$next" >> "$GITHUB_OUTPUT"
-      - name: Warn when SITE_URL is unset
-        if: vars.SITE_URL == ''
-        run: echo "::warning::The repository variable SITE_URL is not set, so canonical and Open Graph URLs in this image point to http://localhost:4321."
       - name: Log in to ghcr.io
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -127,10 +128,8 @@ jobs:
       - name: Build and push the image
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          SITE_URL: ${{ vars.SITE_URL }}
         run: |
           docker buildx build --platform linux/amd64 --push \
-            --build-arg SITE_URL="$SITE_URL" \
             --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --label org.opencontainers.image.revision="$GITHUB_SHA" \
             --label org.opencontainers.image.version="$VERSION" \
