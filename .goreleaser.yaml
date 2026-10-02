@@ -117,18 +117,47 @@ homebrew_casks:
     # downloads casks with com.apple.quarantine, so Gatekeeper would block the
     # first run. Remove the attribute until the binaries are notarized
     # (notarize.macos needs Apple credentials); then drop this hook.
+    #
+    # The install hook also adds the short command br with the rules of
+    # install.sh (br_taken_reason): only when nothing else uses the name, and
+    # it says why otherwise. Brew sanitizes PATH, so the user's PATH is read
+    # from HOMEBREW_PATH. Uninstall removes br only when it is our symlink.
     hooks:
       post:
         install: |
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/brooom"]
           end
-    # install.sh adds br only when the name is free; a cask cannot check that,
-    # so it installs brooom alone and explains how to add br.
-    caveats: |
-      The short command br is not installed, because another tool (such as
-      broot) may already use it. If br is free on your system, add it with:
-        ln -s "$(brew --prefix)/bin/brooom" "$(brew --prefix)/bin/br"
+          br = HOMEBREW_PREFIX/"bin/br"
+          home = Dir.home
+          ours = br.symlink? && File.basename(br.readlink) == "brooom"
+          path = ENV.fetch("HOMEBREW_PATH", ENV["PATH"]).split(File::PATH_SEPARATOR)
+          on_path = ->(name) { path.map { |dir| File.join(dir, name) }.find { |f| f != br.to_s && File.file?(f) && File.executable?(f) } }
+          rcs = %w[.bashrc .bash_profile .profile .zshrc .config/fish/config.fish].map { |rc| File.join(home, rc) }
+          rc = rcs.find { |f| File.file?(f) && File.readable?(f) && File.read(f).match?(/(^|[^[:alnum:]_-])br[[:space:]]*\(\)|function[[:space:]]+br([[:space:]]|$|\()|alias[[:space:]]+br[[:space:]=]/) }
+          fish = File.join(home, ".config/fish/functions/br.fish")
+          reason =
+            if (br.exist? || br.symlink?) && !ours then "#{br} already exists"
+            elsif (other = on_path.call("br")) then "#{other} is already on your PATH"
+            elsif on_path.call("broot") || File.directory?(File.join(home, ".config/broot/launcher")) || File.directory?(File.join(home, "Library/Application Support/org.dystroy.broot/launcher"))
+              "it is used by broot (its br shell function)"
+            elsif rc then "br is defined as an alias or function in #{rc}"
+            elsif File.file?(fish) then "br is defined as a fish function in #{fish}"
+            end
+          if reason
+            puts "Skipped the br shortcut: #{reason}. Use brooom instead."
+          else
+            begin
+              br.delete if ours
+              File.symlink("brooom", br)
+              puts "Installed #{br} (short for brooom)"
+            rescue SystemCallError
+              puts "Skipped the br shortcut: cannot create #{br}. Use brooom instead."
+            end
+          end
+        uninstall: |
+          br = HOMEBREW_PREFIX/"bin/br"
+          br.delete if br.symlink? && File.basename(br.readlink) == "brooom"
     # auto publishes stable releases and skips pre-releases.
     skip_upload: auto
     commit_author:

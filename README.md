@@ -56,8 +56,7 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
 
 ## Install
 
-On macOS with [Homebrew](https://brew.sh) (installs `brooom`; the cask's
-caveats show how to add `br`):
+On macOS with [Homebrew](https://brew.sh):
 
 ```sh
 brew install --cask Tobias-Braun/tap/brooom
@@ -87,11 +86,11 @@ scriptblock, or set `BROOOM_ADD_TO_PATH=1` first:
 Upgrading while brooom is running works: the old `brooom.exe` is renamed to
 `brooom.exe.old` and removed on the next run.
 
-Both install scripts also add `br`, a short command for `brooom` (a symlink,
-or a hardlinked `br.exe` on Windows), as long as nothing else uses `br`. If
-`br` is taken, for example by [broot](https://github.com/Canop/broot)'s shell
-function, by an alias or by another binary, the installer leaves it alone and
-tells you why. `brooom` always works, and every `br` example below works with
+The Homebrew cask and both install scripts also add `br`, a short command for
+`brooom` (a symlink, or a hardlinked `br.exe` on Windows), as long as nothing
+else uses `br`. If `br` is taken, for example by
+[broot](https://github.com/Canop/broot)'s shell function, by an alias or by
+another binary, the installer leaves it alone and tells you why. `brooom` always works, and every `br` example below works with
 `brooom` too.
 
 Coming soon: winget, AUR and deb/rpm packages. See

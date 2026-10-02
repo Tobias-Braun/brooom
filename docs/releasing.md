@@ -91,9 +91,10 @@ run. The cask therefore has a `hooks.post.install` that removes the attribute
 from the staged binary. Notarization (`notarize.macos`, needs Apple developer
 credentials) makes the hook unnecessary; drop it then.
 
-The cask installs `brooom` only. `install.sh` adds the short command `br` only
-when the name is free, which a cask cannot check, so the cask's `caveats`
-explain how to add the symlink instead.
+The same `hooks.post.install` adds the short command `br` with the rules of
+`install.sh`: it links `$(brew --prefix)/bin/br` to `brooom` only when the name
+is free and otherwise prints why it skipped it. `hooks.post.uninstall` removes
+`br` again, but only when it is that symlink.
 
 ## Enabling package managers
 
