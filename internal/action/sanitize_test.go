@@ -46,7 +46,7 @@ func TestRenderPlanSanitizes(t *testing.T) {
 		Failed:  []Skip{{Finding: f, Reason: "boom\nfake"}},
 	}
 	var out bytes.Buffer
-	renderPlan(&out, p)
+	renderPlan(&out, p, false)
 	assertClean(t, out.String())
 	if !strings.Contains(out.String(), `na\nme`) {
 		t.Errorf("escaped path missing:\n%s", out.String())

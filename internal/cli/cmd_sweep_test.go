@@ -109,7 +109,8 @@ func TestSweepYesPrintsTheBriefSummary(t *testing.T) {
 }
 
 // TestSweepConfirmedShowsPlanThenBriefSummary: a confirmed sweep shows the
-// plan the question refers to and still ends with the one-line summary.
+// plan the question refers to, one line per group without items or commands,
+// and still ends with the one-line summary.
 func TestSweepConfirmedShowsPlanThenBriefSummary(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
@@ -117,10 +118,18 @@ func TestSweepConfirmedShowsPlanThenBriefSummary(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q\n%s", code, errOut, out)
 	}
-	for _, want := range []string{"feat/merged", "Proceed with 2 items", "2 merged branches removed. 0 B reclaimed"} {
+	for _, want := range []string{"merged-branch / delete-branch: 2 items", "Proceed with 2 items", "2 merged branches removed. 0 B reclaimed"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
+	}
+	for _, noise := range []string{"feat/merged", "$ git"} {
+		if strings.Contains(out, noise) {
+			t.Errorf("the plan lists %q:\n%s", noise, out)
+		}
+	}
+	if n := strings.Count(out, "reclaimed"); n != 1 {
+		t.Errorf("%d reclaimed lines, want 1:\n%s", n, out)
 	}
 }
 

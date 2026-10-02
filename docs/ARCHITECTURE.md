@@ -553,10 +553,12 @@ reported as "kept as you chose", not as skipped. The terminal is handed to
 bubbletea as the `*os.File` itself, otherwise it does not switch to raw mode
 and Enter never arrives; other readers are wrapped so the end of input aborts. The terminal check comes after planning, so a run with
 nothing to do never needs an answer. `compact` becomes `action.Options.Brief`:
-the plan is still shown when the run asks, but the summary is the one line of
+the plan is shown when the run asks, one line per group without items or
+commands, and the summary is the one line of
 `renderBriefSummary` (`internal/action/brief.go`): failures, a skipped count,
-the undo line and, last, the counts per kind with the reclaimed size;
-`--dry-run` shows the full plan. A machine `--format` only reports, like
+the undo line and, last, the counts per kind with the reclaimed size in bold
+green (when color is on). The progress display's done line leaves the size
+out, so it is printed once; `--dry-run` shows the full plan. A machine `--format` only reports, like
 `--dry-run` (through `runScan`, the shared report path that also streams
 `ndjson`), and is a usage error with `--yes`. The overlay is applied right
 after `config.Load` in `newScanRequest` and before `ForTarget`, so root

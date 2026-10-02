@@ -222,8 +222,6 @@ func (m Model) summary(s State) string {
 	if s.Findings > 0 {
 		parts = append(parts, fmt.Sprintf("%d findings in %d detectors", s.Findings, len(s.Detectors)))
 	}
-	if s.Bytes > 0 {
-		parts = append(parts, output.FormatSize(s.Bytes)+" reclaimed")
-	}
+	// The reclaimed size is left out: the command prints it as its last line.
 	return m.fit([]string{strings.Join(parts, m.styles.dim.Render(" · "))})
 }

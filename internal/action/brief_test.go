@@ -66,17 +66,23 @@ func TestRenderBriefSummary(t *testing.T) {
 	res.Applied = 2
 
 	var out bytes.Buffer
-	renderBriefSummary(&out, res, false)
+	renderBriefSummary(&out, res, false, false)
 	want := "undo: brooom undo 20260930-101500-abcd\n" +
 		"1 worktree deleted, 1 stale branch removed. 3.0 MB reclaimed\n"
 	if out.String() != want {
 		t.Errorf("got %q, want %q", out.String(), want)
 	}
 
+	out.Reset()
+	renderBriefSummary(&out, res, false, true)
+	if want := "removed. \x1b[1;32m3.0 MB reclaimed\x1b[0m\n"; !strings.HasSuffix(out.String(), want) {
+		t.Errorf("color: got %q, want suffix %q", out.String(), want)
+	}
+
 	res.Skipped = 2
 	res.Failures = []session.Entry{{Path: "/r/wt", Status: session.StatusFailed, Error: "in use"}}
 	out.Reset()
-	renderBriefSummary(&out, res, false)
+	renderBriefSummary(&out, res, false, false)
 	for _, want := range []string{"failures (1):\n  /r/wt: in use\n", "2 items skipped", "reclaimed\n"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
@@ -87,7 +93,7 @@ func TestRenderBriefSummary(t *testing.T) {
 	}
 
 	out.Reset()
-	renderBriefSummary(&out, res, true)
+	renderBriefSummary(&out, res, true, false)
 	if want := "failures (1):\n  /r/wt: in use\n"; out.String() != want {
 		t.Errorf("quiet: got %q, want %q", out.String(), want)
 	}
@@ -95,8 +101,20 @@ func TestRenderBriefSummary(t *testing.T) {
 
 func TestRenderBriefSummaryNothingApplied(t *testing.T) {
 	var out bytes.Buffer
-	renderBriefSummary(&out, &Result{Skipped: 1}, false)
+	renderBriefSummary(&out, &Result{Skipped: 1}, false, false)
 	if want := "1 item skipped (blocked or changed since the scan; run with --dry-run for details)\nnothing cleaned. 0 B reclaimed\n"; out.String() != want {
 		t.Errorf("got %q", out.String())
+	}
+}
+
+// A brief plan shows one line per group: the items and their commands are
+// left to the checklist and --dry-run.
+func TestRenderPlanBrief(t *testing.T) {
+	step := Step{Description: "delete branch feat/a", Command: "git branch -d -- feat/a"}
+	p := &Plan{Groups: []Group{{Detector: config.DetectorMergedBranch, Action: findings.ActionDeleteBranch, Items: []Item{{Step: step}}}}}
+	var out bytes.Buffer
+	renderPlan(&out, p, true)
+	if got := out.String(); strings.Contains(got, "feat/a") || !strings.HasPrefix(got, "merged-branch / ") {
+		t.Errorf("brief plan:\n%s", got)
 	}
 }

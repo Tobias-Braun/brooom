@@ -146,11 +146,11 @@ exactly the same stdout on a terminal and in a pipe.
 
 ### Sweep presets
 
-`brooom sweep [preset]` scans with a fixed detector set, shows the plan, asks
+`brooom sweep [preset]` scans with a fixed detector set, shows the plan (one line per group), asks
 `Proceed? [y/N/e to choose]` once and then cleans. Only an explicit yes acts;
 `e` opens a checklist of every item (all ticked) to untick what should stay;
-`--yes` skips the question and `--dry-run` stops after the plan. Afterwards it prints
-what it removed and how much disk that reclaimed (`2 worktrees deleted, 5
+`--yes` skips the question and `--dry-run` lists every item and stops after the plan. Afterwards it prints
+what it removed and, highlighted as the last line, how much disk that reclaimed (`2 worktrees deleted, 5
 merged branches removed. 4.2 GB reclaimed`), and `brooom undo` restores. Without a preset, `sweep.preset` in the
 config decides, else `everything`.
 

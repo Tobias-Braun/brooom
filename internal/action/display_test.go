@@ -57,7 +57,7 @@ func TestPlanPrintsSizeOnce(t *testing.T) {
 		t.Errorf("item line = %q, want one size", line)
 	}
 	var b strings.Builder
-	renderPlan(&b, &Plan{Groups: []Group{{Detector: "d", Action: findings.ActionTrash, Items: []Item{{Step: step}}}}})
+	renderPlan(&b, &Plan{Groups: []Group{{Detector: "d", Action: findings.ActionTrash, Items: []Item{{Step: step}}}}}, false)
 	for _, l := range strings.Split(b.String(), "\n") {
 		if strings.Contains(l, "move build") && strings.Count(l, "(") != 1 {
 			t.Errorf("plan line %q shows the size %d times", l, strings.Count(l, "("))

@@ -17,7 +17,7 @@ func TestRenderPlanEscapesControlCharactersInCommand(t *testing.T) {
 	p := &Plan{Groups: []Group{{Detector: "d", Action: findings.ActionTrash,
 		Items: []Item{{Step: Step{Finding: f, Description: "trash it", Command: cmd}}}}}}
 	var out bytes.Buffer
-	renderPlan(&out, p)
+	renderPlan(&out, p, false)
 	assertClean(t, out.String())
 	if !strings.Contains(out.String(), `\x1b`) {
 		t.Errorf("escaped ESC missing from the command line:\n%s", out.String())

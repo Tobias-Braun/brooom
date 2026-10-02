@@ -182,10 +182,14 @@ func plural(n int, noun string) string {
 }
 
 // renderPlan prints the plan grouped by detector and action, with sizes,
-// the skipped list and the plan-time failures.
-func renderPlan(w io.Writer, p *Plan) {
+// the skipped list and the plan-time failures. A brief plan leaves out the
+// items and their commands; the checklist ("e") and --dry-run list them.
+func renderPlan(w io.Writer, p *Plan, brief bool) {
 	for _, g := range p.Groups {
 		fmt.Fprintf(w, "%s / %s: %s, %s\n", output.Sanitize(g.Detector), g.Label(), plural(len(g.Items), "item"), output.FormatSize(g.ReclaimableBytes()))
+		if brief {
+			continue
+		}
 		for _, it := range g.Items {
 			fmt.Fprintf(w, "  %s\n", itemLine(it.Step))
 			if it.Step.Command != "" {
