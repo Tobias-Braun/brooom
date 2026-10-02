@@ -45,8 +45,8 @@ function pruneUnusedScripts() {
 
 // The site is served at the root of its own origin by the site image (see
 // site/Dockerfile). The origin only matters for absolute URLs (canonical, Open
-// Graph) and comes from SITE_URL, which the release workflow fills from the
-// repository variable of the same name; local builds use the dev server origin.
+// Graph) and comes from SITE_URL; local builds use the dev server origin. The
+// image builds with a placeholder that nginx swaps for the container's SITE_URL.
 const siteURL = process.env.SITE_URL || 'http://localhost:4321';
 
 export default defineConfig({

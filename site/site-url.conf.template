@@ -1,0 +1,7 @@
+# Rendered by the nginx entrypoint (envsubst) into /tmp/site-url.conf at
+# container start, so the public origin is a runtime setting of the image (see
+# Dockerfile). Trailing slashes are stripped so "https://example.com/" and
+# "https://example.com" yield the same URLs.
+map "${SITE_URL}" $site_origin {
+    "~^(?<origin>.*?)/*$" $origin;
+}

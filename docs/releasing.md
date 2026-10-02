@@ -127,10 +127,10 @@ FluxCD.
 - Site releases create no GitHub Release, so `/releases/latest` (read by the
   install scripts) always points at the CLI, and the
   `site-v*` tags never trigger the CLI release workflow (`v*`).
-- The public origin is baked into the image at build time from the repository
-  variable `SITE_URL` (Settings > Secrets and variables > Actions > Variables).
-  Without it, canonical and Open Graph URLs point to `http://localhost:4321`
-  and the release job shows a warning.
+- The public origin is read at container start from the env var `SITE_URL`
+  (e.g. `https://brooom.dev`), so the same image serves any domain. Without it,
+  canonical and Open Graph URLs point to `http://localhost:8080`. The container
+  only writes to `/tmp`, so it runs with a read-only root filesystem.
 
 A FluxCD image policy that follows the releases and ignores `latest` and the
 `sha-*` tags:
@@ -159,8 +159,8 @@ spec:
 ```
 
 One-time setup: after the first release, make the `brooom-site` package public
-(package settings on GitHub) or give Flux an image pull secret, set `SITE_URL`,
-and disable GitHub Pages in the repository settings.
+(package settings on GitHub) or give Flux an image pull secret, set `SITE_URL`
+in the deployment's container env, and disable GitHub Pages in the repository settings.
 
 ## Identity
 

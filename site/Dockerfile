@@ -17,13 +17,16 @@ COPY --chown=node:node astro.config.mjs tsconfig.json ./
 COPY --chown=node:node assets ./assets
 COPY --chown=node:node public ./public
 COPY --chown=node:node src ./src
-# Absolute URLs (canonical, Open Graph) are rendered at build time, so the
-# public origin is baked into the image. The release workflow passes the
-# repository variable SITE_URL; without it astro.config.mjs uses a placeholder.
-ARG SITE_URL
-RUN SITE_URL="$SITE_URL" npm run build
+# Absolute URLs (canonical, Open Graph) are rendered with a placeholder origin
+# that nginx replaces with the SITE_URL env var at runtime (see nginx.conf).
+RUN SITE_URL=https://site-url.invalid npm run build
 
 FROM nginxinc/nginx-unprivileged:1.28-alpine
+# The public origin of the site, e.g. https://brooom.dev. The nginx entrypoint
+# renders the template into /tmp, so the root filesystem can stay read-only.
+ENV SITE_URL=http://localhost:8080 \
+    NGINX_ENVSUBST_OUTPUT_DIR=/tmp
+COPY site-url.conf.template /etc/nginx/templates/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /home/node/site/dist /usr/share/nginx/html
 EXPOSE 8080
