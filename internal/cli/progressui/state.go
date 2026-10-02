@@ -24,8 +24,6 @@ const (
 	// ModeHidden draws nothing; used while stdout text or a prompt owns the
 	// terminal.
 	ModeHidden
-	// ModeDone collapses to the one-line success summary.
-	ModeDone
 	// ModeFailed collapses to the one-line summary of an interrupted or
 	// failed run.
 	ModeFailed

@@ -79,10 +79,10 @@ func (a *app) reporter() progress.Reporter {
 	return a.display
 }
 
-// stopProgress ends the display, leaving its summary line. It runs once at
-// the end of every invocation (also after errors and Ctrl-C) before any error
-// text is printed, so the terminal is always restored and the summary comes
-// before the message that explains a failure.
+// stopProgress ends the display, leaving a summary line only for a failed
+// run. It runs once at the end of every invocation (also after errors and
+// Ctrl-C) before any error text is printed, so the terminal is always restored
+// and the summary comes before the message that explains a failure.
 func (a *app) stopProgress(ok bool) {
 	if a.display != nil {
 		a.display.Stop(ok)

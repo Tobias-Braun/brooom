@@ -87,8 +87,6 @@ func TestViewGolden(t *testing.T) {
 	hostile.StartPhase(progress.PhaseApply, 2)
 	hostile.AddStep("evil\x1b[2J\nname")
 
-	done := apply
-	done.Mode = ModeDone
 	failed := scanState()
 	failed.Mode = ModeFailed
 	hidden := scanState()
@@ -105,7 +103,6 @@ func TestViewGolden(t *testing.T) {
 		{"discover_unknown_total", discover, 80},
 		{"plan_count_only", unknownTotal, 80},
 		{"hostile_label_sanitized", hostile, 80},
-		{"summary_done", done, 80},
 		{"summary_failed", failed, 80},
 		{"hidden", hidden, 80},
 	}
@@ -139,14 +136,12 @@ func TestViewHasNoControlCharacters(t *testing.T) {
 func TestFinalViewsEndWithNewline(t *testing.T) {
 	// bubbletea erases the cursor's line when the program stops, so a final
 	// view must leave the cursor on an empty line below the summary.
-	for _, mode := range []Mode{ModeDone, ModeFailed} {
-		m := plainModel(80)
-		s := scanState()
-		s.Mode = mode
-		m.SetState(s)
-		if v := m.View(); !strings.HasSuffix(v, "\n") || strings.Count(v, "\n") != 1 {
-			t.Errorf("mode %d view %q is not exactly one line plus newline", mode, v)
-		}
+	m := plainModel(80)
+	s := scanState()
+	s.Mode = ModeFailed
+	m.SetState(s)
+	if v := m.View(); !strings.HasSuffix(v, "\n") || strings.Count(v, "\n") != 1 {
+		t.Errorf("failed view %q is not exactly one line plus newline", v)
 	}
 }
 

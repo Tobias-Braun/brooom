@@ -29,7 +29,8 @@ type Options struct {
 const frameRate = 20
 
 // Display is a progress.Reporter that draws a live bubbletea display on
-// stderr and collapses it to a summary line on Stop.
+// stderr. On Stop it is erased after a successful run, whose own output is
+// the summary, and collapsed to a "stopped" line after a failed one.
 //
 // The bubbletea program is started on the first Phase and stopped by Pause,
 // which waits until the terminal is restored, so that results on stdout and
@@ -125,11 +126,12 @@ func (d *Display) Pause() {
 	d.halt()
 }
 
-// Stop ends the display for good. When the display is live it collapses into
-// the summary line; when it is paused (results were printed meanwhile) the
-// summary is printed after them. A run that never reported a phase prints
-// nothing. ok is false for a failed or interrupted run. Stop is idempotent
-// and safe to call from a defer.
+// Stop ends the display for good. ok is false for a failed or interrupted
+// run. A successful run erases the display and prints nothing: the command's
+// own output already ends with what matters (e.g. the reclaimed size). A
+// failed run collapses a live display into the "stopped" line, or prints that
+// line after the results when paused; one that never reported a phase prints
+// nothing. Stop is idempotent and safe to call from a defer.
 func (d *Display) Stop(ok bool) {
 	d.life.Lock()
 	defer d.life.Unlock()
@@ -137,11 +139,12 @@ func (d *Display) Stop(ok bool) {
 		return
 	}
 	d.stopped = true
-	mode := ModeDone
-	if !ok {
-		mode = ModeFailed
+	if ok {
+		d.setMode(ModeHidden)
+		d.halt()
+		return
 	}
-	d.setMode(mode)
+	d.setMode(ModeFailed)
 	if d.prog != nil {
 		d.halt() // the final render of the program is the summary
 		return
