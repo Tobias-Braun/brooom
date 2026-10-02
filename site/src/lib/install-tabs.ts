@@ -38,11 +38,6 @@ function soon(manager: string): Block[] {
       type: 'text',
       text: `${manager} support is prepared but not enabled yet, so there is no ${manager} command to run today. It will appear here once publishing to it is turned on.`,
     },
-    {
-      type: 'link',
-      href: `${REPO_URL}/blob/main/docs/SPEC.md#platforms-and-distribution`,
-      label: 'Platforms and distribution in the spec',
-    },
   ];
 }
 
@@ -54,7 +49,7 @@ export const installTabs: InstallTab[] = [
     blocks: [
       {
         type: 'text',
-        text: 'Downloads the latest release for your platform, verifies its sha256 checksum and installs it without sudo, together with the short command br (unless something else already uses br, in which case it tells you). It needs a published release, and v0.1.0 is not out yet.',
+        text: 'Downloads the latest release for your platform, verifies its sha256 checksum and installs it without sudo, together with the short command br (unless something else already uses br, in which case it tells you). It needs a published release, and the first major release is not out yet.',
       },
       { type: 'command', os: 'macOS / Linux', command: `curl -fsSL ${RAW}/install.sh | sh`, copyLabel: 'Copy macOS and Linux install command' },
       { type: 'command', os: 'Windows (PowerShell)', command: `irm ${RAW}/install.ps1 | iex`, copyLabel: 'Copy Windows install command' },

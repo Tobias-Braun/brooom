@@ -30,7 +30,7 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
 - **Logs and runtime junk** — debug logs, test caches, coverage output,
   `.DS_Store`, crash dumps
 
-> Status: under active development towards v0.1.0.
+> Status: under active development towards the first major release.
 
 ## Safe by default
 

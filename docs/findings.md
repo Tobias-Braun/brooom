@@ -106,7 +106,7 @@ and verified by `TestExampleReportRoundTrip`.
 ```json
 {
   "schema_version": 1,
-  "brooom_version": "0.1.0",
+  "brooom_version": "1.0.0",
   "generated_at": "2026-09-29T20:15:00Z",
   "scopes": [{ "type": "repo", "path": "/home/dev/src/shop" }],
   "findings": [

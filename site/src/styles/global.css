@@ -11,7 +11,7 @@
  *   --bg as button text on the lightest gradient stops --violet 7.3:1 and
  *   --blue 7.8:1, so dark text stays readable across the whole gradient.
  *   The focus ring uses --neon, so it clears 3:1 on every surface above.
- *   The hero glow and CTA tint are low-alpha violet, which moves these
+ *   The hero glow is low-alpha violet, which moves these
  *   numbers by well under one point.
  */
 :root {
@@ -198,17 +198,6 @@ pre {
 .btn-primary:hover {
   color: var(--bg);
   filter: brightness(1.1);
-}
-
-.btn-secondary {
-  background: var(--surface);
-  color: var(--text);
-  border-color: var(--border);
-}
-
-.btn-secondary:hover {
-  color: var(--text);
-  border-color: var(--violet);
 }
 
 .card {
