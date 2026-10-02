@@ -1,0 +1,28 @@
+---
+import AgentHookTabs from './AgentHookTabs.vue';
+---
+
+<section class="section" id="agent-hooks" aria-labelledby="agent-hooks-title">
+  <div class="wrap">
+    <h2 id="agent-hooks-title">Sweep after every agent run</h2>
+    <p class="section-intro">
+      Add Brooom as a stop hook and it cleans up each time your agent finishes. The hook runs
+      the <a href="#presets">after-agents</a> preset with <code>--yes</code>, so nobody has to answer: the
+      preset only removes merged worktrees and branches and agent leftovers, never unmerged or
+      uncommitted work, and <code>br undo</code> restores the last sweep. The report goes to stderr,
+      because the harness reads stdout as JSON.
+    </p>
+    <AgentHookTabs client:visible />
+    <noscript>
+      <style is:inline>
+        #agent-hooks [role='tablist'] {
+          display: none;
+        }
+        #agent-hooks [role='tabpanel'][hidden] {
+          display: block;
+          margin-top: var(--space-5);
+        }
+      </style>
+    </noscript>
+  </div>
+</section>
