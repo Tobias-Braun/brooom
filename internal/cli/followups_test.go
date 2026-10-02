@@ -17,21 +17,6 @@ import (
 	"github.com/Tobias-Braun/brooom/internal/scope"
 )
 
-// leafFor parses args against a fresh command tree bound to a and returns the
-// command they select, like a real invocation would.
-func leafFor(t *testing.T, a *app, args []string) *cobra.Command {
-	t.Helper()
-	root := newRootCmd(a)
-	cmd, rest, err := root.Find(args)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.ParseFlags(rest); err != nil {
-		t.Fatal(err)
-	}
-	return cmd
-}
-
 // TestHintQuotingIsOSAware reproduces #182 items 3 and 12 for the CLI: the
 // printed undo command has to work in PowerShell and cmd.exe, where single
 // quotes are wrong (cmd.exe), and on unix a `$` must not be left to the shell
