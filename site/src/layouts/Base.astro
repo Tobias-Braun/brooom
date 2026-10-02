@@ -47,6 +47,10 @@ const ogAlt = 'Brooom: sweep your workspace clean, fast, so your agent fleet can
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
     <meta name="twitter:image:alt" content={ogAlt} />
+
+    {/* nginx swaps this marker for the Umami tracker when the container sets
+        UMAMI_SCRIPT_URL and UMAMI_WEBSITE_ID (see site-url.conf.template). */}
+    <Fragment set:html="<!--umami-->" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>

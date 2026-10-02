@@ -5,3 +5,11 @@
 map "${SITE_URL}" $site_origin {
     "~^(?<origin>.*?)/*$" $origin;
 }
+
+# The Umami tracker is opt-in at container start as well: only when both
+# UMAMI_SCRIPT_URL and UMAMI_WEBSITE_ID are set does the <!--umami--> marker in
+# every page become the script tag (see nginx.conf); otherwise it is removed.
+map "${UMAMI_SCRIPT_URL}|${UMAMI_WEBSITE_ID}" $umami_tag {
+    "~^(?<src>[^|]+)\|(?<id>.+)$" '<script defer src="$src" data-website-id="$id"></script>';
+    default "";
+}

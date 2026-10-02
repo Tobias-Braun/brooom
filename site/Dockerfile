@@ -24,7 +24,11 @@ RUN SITE_URL=https://site-url.invalid npm run build
 FROM nginxinc/nginx-unprivileged:1.28-alpine
 # The public origin of the site, e.g. https://brooom.dev. The nginx entrypoint
 # renders the template into /tmp, so the root filesystem can stay read-only.
+# The Umami variables are declared empty because the entrypoint only
+# substitutes variables that exist; set both to enable the tracker.
 ENV SITE_URL=http://localhost:8080 \
+    UMAMI_SCRIPT_URL= \
+    UMAMI_WEBSITE_ID= \
     NGINX_ENVSUBST_OUTPUT_DIR=/tmp
 COPY site-url.conf.template /etc/nginx/templates/
 COPY nginx.conf /etc/nginx/conf.d/default.conf

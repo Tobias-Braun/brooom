@@ -86,6 +86,20 @@ jobs:
           grep -q '<title>' <<< "$page"
           grep -q '<link rel="canonical" href="https://example.test/"' <<< "$page"
           ! grep -q 'site-url.invalid' <<< "$page"
+          # Without the Umami env vars the marker is removed and no tracker ships.
+          ! grep -q 'umami' <<< "$page"
+      - name: Serve it with Umami enabled and probe
+        run: |
+          docker run --detach --name site-umami --publish 8081:8080 --read-only --tmpfs /tmp \
+            --env UMAMI_SCRIPT_URL=https://umami.example.test/script.js \
+            --env UMAMI_WEBSITE_ID=test-id "$IMAGE:pr"
+          trap 'docker logs site-umami; docker rm --force site-umami' EXIT
+          for _ in $(seq 1 20); do
+            curl --fail --silent http://localhost:8081/healthz && break
+            sleep 1
+          done
+          page=$(curl --fail --silent --show-error http://localhost:8081/)
+          grep -q '<script defer src="https://umami.example.test/script.js" data-website-id="test-id"></script>' <<< "$page"
 
   release:
     name: Release
