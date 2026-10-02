@@ -131,6 +131,9 @@ FluxCD.
   (e.g. `https://brooom.dev`), so the same image serves any domain. Without it,
   canonical and Open Graph URLs point to `http://localhost:8080`. The container
   only writes to `/tmp`, so it runs with a read-only root filesystem.
+- Analytics are opt-in the same way: when both `UMAMI_SCRIPT_URL` (e.g.
+  `https://analytics.tobi-braun.com/script.js`) and `UMAMI_WEBSITE_ID` are set,
+  every page loads the Umami tracker; otherwise the image ships no tracker.
 
 A FluxCD image policy that follows the releases and ignores `latest` and the
 `sha-*` tags:
@@ -160,7 +163,7 @@ spec:
 
 One-time setup: after the first release, make the `brooom-site` package public
 (package settings on GitHub) or give Flux an image pull secret, set `SITE_URL`
-in the deployment's container env, and disable GitHub Pages in the repository settings.
+(and optionally the Umami variables) in the deployment's container env, and disable GitHub Pages in the repository settings.
 
 ## Identity
 
