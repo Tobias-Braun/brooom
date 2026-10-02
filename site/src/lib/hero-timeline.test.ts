@@ -40,6 +40,12 @@ describe('hero timeline', () => {
     }
   });
 
+  it('has every robot leave a worktree behind', () => {
+    for (const plan of [staticPlan(), ...plans]) {
+      expect(plan.items.filter((it) => it.kind === 'worktree')).toHaveLength(plan.robots.length);
+    }
+  });
+
   it('varies the junk between loops', () => {
     const kinds = new Set(plans.map((p) => p.items.map((it) => it.kind).join()));
     expect(kinds.size).toBeGreaterThan(1);

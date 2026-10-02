@@ -145,11 +145,12 @@ export function makePlan(rand: () => number, compact: boolean): Plan {
   // Every item gets its own slot across the floor, so nothing overlaps. The
   // slots end short of the right edge, so the counter is full when exit starts.
   const slots = shuffle([...Array(n).keys()], rand);
-  const kinds = shuffle(Object.keys(JUNK) as JunkKind[], rand);
+  const others = shuffle((Object.keys(JUNK) as JunkKind[]).filter((k) => k !== 'worktree'), rand);
   const items = robots.flatMap((robot, r) =>
-    Array.from({ length: drops[r]! }, () => {
+    Array.from({ length: drops[r]! }, (_, k) => {
       const u = 0.08 + ((slots.pop()! + 0.2 + rand() * 0.6) / n) * 0.77;
-      const kind = kinds[slots.length % kinds.length]!;
+      // Every agent works in its own worktree, so each robot leaves one behind.
+      const kind: JunkKind = k === 0 ? 'worktree' : others[slots.length % others.length]!;
       const { min, max } = JUNK[kind];
       return {
         kind,
@@ -210,10 +211,10 @@ export function sceneAt(t: number, plan: Plan): Scene {
 
 /**
  * The fixed plan of the static view (server rendering, screen readers,
- * reduced motion). Seed 54 rolls a small, typical set: node_modules, logs,
- * a worktree and a branch. Compact, so its labels fit half the floor.
+ * reduced motion). Seed 12 rolls a small, typical set: two worktrees, logs
+ * and node_modules. Compact, so its labels fit half the floor.
  */
-export const staticPlan = () => makePlan(seeded(54), true);
+export const staticPlan = () => makePlan(seeded(12), true);
 
 /**
  * The reduced-motion picture: junk on the left half, sweeper in the middle,
