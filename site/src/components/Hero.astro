@@ -5,6 +5,7 @@ import HeroScene from './HeroScene.astro';
 <section class="hero" aria-labelledby="hero-title">
   <div class="wrap">
     <div class="copy">
+      <p class="status" role="note">Heads up: still under development - expect rough edges</p>
       <span class="eyebrow">CLI for AI-assisted development</span>
       <h1 id="hero-title">
         <span class="gradient-text">Sweep your workspace clean</span>, fast, so your agent fleet can run again.
@@ -23,6 +24,17 @@ import HeroScene from './HeroScene.astro';
 <style>
   .hero {
     padding-block: var(--space-6) var(--space-5);
+  }
+
+  .status {
+    width: fit-content;
+    margin: 0 0 var(--space-3);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
   }
 
   .sub {
