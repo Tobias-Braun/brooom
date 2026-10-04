@@ -56,6 +56,10 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
 - Without flags Brooom only touches the repository you are in; paths outside
   the allowed scope are refused, symlinks are never followed out of it.
 
+> [!NOTE]
+> **Heads up:** Brooom is still under development and not ready yet - expect
+> rough edges until the first major release.
+
 ## Install
 
 On macOS with [Homebrew](https://brew.sh) (installs `brooom`; the cask's

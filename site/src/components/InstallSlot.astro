@@ -2,6 +2,7 @@
 import InstallTabs from './InstallTabs.vue';
 import { installTabs } from '../lib/install-tabs';
 import { REPO_URL } from '../lib/url';
+import DevNote from './DevNote.astro';
 
 /**
  * Slot of the tabbed install island (#43). The island renders its first tab
@@ -12,6 +13,7 @@ import { REPO_URL } from '../lib/url';
 
 <section class="section install" aria-labelledby="install-title">
   <div class="wrap">
+    <DevNote />
     <h2 id="install-title">Install</h2>
     <InstallTabs client:idle />
     <noscript>
