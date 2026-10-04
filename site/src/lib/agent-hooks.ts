@@ -11,9 +11,13 @@
  * on stdout means "no decision". A failed sweep keeps its exit code.
  * `--format plain` is not an option: it only reports and is rejected with
  * --yes.
+ *
+ * Agents also run in folders that are not git repositories, where a sweep
+ * would fail after every turn, so the hook checks for a repository first and
+ * otherwise just answers `{}`.
  */
 
-export const hookCommand = `br sweep after-agents --yes >&2 && echo '{}'`;
+export const hookCommand = `if git rev-parse --git-dir >/dev/null 2>&1; then br sweep after-agents --yes >&2 || exit; fi; echo '{}'`;
 
 export interface AgentHook {
   id: string;

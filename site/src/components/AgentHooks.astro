@@ -10,7 +10,7 @@ import AgentHookTabs from './AgentHookTabs.vue';
       the <a href="#presets">after-agents</a> preset with <code>--yes</code>, so nobody has to answer: the
       preset only removes merged worktrees and branches and agent leftovers, never unmerged or
       uncommitted work, and <code>br undo</code> restores the last sweep. The report goes to stderr,
-      because the harness reads stdout as JSON.
+      because the harness reads stdout as JSON. Outside a git repository the hook does nothing.
     </p>
     <AgentHookTabs client:visible />
     <noscript>

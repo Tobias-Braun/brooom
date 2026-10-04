@@ -14,7 +14,9 @@ describe('agent hooks data', () => {
     }
   });
 
-  it('auto-accepts the after-agents preset and keeps stdout valid JSON', () => {
-    expect(hookCommand).toBe(`br sweep after-agents --yes >&2 && echo '{}'`);
+  it('sweeps only inside a git repository and keeps stdout valid JSON', () => {
+    expect(hookCommand).toBe(
+      `if git rev-parse --git-dir >/dev/null 2>&1; then br sweep after-agents --yes >&2 || exit; fi; echo '{}'`,
+    );
   });
 });
