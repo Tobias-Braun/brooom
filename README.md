@@ -13,6 +13,10 @@
 
 </div>
 
+> [!NOTE]
+> **Heads up:** Brooom is still under development and not ready yet - expect
+> rough edges until the first major release.
+
 ## About
 
 > Brooom - sounds like a fast car or a sweeper - and thats exactly what it is!
@@ -29,8 +33,6 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
   projects you stopped touching
 - **Logs and runtime junk** — debug logs, test caches, coverage output,
   `.DS_Store`, crash dumps
-
-> Status: under active development towards the first major release.
 
 ## Safe by default
 
@@ -53,6 +55,10 @@ and nothing is changed before you have seen the plan and said yes. It sweeps:
 - Every applied session is recorded and can be reverted with `br undo`.
 - Without flags Brooom only touches the repository you are in; paths outside
   the allowed scope are refused, symlinks are never followed out of it.
+
+> [!NOTE]
+> **Heads up:** Brooom is still under development and not ready yet - expect
+> rough edges until the first major release.
 
 ## Install
 
