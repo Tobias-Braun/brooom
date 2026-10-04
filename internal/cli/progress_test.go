@@ -65,7 +65,10 @@ func runTTY(t *testing.T, tty bool, env map[string]string, args ...string) (code
 // displayMarks are what only the live display writes to stderr.
 var displayMarks = []string{"\x1b[?25l", "Scanning", "Discovering"}
 
-// cursorHidden is written when the live display starts drawing.
+// cursorHidden is written when the live display starts drawing. Tests of a
+// successful run assert it rather than phase text like "Scanning": frames are
+// flushed at the frame rate and the display is erased on success, so a run
+// shorter than one frame never shows a phase name.
 const cursorHidden = "\x1b[?25l"
 
 // noDoneLine fails when a successful run left a summary line on stderr: the
@@ -87,9 +90,6 @@ func TestScanShowsProgressOnATerminal(t *testing.T) {
 	code, out, errOut := runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
-	}
-	if !strings.Contains(errOut, "Scanning") {
-		t.Errorf("stderr lacks the live display:\n%q", errOut)
 	}
 	noDoneLine(t, errOut)
 	// The results keep going to stdout, untouched by the display.
@@ -131,7 +131,7 @@ func TestNoColorKeepsTheDisplayButDropsColour(t *testing.T) {
 	f := newCleanupFixture(t, nil)
 	f.mergedAndSquashed()
 	code, _, errOut := runTTY(t, true, map[string]string{"NO_COLOR": "1"}, "sweep", "after-agents", "-d", "merged-branch", "--dry-run")
-	if code != ExitOK || !strings.Contains(errOut, "Scanning") {
+	if code != ExitOK || !strings.Contains(errOut, cursorHidden) {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 	if regexp.MustCompile(`\x1b\[[0-9;]*m`).MatchString(errOut) {
@@ -196,9 +196,6 @@ func TestApplyShowsProgressAndStillDeletes(t *testing.T) {
 	if f.hasBranch("feat/merged") {
 		t.Errorf("the branch was not deleted: %v", f.branches())
 	}
-	if !strings.Contains(errOut, "Applying") {
-		t.Errorf("stderr lacks the apply phase: %q", errOut)
-	}
 	noDoneLine(t, errOut)
 	if !strings.Contains(out, "2 merged branches removed") || strings.Contains(out, "\x1b") {
 		t.Errorf("the executor summary must stay on plain stdout: %q", out)
@@ -211,7 +208,7 @@ func TestApplyWithConfigMachineFormatStillShowsProgress(t *testing.T) {
 	f := newCleanupFixture(t, map[string]any{"output": map[string]any{"format": "json"}})
 	f.mergedAndSquashed()
 	code, _, errOut := runTTY(t, true, nil, "sweep", "after-agents", "-d", "merged-branch", "--yes")
-	if code != ExitOK || !strings.Contains(errOut, "Applying") {
+	if code != ExitOK || !strings.Contains(errOut, cursorHidden) {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
 }
